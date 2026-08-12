@@ -1,0 +1,37 @@
+# Secrets — never commit anything that could hold an API key.
+# Runtime secrets live in Android Keystore/EncryptedSharedPreferences,
+# not in files. But belt + suspenders:
+*.env
+*.env.*
+secrets.properties
+**/secrets.properties
+apikey*
+*.pem
+*.key
+local.properties
+
+# Gradle
+.gradle/
+.kotlin/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.fleet/
+
+# OS
+.DS_Store
+Thumbs.db
