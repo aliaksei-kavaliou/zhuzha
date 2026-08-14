@@ -18,7 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
 /** Default Gemini model. Changeable per call; app-level settings should also let the user override. */
-const val DEFAULT_GEMINI_MODEL: String = "gemini-1.5-flash-latest"
+const val DEFAULT_GEMINI_MODEL: String = "gemini-3.7-flash"
 
 /**
  * Thin seam so tests can feed canned Gemini responses without HTTP.
