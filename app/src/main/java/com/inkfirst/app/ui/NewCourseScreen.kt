@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -66,6 +66,7 @@ fun NewCourseScreen(
     var topic by remember { mutableStateOf("") }
     var dailyMinutes by remember { mutableStateOf("30") }
     var priorKnowledge by remember { mutableStateOf("") }
+    var expectations by remember { mutableStateOf("") }
     var style by remember { mutableStateOf(StylePresets.DEFAULT) }
     var uiState by remember { mutableStateOf<OutlineUiState>(OutlineUiState.Idle) }
 
@@ -75,6 +76,7 @@ fun NewCourseScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -116,6 +118,13 @@ fun NewCourseScreen(
             modifier = Modifier.fillMaxWidth().height(120.dp),
         )
 
+        OutlinedTextField(
+            value = expectations,
+            onValueChange = { expectations = it },
+            label = { Text("What you want to be able to do (optional)") },
+            modifier = Modifier.fillMaxWidth().height(120.dp),
+        )
+
         StylePicker(current = style, onSelected = { style = it })
 
         Spacer(Modifier.height(8.dp))
@@ -130,7 +139,7 @@ fun NewCourseScreen(
                 val key = apiKey!!
                 uiState = OutlineUiState.Loading
                 scope.launch {
-                    uiState = runOutline(topic, minutes, priorKnowledge, style, model, key)
+                    uiState = runOutline(topic, minutes, priorKnowledge, expectations, style, model, key)
                 }
             },
         ) {
@@ -160,6 +169,7 @@ fun NewCourseScreen(
                             proposedSlug = slug,
                             topicPrompt = topic,
                             priorKnowledge = priorKnowledge,
+                            expectations = expectations,
                             dailyMinutes = dailyMinutes.toIntOrNull() ?: 30,
                             style = style.key,
                             model = model,
@@ -211,14 +221,15 @@ private fun StylePicker(current: StylePreset, onSelected: (StylePreset) -> Unit)
 
 @Composable
 private fun OutlinePreview(outline: CourseOutline) {
-    LazyColumn(
+    // Plain Column (not LazyColumn) — the parent screen is itself vertically
+    // scrollable, and nested scrolling would fight itself. Chapter counts
+    // top out at ~12 so laziness buys nothing here.
+    Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item {
-            Text(outline.title, style = MaterialTheme.typography.titleLarge)
-        }
-        items(outline.chapters) { chapter ->
+        Text(outline.title, style = MaterialTheme.typography.titleLarge)
+        outline.chapters.forEach { chapter ->
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 Text(
                     text = "${chapter.n}. ${chapter.title}  ·  ~${chapter.estMinutes} min",
@@ -236,6 +247,7 @@ private suspend fun runOutline(
     topic: String,
     dailyMinutes: Int,
     priorKnowledge: String,
+    expectations: String,
     style: StylePreset,
     model: String,
     apiKey: String,
@@ -248,6 +260,7 @@ private suspend fun runOutline(
                     topic = topic,
                     dailyMinutes = dailyMinutes,
                     priorKnowledge = priorKnowledge,
+                    expectations = expectations,
                     style = style,
                     apiKey = apiKey,
                 ),

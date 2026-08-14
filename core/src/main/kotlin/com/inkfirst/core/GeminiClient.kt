@@ -77,9 +77,12 @@ class KtorGeminiClient(
         }
 
         if (!response.status.isSuccess()) {
-            val body = response.bodyAsText().take(500)
+            val fullBody = response.bodyAsText()
+            // Print unabridged to stderr — lands in Android logcat under "System.err"
+            // when running on device, so `adb logcat -s System.err:E` shows the full body.
+            System.err.println("Gemini HTTP ${response.status.value} url=$url body=$fullBody")
             throw GeminiHttpException(
-                "Gemini request failed: HTTP ${response.status.value} — $body",
+                "Gemini request failed: HTTP ${response.status.value} — ${fullBody.take(3000)}",
                 status = response.status.value,
             )
         }

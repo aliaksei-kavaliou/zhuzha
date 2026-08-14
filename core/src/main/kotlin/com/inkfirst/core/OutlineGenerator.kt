@@ -22,6 +22,7 @@ class OutlineGenerator(
      * @param topic user's original ask, verbatim.
      * @param dailyMinutes minutes/day the learner has.
      * @param priorKnowledge the learner's self-description; may be blank.
+     * @param expectations what the learner wants to be able to do afterwards; may be blank.
      * @param style teaching style; defaults to head-first-inspired.
      * @param apiKey Gemini API key (BYO — see CLAUDE.md).
      */
@@ -29,6 +30,7 @@ class OutlineGenerator(
         topic: String,
         dailyMinutes: Int,
         priorKnowledge: String,
+        expectations: String = "",
         style: StylePreset = StylePresets.DEFAULT,
         apiKey: String,
     ): CourseOutline {
@@ -37,7 +39,7 @@ class OutlineGenerator(
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
         val prompt = buildOutlinePrompt(
-            OutlineRequestInputs(topic, dailyMinutes, priorKnowledge, style),
+            OutlineRequestInputs(topic, dailyMinutes, priorKnowledge, expectations, style),
         )
 
         val raw = client.generateJson(

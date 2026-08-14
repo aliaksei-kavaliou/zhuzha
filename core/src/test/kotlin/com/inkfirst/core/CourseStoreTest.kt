@@ -29,9 +29,10 @@ class CourseStoreTest {
         proposedSlug = slug,
         topicPrompt = "topic",
         priorKnowledge = "prior",
+        expectations = "goals",
         dailyMinutes = 30,
         style = "headfirst-inspired",
-        model = "gemini-2.5-flash",
+        model = "gemini-3.7-flash",
         created = created,
     )
 
@@ -44,9 +45,10 @@ class CourseStoreTest {
             proposedSlug = "kotlin-for-python-devs",
             topicPrompt = "kotlin for a python dev",
             priorKnowledge = "10 years python",
+            expectations = "write a small backend service",
             dailyMinutes = 45,
             style = "headfirst-inspired",
-            model = "gemini-2.5-flash",
+            model = "gemini-3.7-flash",
             created = "2026-08-14",
         )
 

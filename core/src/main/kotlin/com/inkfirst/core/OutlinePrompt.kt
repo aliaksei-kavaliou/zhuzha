@@ -4,6 +4,7 @@ internal data class OutlineRequestInputs(
     val topic: String,
     val dailyMinutes: Int,
     val priorKnowledge: String,
+    val expectations: String,
     val style: StylePreset,
 )
 
@@ -17,6 +18,7 @@ internal fun buildOutlinePrompt(inputs: OutlineRequestInputs): String = buildStr
     appendLine("Topic: ${inputs.topic}")
     appendLine("Daily study time: ${inputs.dailyMinutes} minutes")
     appendLine("Prior knowledge: ${inputs.priorKnowledge.ifBlank { "(none stated)" }}")
+    appendLine("What the learner wants to achieve: ${inputs.expectations.ifBlank { "(none stated)" }}")
     appendLine()
     appendLine("Produce a JSON object matching the provided schema. Rules:")
     appendLine("- 6 to 12 chapters, numbered sequentially starting at 1.")
