@@ -93,9 +93,13 @@ fun SettingsScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
-                enabled = apiKeyDraft.isNotBlank(),
+                // Enable if we're either setting a new key OR one is already stored
+                // (so the model field alone can be updated without re-entering the key).
+                enabled = apiKeyDraft.isNotBlank() || !storedKey.isNullOrBlank(),
                 onClick = {
-                    store.setApiKey(apiKeyDraft)
+                    if (apiKeyDraft.isNotBlank()) {
+                        store.setApiKey(apiKeyDraft)
+                    }
                     store.setModelName(modelDraft)
                     storedKey = store.getApiKey()
                     showKey = false
