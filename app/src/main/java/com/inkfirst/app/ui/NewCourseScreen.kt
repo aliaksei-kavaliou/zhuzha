@@ -35,13 +35,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.inkfirst.app.data.ApiKeyStore
+import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.CourseOutline
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.OutlineGenerator
 import com.inkfirst.core.OutlineParseException
 import com.inkfirst.core.StylePreset
 import com.inkfirst.core.StylePresets
+import com.inkfirst.core.courseSlug
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 private sealed interface OutlineUiState {
     data object Idle : OutlineUiState
@@ -51,9 +54,13 @@ private sealed interface OutlineUiState {
 }
 
 @Composable
-fun NewCourseScreen(onBack: () -> Unit) {
+fun NewCourseScreen(
+    onBack: () -> Unit,
+    onCourseCreated: (String) -> Unit,
+) {
     val context = LocalContext.current
     val store = remember { ApiKeyStore(context) }
+    val courseStore = rememberCourseStore()
     val scope = rememberCoroutineScope()
 
     var topic by remember { mutableStateOf("") }
@@ -141,7 +148,26 @@ fun NewCourseScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                is OutlineUiState.Ready -> OutlinePreview(s.outline)
+                is OutlineUiState.Ready -> Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinePreview(s.outline)
+                    Button(onClick = {
+                        val slug = courseSlug(s.outline.title)
+                        val created = LocalDate.now().toString()
+                        val course = courseStore.create(
+                            outline = s.outline,
+                            proposedSlug = slug,
+                            topicPrompt = topic,
+                            priorKnowledge = priorKnowledge,
+                            dailyMinutes = dailyMinutes.toIntOrNull() ?: 30,
+                            style = style.key,
+                            model = model,
+                            created = created,
+                        )
+                        onCourseCreated(course.slug)
+                    }) { Text("Approve & save") }
+                }
             }
         }
     }
