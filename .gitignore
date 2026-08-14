@@ -5,9 +5,7 @@
 *.env.*
 secrets.properties
 **/secrets.properties
-apikey*
 *.pem
-*.key
 local.properties
 
 # Gradle
