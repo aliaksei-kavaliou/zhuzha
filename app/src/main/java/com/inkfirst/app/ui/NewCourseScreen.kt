@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -62,6 +65,7 @@ fun NewCourseScreen(
     val store = remember { ApiKeyStore(context) }
     val courseStore = rememberCourseStore()
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
     var topic by remember { mutableStateOf("") }
     var dailyMinutes by remember { mutableStateOf("30") }
@@ -76,6 +80,11 @@ fun NewCourseScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                // Tap outside any input dismisses the IME so the Generate button
+                // becomes reachable on short viewports.
+                detectTapGestures(onTap = { focusManager.clearFocus() })
+            }
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -135,6 +144,7 @@ fun NewCourseScreen(
                 topic.isNotBlank() &&
                 (dailyMinutes.toIntOrNull() ?: 0) > 0,
             onClick = {
+                focusManager.clearFocus()  // hide keyboard before the async call
                 val minutes = dailyMinutes.toInt()
                 val key = apiKey!!
                 uiState = OutlineUiState.Loading

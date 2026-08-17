@@ -1,5 +1,6 @@
 package com.inkfirst.app.ui
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -33,6 +36,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val store = remember { ApiKeyStore(context) }
+    val focusManager = LocalFocusManager.current
 
     var apiKeyDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf(store.getModelName()) }
@@ -47,6 +51,9 @@ fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { focusManager.clearFocus() })
+            }
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -97,6 +104,7 @@ fun SettingsScreen(
                 // (so the model field alone can be updated without re-entering the key).
                 enabled = apiKeyDraft.isNotBlank() || !storedKey.isNullOrBlank(),
                 onClick = {
+                    focusManager.clearFocus()
                     if (apiKeyDraft.isNotBlank()) {
                         store.setApiKey(apiKeyDraft)
                     }
