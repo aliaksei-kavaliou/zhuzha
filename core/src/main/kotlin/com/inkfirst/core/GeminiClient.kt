@@ -10,7 +10,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
@@ -22,15 +21,23 @@ const val DEFAULT_GEMINI_MODEL: String = "gemini-3.7-flash"
 
 /**
  * Thin seam so tests can feed canned Gemini responses without HTTP.
- * The impl returns the raw model text (Gemini's candidates[0].content.parts[0].text),
- * which for our calls will be a JSON string thanks to responseMimeType.
+ * Both methods return the raw model text (Gemini's candidates[0].content.parts[0].text).
  */
 interface GeminiClient {
+    /** Structured JSON output — model is forced to a schema, returns a JSON string. */
     suspend fun generateJson(
         model: String,
         systemInstruction: String,
         userPrompt: String,
         responseSchema: JsonObject,
+        apiKey: String,
+    ): String
+
+    /** Plain-text output — for prose like chapter Markdown or memory summaries. */
+    suspend fun generateText(
+        model: String,
+        systemInstruction: String,
+        userPrompt: String,
         apiKey: String,
     ): String
 }
@@ -59,15 +66,42 @@ class KtorGeminiClient(
         userPrompt: String,
         responseSchema: JsonObject,
         apiKey: String,
+    ): String = postGenerate(
+        model = model,
+        systemInstruction = systemInstruction,
+        userPrompt = userPrompt,
+        generationConfig = GenerationConfig(
+            responseMimeType = "application/json",
+            responseSchema = responseSchema,
+        ),
+        apiKey = apiKey,
+    )
+
+    override suspend fun generateText(
+        model: String,
+        systemInstruction: String,
+        userPrompt: String,
+        apiKey: String,
+    ): String = postGenerate(
+        model = model,
+        systemInstruction = systemInstruction,
+        userPrompt = userPrompt,
+        generationConfig = GenerationConfig(responseMimeType = "text/plain"),
+        apiKey = apiKey,
+    )
+
+    private suspend fun postGenerate(
+        model: String,
+        systemInstruction: String,
+        userPrompt: String,
+        generationConfig: GenerationConfig,
+        apiKey: String,
     ): String {
         val url = "$baseUrl/v1beta/models/$model:generateContent"
         val request = GenerateContentRequest(
             systemInstruction = SystemInstruction(parts = listOf(Part(text = systemInstruction))),
             contents = listOf(Content(role = "user", parts = listOf(Part(text = userPrompt)))),
-            generationConfig = GenerationConfig(
-                responseMimeType = "application/json",
-                responseSchema = responseSchema,
-            ),
+            generationConfig = generationConfig,
         )
 
         val response: HttpResponse = http.post(url) {

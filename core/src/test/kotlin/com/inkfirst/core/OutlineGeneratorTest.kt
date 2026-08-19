@@ -32,6 +32,10 @@ private class RecordingGeminiClient(
         lastApiKey = apiKey
         return response
     }
+
+    override suspend fun generateText(
+        model: String, systemInstruction: String, userPrompt: String, apiKey: String,
+    ): String = error("outline path should never call generateText")
 }
 
 class OutlineGeneratorTest {

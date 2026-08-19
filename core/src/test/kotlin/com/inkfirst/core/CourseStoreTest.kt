@@ -126,4 +126,63 @@ class CourseStoreTest {
         assertEquals("rust-basics", courseSlug("   Rust   Basics   "))
         assertEquals("course", courseSlug("!!!"))
     }
+
+    @Test
+    fun `saveChapter and readChapter round-trip`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        assertNull(store.readChapter("kotlin", "01-intro"), "missing chapter reads as null")
+        store.saveChapter("kotlin", "01-intro", "# Chapter 1\n\nHello.")
+        assertEquals("# Chapter 1\n\nHello.", store.readChapter("kotlin", "01-intro"))
+
+        val file = File(tmp, "kotlin/chapters/01-intro.md")
+        assertTrue(file.exists())
+    }
+
+    @Test
+    fun `appendMemory writes delimited blocks, preserves prior content`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        store.appendMemory("kotlin", 1, "Intro", "Introduced Kotlin using the PHP-analogue lens.")
+        store.appendMemory("kotlin", 2, "Nulls", "Contrasted T? with PHP's ?? default.")
+
+        val memory = File(tmp, "kotlin/memory.md").readText()
+        assertTrue(memory.contains("--- Chapter 1: Intro ---"))
+        assertTrue(memory.contains("PHP-analogue lens"))
+        assertTrue(memory.contains("--- Chapter 2: Nulls ---"))
+        assertTrue(memory.contains("PHP's ?? default"))
+        // Chapter 1's block still comes before chapter 2's.
+        assertTrue(memory.indexOf("Chapter 1") < memory.indexOf("Chapter 2"))
+    }
+
+    @Test
+    fun `readMemory returns empty string when memory_md is missing`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        // create() wrote an empty memory.md — delete it to simulate a legacy course.
+        File(tmp, "kotlin/memory.md").delete()
+        assertEquals("", store.readMemory("kotlin"))
+    }
+
+    @Test
+    fun `updateChapterStatus flips the target chapter and leaves others alone`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        val updated = store.updateChapterStatus("kotlin", 1, ChapterStatus.GENERATED)
+        assertNotNull(updated)
+        assertEquals(ChapterStatus.GENERATED, updated!!.chapters.first { it.n == 1 }.status)
+        assertEquals(ChapterStatus.PENDING, updated.chapters.first { it.n == 2 }.status)
+
+        // Persisted on disk too.
+        val reloaded = store.load("kotlin")!!
+        assertEquals(ChapterStatus.GENERATED, reloaded.chapters.first { it.n == 1 }.status)
+    }
+
+    @Test
+    fun `updateChapterStatus returns null for missing course`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        assertNull(store.updateChapterStatus("no-such-course", 1, ChapterStatus.DONE))
+    }
 }

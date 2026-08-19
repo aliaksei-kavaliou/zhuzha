@@ -65,6 +65,25 @@ class KtorGeminiClientTest {
     }
 
     @Test
+    fun `generateText round-trips model text through the same candidate parts`() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = ByteReadChannel(
+                    """{"candidates":[{"content":{"parts":[{"text":"# hello\n\nbody"}]}}]}""",
+                ),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        KtorGeminiClient(engine).use { client ->
+            val out = client.generateText(
+                model = "gemini-x", systemInstruction = "sys", userPrompt = "hi", apiKey = "k",
+            )
+            assertEquals("# hello\n\nbody", out)
+        }
+    }
+
+    @Test
     fun `empty candidates list raises`() {
         val engine = MockEngine {
             respond(
