@@ -2,8 +2,9 @@ package com.inkfirst.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,9 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,12 +26,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -43,7 +45,7 @@ import com.inkfirst.core.Course
 import com.inkfirst.core.Inline
 import com.inkfirst.core.parseMarkdown
 
-// E-ink palette: near-black ink on off-white paper. Pure white/black looks harsh; slight warm tint.
+// E-ink palette: near-black ink on off-white paper.
 private val InkColor = Color(0xFF111111)
 private val PaperColor = Color(0xFFF8F5EE)
 private val MutedColor = Color(0xFF555555)
@@ -71,53 +73,118 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(PaperColor),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
+
+            // Header — kept outside the paged area so Back is always reachable.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+            ) {
                 TextButton(onClick = onBack) { Text("← Back", color = InkColor) }
                 Spacer(Modifier.weight(1f))
-                val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
                 if (chapterN != null && course != null) {
                     Text(
-                        text = "Chapter $chapterN of ${course!!.chapters.size}",
+                        text = "Ch $chapterN of ${course!!.chapters.size}",
                         style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
 
             if (markdown == null && course != null) {
                 Text("Chapter not on disk yet.", color = MaterialTheme.colorScheme.error)
-            } else {
-                RenderBlocks(blocks)
+                return@Column
             }
 
-            Spacer(Modifier.height(40.dp))
+            PagedContent(blocks = blocks)
         }
     }
 }
 
 @Composable
-private fun RenderBlocks(blocks: List<Block>) {
-    // Reveal state for exercise blocks, keyed by index in the block list.
-    val revealed = remember { mutableStateMapOf<Int, Boolean>() }
+private fun PagedContent(blocks: List<Block>) {
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
 
-    blocks.forEachIndexed { idx, block ->
-        when (block) {
-            is Block.Heading -> HeadingBlock(block)
-            is Block.Paragraph -> ParagraphBlock(block.inlines)
-            is Block.BulletItem -> ListItemBlock(prefix = "• ", inlines = block.inlines)
-            is Block.OrderedItem -> ListItemBlock(prefix = "${block.n}. ", inlines = block.inlines)
-            is Block.CustomFence -> when (block.kind) {
-                "exercise" -> ExerciseBlock(block, revealed = revealed[idx] == true, onReveal = { revealed[idx] = true })
-                "recap" -> RecapBlock(block)
-                "figure" -> FigureBlock(block)
-                else -> UnknownFenceBlock(block)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val widthPx = with(density) { maxWidth.toPx().toInt() }
+        val availableHeightPx = with(density) { (maxHeight - 32.dp).toPx().toInt() }  // reserve page-indicator strip
+
+        val pages = remember(blocks, widthPx, availableHeightPx) {
+            paginate(
+                blocks = blocks,
+                contentWidthPx = widthPx,
+                contentHeightPx = availableHeightPx,
+                density = density,
+                measurer = measurer,
+            )
+        }
+        var pageIndex by remember(pages) { mutableStateOf(0) }
+        val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Paged content. Tap-gesture detector is on this Box; TextButton
+            // inside a block (Show answer) has its own clickable, which
+            // intercepts before the parent gesture fires — so the Reveal
+            // still works.
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .pointerInput(pages.size) {
+                        detectTapGestures { pos ->
+                            if (pos.x < size.width / 2) {
+                                if (pageIndex > 0) pageIndex--
+                            } else {
+                                if (pageIndex < pages.size - 1) pageIndex++
+                            }
+                        }
+                    },
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    pages.getOrNull(pageIndex)?.forEach { block ->
+                        val globalIdx = remember(block) { blocks.indexOf(block) }
+                        RenderBlock(
+                            block = block,
+                            revealed = revealed[globalIdx] == true,
+                            onReveal = { revealed[globalIdx] = true },
+                        )
+                    }
+                }
             }
+
+            // Page indicator + tap-hint strip
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (pages.isEmpty()) "" else "Page ${pageIndex + 1} of ${pages.size}",
+                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "tap ← / → to turn",
+                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RenderBlock(block: Block, revealed: Boolean, onReveal: () -> Unit) {
+    when (block) {
+        is Block.Heading -> HeadingBlock(block)
+        is Block.Paragraph -> ParagraphBlock(block.inlines)
+        is Block.BulletItem -> ListItemBlock(prefix = "• ", inlines = block.inlines)
+        is Block.OrderedItem -> ListItemBlock(prefix = "${block.n}. ", inlines = block.inlines)
+        is Block.CustomFence -> when (block.kind) {
+            "exercise" -> ExerciseBlock(block, revealed = revealed, onReveal = onReveal)
+            "recap" -> RecapBlock(block)
+            "figure" -> FigureBlock(block)
+            else -> UnknownFenceBlock(block)
         }
     }
 }

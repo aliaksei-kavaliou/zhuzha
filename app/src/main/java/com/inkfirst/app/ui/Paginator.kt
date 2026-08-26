@@ -1,0 +1,139 @@
+package com.inkfirst.app.ui
+
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.inkfirst.core.Block
+import com.inkfirst.core.Inline
+
+/**
+ * Packs a chapter's Blocks into pages of at most [contentHeightPx] tall.
+ * V2.0 discipline: every block is atomic — a block that doesn't fit on the
+ * current page moves whole to the next. Consequence: some pages will end
+ * with visible whitespace. Paragraph splitting is a follow-up (v2.1).
+ */
+fun paginate(
+    blocks: List<Block>,
+    contentWidthPx: Int,
+    contentHeightPx: Int,
+    density: Density,
+    measurer: TextMeasurer,
+): List<List<Block>> {
+    if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
+
+    val pages = mutableListOf<MutableList<Block>>()
+    pages.add(mutableListOf())
+    var height = 0
+
+    for (block in blocks) {
+        val h = estimateHeight(block, contentWidthPx, density, measurer)
+        val pageIsEmpty = pages.last().isEmpty()
+        if (height + h > contentHeightPx && !pageIsEmpty) {
+            pages.add(mutableListOf())
+            height = 0
+        }
+        pages.last().add(block)
+        height += h
+    }
+    return pages.map { it.toList() }
+}
+
+/**
+ * Heights match the ReaderScreen renderer as closely as feasible without
+ * doing a full off-screen SubcomposeLayout pass. Close enough for spike v2.0;
+ * we can tighten if pages regularly under- or over-fill by more than ~10%.
+ */
+private fun estimateHeight(
+    block: Block,
+    widthPx: Int,
+    density: Density,
+    measurer: TextMeasurer,
+): Int = with(density) {
+    when (block) {
+        is Block.Heading -> {
+            val (fontSize, topPad, botPad) = when (block.level) {
+                1 -> Triple(30.sp, 24.dp, 12.dp)
+                2 -> Triple(24.sp, 20.dp, 10.dp)
+                3 -> Triple(20.sp, 16.dp, 8.dp)
+                else -> Triple(18.sp, 14.dp, 6.dp)
+            }
+            val result = measurer.measure(
+                text = AnnotatedString(block.inlines.plainText()),
+                style = TextStyle(
+                    fontSize = fontSize,
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold,
+                ),
+                constraints = Constraints(maxWidth = widthPx),
+            )
+            topPad.toPx().toInt() + result.size.height + botPad.toPx().toInt()
+        }
+        is Block.Paragraph -> {
+            val result = measurer.measure(
+                text = AnnotatedString(block.inlines.plainText()),
+                style = TextStyle(fontSize = 18.sp, lineHeight = 30.sp, fontFamily = FontFamily.Serif),
+                constraints = Constraints(maxWidth = widthPx),
+            )
+            result.size.height + 12.dp.toPx().toInt()
+        }
+        is Block.BulletItem -> measureListItem(block.inlines, "• ", widthPx, density, measurer)
+        is Block.OrderedItem -> measureListItem(block.inlines, "${block.n}. ", widthPx, density, measurer)
+        is Block.CustomFence -> {
+            // Inner padding of the BorderedBlock is 12dp per side; label + 6dp spacer above content.
+            val innerWidth = widthPx - 24.dp.toPx().toInt()
+            val bodyText = when (block.kind) {
+                "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
+                else -> block.body.trim()
+            }
+            val bodyStyle = when (block.kind) {
+                "figure" -> TextStyle(fontSize = 16.sp, lineHeight = 26.sp, fontFamily = FontFamily.Serif)
+                else -> TextStyle(fontSize = 17.sp, lineHeight = 28.sp, fontFamily = FontFamily.Serif)
+            }
+            val body = measurer.measure(
+                text = AnnotatedString(bodyText),
+                style = bodyStyle,
+                constraints = Constraints(maxWidth = innerWidth),
+            )
+            val label = 11.sp.toPx().toInt() + 6.dp.toPx().toInt()
+            // Exercise reserves ~48dp for the answer text or Show-answer button.
+            val exerciseExtra = if (block.kind == "exercise") 48.dp.toPx().toInt() else 0
+            // Figure padding: 12dp vertical padding around the centered alt text.
+            val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
+            val outerSpacers = 8.dp.toPx().toInt()      // 4dp top + 4dp bottom
+            val wrapperVPad = 16.dp.toPx().toInt()      // 8dp top + 8dp bottom
+            val borderInner = 24.dp.toPx().toInt()      // 12dp top + 12dp bottom
+            label + body.size.height + exerciseExtra + figureExtra +
+                outerSpacers + wrapperVPad + borderInner
+        }
+    }
+}
+
+private fun measureListItem(
+    inlines: List<Inline>,
+    prefix: String,
+    widthPx: Int,
+    density: Density,
+    measurer: TextMeasurer,
+): Int = with(density) {
+    val result = measurer.measure(
+        text = AnnotatedString(prefix + inlines.plainText()),
+        style = TextStyle(fontSize = 18.sp, lineHeight = 30.sp, fontFamily = FontFamily.Serif),
+        constraints = Constraints(maxWidth = widthPx - 8.dp.toPx().toInt()),
+    )
+    result.size.height + 6.dp.toPx().toInt()
+}
+
+private fun List<Inline>.plainText(): String = joinToString("") { i ->
+    when (i) {
+        is Inline.Text -> i.text
+        is Inline.Bold -> i.text
+        is Inline.Italic -> i.text
+        is Inline.Code -> i.text
+    }
+}
