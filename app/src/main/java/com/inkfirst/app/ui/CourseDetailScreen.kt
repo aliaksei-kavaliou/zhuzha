@@ -47,6 +47,7 @@ private sealed interface GenState {
 fun CourseDetailScreen(
     slug: String,
     onBack: () -> Unit,
+    onReadChapter: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val courseStore = rememberCourseStore()
@@ -93,6 +94,7 @@ fun CourseDetailScreen(
                 onGenerate = { onGenerateChapter(c, chapter.n, scope, courseStore, apiKeyStore, onDone = { updated ->
                     course = updated ?: course
                 }, onGenState = { gen = it }) },
+                onRead = { onReadChapter(chapter.slug) },
             )
         }
     }
@@ -104,6 +106,7 @@ private fun ChapterRow(
     gen: GenState,
     apiKeyIsSet: Boolean,
     onGenerate: () -> Unit,
+    onRead: () -> Unit,
 ) {
     val isThisRunning = gen is GenState.Running && gen.chapterN == chapter.n
     val thisFailure = (gen as? GenState.Failed)?.takeIf { it.chapterN == chapter.n }
@@ -133,11 +136,7 @@ private fun ChapterRow(
                 enabled = !anyRunning && apiKeyIsSet,
                 onClick = onGenerate,
             ) { Text(if (apiKeyIsSet) "Generate chapter" else "Set API key in Settings") }
-            // status is generated / reading / done — Reader screen wires in later slice.
-            else -> Text(
-                text = "(reader coming soon)",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            else -> Button(onClick = onRead) { Text("Read") }
         }
 
         thisFailure?.let {

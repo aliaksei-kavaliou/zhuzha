@@ -14,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import com.inkfirst.app.ui.CourseDetailScreen
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
+import com.inkfirst.app.ui.ReaderScreen
 import com.inkfirst.app.ui.SettingsScreen
 
 private object Routes {
@@ -21,7 +22,9 @@ private object Routes {
     const val SETTINGS = "settings"
     const val NEW_COURSE = "new-course"
     const val COURSE_DETAIL = "course/{slug}"
+    const val READER = "reader/{courseSlug}/{chapterSlug}"
     fun courseDetail(slug: String) = "course/$slug"
+    fun reader(courseSlug: String, chapterSlug: String) = "reader/$courseSlug/$chapterSlug"
 }
 
 class MainActivity : ComponentActivity() {
@@ -63,7 +66,20 @@ private fun InkFirstApp() {
         }
         composable(Routes.COURSE_DETAIL) { entry ->
             val slug = entry.arguments?.getString("slug").orEmpty()
-            CourseDetailScreen(slug = slug, onBack = { nav.popBackStack() })
+            CourseDetailScreen(
+                slug = slug,
+                onBack = { nav.popBackStack() },
+                onReadChapter = { chapterSlug -> nav.navigate(Routes.reader(slug, chapterSlug)) },
+            )
+        }
+        composable(Routes.READER) { entry ->
+            val courseSlug = entry.arguments?.getString("courseSlug").orEmpty()
+            val chapterSlug = entry.arguments?.getString("chapterSlug").orEmpty()
+            ReaderScreen(
+                courseSlug = courseSlug,
+                chapterSlug = chapterSlug,
+                onBack = { nav.popBackStack() },
+            )
         }
     }
 }
