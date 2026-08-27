@@ -2,17 +2,19 @@ package com.inkfirst.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -176,6 +177,12 @@ private fun buildTocBlocks(
     return blocks
 }
 
+// Width of the dedicated left/right edge zones that turn TOC pages. Rows on
+// the Contents page have their own clickable so tapping on-row would open a
+// chapter; reserving these strips as page-turn-only sidesteps the conflict
+// without gesture-priority tricks.
+private val TocEdgeTapWidth = 44.dp
+
 @Composable
 private fun PagedContents(
     blocks: List<TocBlock>,
@@ -191,26 +198,26 @@ private fun PagedContents(
             paginateToc(blocks, availableHeightPx, density)
         }
         var pageIndex by remember(pages) { mutableStateOf(0) }
+        val hasPrev = pageIndex > 0
+        val hasNext = pageIndex < pages.size - 1
+        val interaction = remember { MutableInteractionSource() }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .pointerInput(pageIndex, pages.size) {
-                        detectTapGestures { pos ->
-                            when {
-                                pos.x < size.width / 2 -> {
-                                    if (pageIndex > 0) pageIndex--
-                                }
-                                else -> {
-                                    if (pageIndex < pages.size - 1) pageIndex++
-                                }
-                            }
-                        }
-                    },
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                // Left edge — prev page.
+                Box(
+                    modifier = Modifier
+                        .width(TocEdgeTapWidth)
+                        .fillMaxHeight()
+                        .clickable(
+                            enabled = hasPrev,
+                            interactionSource = interaction,
+                            indication = null,
+                        ) { pageIndex-- },
+                )
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     pages.getOrNull(pageIndex)?.forEach { block ->
                         RenderTocBlock(
                             block = block,
@@ -219,6 +226,17 @@ private fun PagedContents(
                         )
                     }
                 }
+                // Right edge — next page.
+                Box(
+                    modifier = Modifier
+                        .width(TocEdgeTapWidth)
+                        .fillMaxHeight()
+                        .clickable(
+                            enabled = hasNext,
+                            interactionSource = interaction,
+                            indication = null,
+                        ) { pageIndex++ },
+                )
             }
 
             Row(
@@ -231,7 +249,7 @@ private fun PagedContents(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = if (pages.size > 1) "tap ← / → to turn" else "",
+                    text = if (pages.size > 1) "tap ← / → edges to turn" else "",
                     style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                     textAlign = TextAlign.End,
                 )
