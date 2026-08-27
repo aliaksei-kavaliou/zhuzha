@@ -32,11 +32,11 @@ fun paginate(
 ): List<List<Block>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
 
-    // Safety margin: TextMeasurer under-counts by a few px (font metric slop,
-    // sub-pixel rounding, layout-padding merge). 5% shaved off avoids the last
-    // line of a paragraph falling off the visible box. Costs at most 1 extra
-    // page per ~20 in the chapter.
-    val budget = (contentHeightPx * 0.95f).toInt()
+    // Safety margin: TextMeasurer under-counts by roughly a half-line per
+    // block (font metric slop + sub-pixel rounding). 5% wasn't enough — still
+    // saw single-line clipping. 10% covers observed cases; costs at most one
+    // extra page per ~10 in the chapter.
+    val budget = (contentHeightPx * 0.90f).toInt()
 
     val pages = mutableListOf<MutableList<Block>>()
     pages.add(mutableListOf())
