@@ -82,10 +82,12 @@ private fun estimateHeight(
                 3 -> Triple(20.sp, 16.dp, 8.dp)
                 else -> Triple(18.sp, 14.dp, 6.dp)
             }
+            val fontSize = baseSize * fontScale
             val result = measurer.measure(
                 text = AnnotatedString(block.inlines.plainText()),
                 style = TextStyle(
-                    fontSize = baseSize * fontScale,
+                    fontSize = fontSize,
+                    lineHeight = fontSize * 1.2f,  // matches renderer's explicit lineHeight
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold,
                 ),

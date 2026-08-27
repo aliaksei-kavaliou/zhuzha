@@ -366,12 +366,14 @@ private fun HeadingBlock(h: Block.Heading, fontScale: Float) {
         3 -> Triple(20.sp, 16.dp, 8.dp)
         else -> Triple(18.sp, 14.dp, 6.dp)
     }
+    val fontSize = baseSize * fontScale
     Spacer(Modifier.height(top))
     Text(
         text = renderInlines(h.inlines),
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Bold,
-        fontSize = baseSize * fontScale,
+        fontSize = fontSize,
+        lineHeight = fontSize * 1.2f,  // must be explicit; default is tight enough to overlap
         color = InkColor,
     )
     Spacer(Modifier.height(bottom))
