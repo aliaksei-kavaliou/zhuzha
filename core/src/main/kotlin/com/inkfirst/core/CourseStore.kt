@@ -132,9 +132,40 @@ class CourseStore(private val root: File) {
         val updated = course.copy(
             chapters = course.chapters.map { if (it.n == chapterN) it.copy(status = status) else it },
         )
-        File(root, "$courseSlug/course.json")
-            .writeText(json.encodeToString(Course.serializer(), updated))
+        writeCourse(courseSlug, updated)
         return updated
+    }
+
+    /**
+     * Adds a bookmark for [blockIndex] in [chapterSlug]. Idempotent — if a
+     * bookmark for the same (chapter, block) already exists, the existing
+     * one wins and the course is returned unchanged.
+     */
+    fun addBookmark(courseSlug: String, chapterSlug: String, blockIndex: Int, created: String): Course? {
+        val course = load(courseSlug) ?: return null
+        val already = course.bookmarks.any { it.chapterSlug == chapterSlug && it.blockIndex == blockIndex }
+        if (already) return course
+        val updated = course.copy(
+            bookmarks = course.bookmarks + Bookmark(chapterSlug, blockIndex, created),
+        )
+        writeCourse(courseSlug, updated)
+        return updated
+    }
+
+    fun removeBookmark(courseSlug: String, chapterSlug: String, blockIndex: Int): Course? {
+        val course = load(courseSlug) ?: return null
+        val updated = course.copy(
+            bookmarks = course.bookmarks.filterNot {
+                it.chapterSlug == chapterSlug && it.blockIndex == blockIndex
+            },
+        )
+        writeCourse(courseSlug, updated)
+        return updated
+    }
+
+    private fun writeCourse(courseSlug: String, course: Course) {
+        File(root, "$courseSlug/course.json")
+            .writeText(json.encodeToString(Course.serializer(), course))
     }
 
     private fun tryDecode(file: File): Course? = try {

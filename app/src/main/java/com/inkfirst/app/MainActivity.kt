@@ -22,9 +22,10 @@ private object Routes {
     const val SETTINGS = "settings"
     const val NEW_COURSE = "new-course"
     const val COURSE_DETAIL = "course/{slug}"
-    const val READER = "reader/{courseSlug}/{chapterSlug}"
+    const val READER = "reader/{courseSlug}/{chapterSlug}/{blockIndex}"
     fun courseDetail(slug: String) = "course/$slug"
-    fun reader(courseSlug: String, chapterSlug: String) = "reader/$courseSlug/$chapterSlug"
+    fun reader(courseSlug: String, chapterSlug: String, blockIndex: Int = 0) =
+        "reader/$courseSlug/$chapterSlug/$blockIndex"
 }
 
 class MainActivity : ComponentActivity() {
@@ -69,15 +70,19 @@ private fun InkFirstApp() {
             CourseDetailScreen(
                 slug = slug,
                 onBack = { nav.popBackStack() },
-                onReadChapter = { chapterSlug -> nav.navigate(Routes.reader(slug, chapterSlug)) },
+                onReadChapter = { chapterSlug, blockIndex ->
+                    nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
+                },
             )
         }
         composable(Routes.READER) { entry ->
             val courseSlug = entry.arguments?.getString("courseSlug").orEmpty()
             val chapterSlug = entry.arguments?.getString("chapterSlug").orEmpty()
+            val blockIndex = entry.arguments?.getString("blockIndex")?.toIntOrNull() ?: 0
             ReaderScreen(
                 courseSlug = courseSlug,
                 chapterSlug = chapterSlug,
+                startBlockIndex = blockIndex,
                 onBack = { nav.popBackStack() },
             )
         }

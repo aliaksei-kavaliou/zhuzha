@@ -21,6 +21,19 @@ data class Course(
     val model: String,
     val created: String,
     val chapters: List<PersistedChapter>,
+    val bookmarks: List<Bookmark> = emptyList(),
+)
+
+/**
+ * A saved reading location. Anchored to a [blockIndex] within the chapter's
+ * parsed Block list — not to a page number, so it survives font-scale changes
+ * (which repaginate the same block stream into different page counts).
+ */
+@Serializable
+data class Bookmark(
+    @SerialName("chapter_slug") val chapterSlug: String,
+    @SerialName("block_index") val blockIndex: Int,
+    val created: String,
 )
 
 @Serializable

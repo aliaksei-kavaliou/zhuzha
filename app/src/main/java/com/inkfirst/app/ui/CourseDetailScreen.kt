@@ -1,5 +1,6 @@
 package com.inkfirst.app.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.inkfirst.app.data.ApiKeyStore
 import com.inkfirst.app.data.rememberCourseStore
+import com.inkfirst.core.Bookmark
 import com.inkfirst.core.ChapterGenerator
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
@@ -47,7 +49,7 @@ private sealed interface GenState {
 fun CourseDetailScreen(
     slug: String,
     onBack: () -> Unit,
-    onReadChapter: (String) -> Unit,
+    onReadChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val context = LocalContext.current
     val courseStore = rememberCourseStore()
@@ -84,6 +86,14 @@ fun CourseDetailScreen(
         Spacer(Modifier.padding(top = 4.dp))
         HorizontalDivider()
 
+        if (c.bookmarks.isNotEmpty()) {
+            BookmarksSection(
+                course = c,
+                onJump = { bm -> onReadChapter(bm.chapterSlug, bm.blockIndex) },
+            )
+            HorizontalDivider()
+        }
+
         val apiKeyIsSet = !apiKeyStore.getApiKey().isNullOrBlank()
 
         c.chapters.forEach { chapter ->
@@ -94,8 +104,37 @@ fun CourseDetailScreen(
                 onGenerate = { onGenerateChapter(c, chapter.n, scope, courseStore, apiKeyStore, onDone = { updated ->
                     course = updated ?: course
                 }, onGenState = { gen = it }) },
-                onRead = { onReadChapter(chapter.slug) },
+                onRead = { onReadChapter(chapter.slug, 0) },
             )
+        }
+    }
+}
+
+@Composable
+private fun BookmarksSection(course: Course, onJump: (Bookmark) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text("Bookmarks", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.padding(top = 4.dp))
+        course.bookmarks.forEach { bm ->
+            val chapterTitle = course.chapters.firstOrNull { it.slug == bm.chapterSlug }?.let {
+                "Ch ${it.n}: ${it.title}"
+            } ?: bm.chapterSlug
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onJump(bm) }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("★  ", style = MaterialTheme.typography.bodyMedium)
+                Column(modifier = Modifier.padding(start = 4.dp)) {
+                    Text(chapterTitle, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "block ${bm.blockIndex} · saved ${bm.created}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
     }
 }

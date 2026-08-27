@@ -185,4 +185,43 @@ class CourseStoreTest {
         val store = CourseStore(tmp)
         assertNull(store.updateChapterStatus("no-such-course", 1, ChapterStatus.DONE))
     }
+
+    @Test
+    fun `addBookmark persists and is idempotent`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        val after1 = store.addBookmark("kotlin", "01-intro", 5, "2026-08-26")!!
+        assertEquals(1, after1.bookmarks.size)
+        assertEquals("01-intro", after1.bookmarks[0].chapterSlug)
+        assertEquals(5, after1.bookmarks[0].blockIndex)
+
+        // Same (chapter, block) again → no duplicate.
+        val after2 = store.addBookmark("kotlin", "01-intro", 5, "2026-08-27")!!
+        assertEquals(1, after2.bookmarks.size)
+
+        // Different block → separate bookmark.
+        val after3 = store.addBookmark("kotlin", "01-intro", 12, "2026-08-27")!!
+        assertEquals(2, after3.bookmarks.size)
+
+        // Reloading from disk still sees them.
+        val reloaded = store.load("kotlin")!!
+        assertEquals(2, reloaded.bookmarks.size)
+    }
+
+    @Test
+    fun `removeBookmark deletes matching entry only`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        store.addBookmark("kotlin", "01-intro", 3, "2026-08-26")
+        store.addBookmark("kotlin", "02-null", 7, "2026-08-26")
+
+        val after = store.removeBookmark("kotlin", "01-intro", 3)!!
+        assertEquals(1, after.bookmarks.size)
+        assertEquals("02-null", after.bookmarks[0].chapterSlug)
+
+        // Removing a missing bookmark is a no-op (course still returned).
+        val same = store.removeBookmark("kotlin", "nowhere", 99)!!
+        assertEquals(1, same.bookmarks.size)
+    }
 }
