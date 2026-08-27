@@ -187,8 +187,9 @@ private fun PagedContent(
             }
             val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
 
-            val firstBlockOnPage = pages.getOrNull(pageIndex)?.firstOrNull()
-            val firstBlockIndex = firstBlockOnPage?.let { blocks.indexOfFirst { b -> b === it } } ?: -1
+            // The block index of a page's first block is just the sum of block counts
+            // in all prior pages — paginate() preserves order and never splits blocks.
+            val firstBlockIndex = pages.take(pageIndex).sumOf { it.size }
             val isBookmarked = course?.bookmarks?.any {
                 it.chapterSlug == chapterSlug && it.blockIndex == firstBlockIndex
             } == true
@@ -198,9 +199,10 @@ private fun PagedContent(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .pointerInput(pages.size, menuOpen) {
+                        // pageIndex MUST be in the key list — without it, the tap closure
+                        // captures a stale pageIndex and every tap advances from 0.
+                        .pointerInput(pageIndex, pages.size, menuOpen) {
                             detectTapGestures { pos ->
-                                // Menu open swallows all taps outside itself into "dismiss".
                                 if (menuOpen) {
                                     onToggleMenu()
                                     return@detectTapGestures
@@ -209,16 +211,14 @@ private fun PagedContent(
                                 when {
                                     pos.x < third -> {
                                         if (pageIndex > 0) {
-                                            val prev = pages.getOrNull(pageIndex - 1)?.firstOrNull()
-                                            val idx = prev?.let { blocks.indexOfFirst { b -> b === it } } ?: 0
-                                            onAnchorChange(idx.coerceAtLeast(0))
+                                            val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
+                                            onAnchorChange(prevAnchor)
                                         }
                                     }
                                     pos.x > 2 * third -> {
                                         if (pageIndex < pages.size - 1) {
-                                            val next = pages.getOrNull(pageIndex + 1)?.firstOrNull()
-                                            val idx = next?.let { blocks.indexOfFirst { b -> b === it } } ?: 0
-                                            onAnchorChange(idx.coerceAtLeast(0))
+                                            val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
+                                            onAnchorChange(nextAnchor)
                                         }
                                     }
                                     else -> onToggleMenu()
@@ -227,8 +227,9 @@ private fun PagedContent(
                         },
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        pages.getOrNull(pageIndex)?.forEach { block ->
-                            val globalIdx = remember(block) { blocks.indexOfFirst { b -> b === block } }
+                        val pageStart = firstBlockIndex  // computed above, arithmetic
+                        pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
+                            val globalIdx = pageStart + i
                             RenderBlock(
                                 block = block,
                                 fontScale = fontScale,
