@@ -192,12 +192,10 @@ private fun PagedContent(
                         }
                     },
             ) {
-                // Content — reserve right margin so text doesn't run under the ribbon.
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(end = 32.dp),
-                ) {
+                // Content fills the box edge-to-edge. When a ribbon is present,
+                // it overlaps the top-right corner of text by a few characters —
+                // that's the physical-bookmark metaphor working as intended.
+                Column(modifier = Modifier.fillMaxSize()) {
                     pages.getOrNull(pageIndex)?.forEach { block ->
                         val globalIdx = remember(block) { blocks.indexOf(block) }
                         RenderBlock(
@@ -209,16 +207,16 @@ private fun PagedContent(
                     }
                 }
 
-                // Bookmark ribbon overlay — dangles from the top-right edge.
-                // The clickable inside wins over the parent detectTapGestures
-                // by z-order + child priority.
-                BookmarkRibbon(
+                // Invisible bookmark tap zone in the top-right corner. Renders
+                // a ribbon shape only when bookmarked. Clickable wins over the
+                // parent page-turn detectTapGestures (child priority).
+                BookmarkCorner(
                     isBookmarked = isBookmarked,
                     enabled = firstBlockIndex >= 0 && course != null,
                     modifier = Modifier.align(Alignment.TopEnd),
                     onToggle = {
-                        val c = course ?: return@BookmarkRibbon
-                        if (firstBlockIndex < 0) return@BookmarkRibbon
+                        val c = course ?: return@BookmarkCorner
+                        if (firstBlockIndex < 0) return@BookmarkCorner
                         val updated = if (isBookmarked) {
                             store.removeBookmark(c.slug, chapterSlug, firstBlockIndex)
                         } else {
@@ -284,48 +282,49 @@ private fun ReaderHeader(
 }
 
 /**
- * A bookmark ribbon dangling from the top-right of the page — filled when
- * bookmarked, ghost outline when not. Tap toggles. The clickable takes
- * priority over the parent tap-to-turn gesture because child pointer
- * handlers hit first.
+ * Invisible tap zone in the top-right corner (48×48dp — the platform tap
+ * target) that toggles a bookmark for the current page's first block.
+ * When bookmarked, a small ribbon is drawn dangling from the top edge —
+ * otherwise nothing renders and text flows underneath. Overlap with the
+ * top-right of text on bookmarked pages is intentional; that's how a
+ * physical bookmark works.
  */
 @Composable
-private fun BookmarkRibbon(
+private fun BookmarkCorner(
     isBookmarked: Boolean,
     enabled: Boolean,
     modifier: Modifier = Modifier,
     onToggle: () -> Unit,
 ) {
-    val bookmarkColor = if (isBookmarked) InkColor else Color(0x33111111)  // ghosted when off
     val interaction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
-            .padding(end = 12.dp)
-            .size(width = 22.dp, height = 32.dp)
+            .size(48.dp)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
                 indication = null,
             ) { onToggle() },
+        contentAlignment = Alignment.TopEnd,
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            // Ribbon shape: rectangle from top with a V-notch at the bottom edge.
-            val w = size.width
-            val h = size.height
-            val notch = h * 0.28f
-            val path = Path().apply {
-                moveTo(0f, 0f)
-                lineTo(w, 0f)
-                lineTo(w, h)
-                lineTo(w / 2, h - notch)
-                lineTo(0f, h)
-                close()
-            }
-            if (isBookmarked) {
-                drawPath(path, color = bookmarkColor)
-            } else {
-                // Ghost outline — only the outer edges, no fill.
-                drawPath(path, color = bookmarkColor, style = Stroke(width = 2f))
+        if (isBookmarked) {
+            Canvas(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(width = 16.dp, height = 22.dp),
+            ) {
+                val w = size.width
+                val h = size.height
+                val notch = h * 0.28f
+                val path = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(w, 0f)
+                    lineTo(w, h)
+                    lineTo(w / 2, h - notch)
+                    lineTo(0f, h)
+                    close()
+                }
+                drawPath(path, color = InkColor)
             }
         }
     }
