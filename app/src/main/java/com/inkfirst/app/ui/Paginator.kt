@@ -28,6 +28,7 @@ fun paginate(
     density: Density,
     measurer: TextMeasurer,
     fontScale: Float = 1.0f,
+    lineSpacing: Float = 1.0f,
 ): List<List<Block>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
 
@@ -36,7 +37,7 @@ fun paginate(
     var height = 0
 
     for (block in blocks) {
-        val h = estimateHeight(block, contentWidthPx, density, measurer, fontScale)
+        val h = estimateHeight(block, contentWidthPx, density, measurer, fontScale, lineSpacing)
         val pageIsEmpty = pages.last().isEmpty()
         if (height + h > contentHeightPx && !pageIsEmpty) {
             pages.add(mutableListOf())
@@ -73,6 +74,7 @@ private fun estimateHeight(
     density: Density,
     measurer: TextMeasurer,
     fontScale: Float,
+    lineSpacing: Float,
 ): Int = with(density) {
     when (block) {
         is Block.Heading -> {
@@ -87,7 +89,7 @@ private fun estimateHeight(
                 text = AnnotatedString(block.inlines.plainText()),
                 style = TextStyle(
                     fontSize = fontSize,
-                    lineHeight = fontSize * 1.2f,  // matches renderer's explicit lineHeight
+                    lineHeight = fontSize * 1.2f,  // headings ignore lineSpacing — always tight
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold,
                 ),
@@ -100,15 +102,15 @@ private fun estimateHeight(
                 text = AnnotatedString(block.inlines.plainText()),
                 style = TextStyle(
                     fontSize = 18.sp * fontScale,
-                    lineHeight = 30.sp * fontScale,
+                    lineHeight = 30.sp * fontScale * lineSpacing,
                     fontFamily = FontFamily.Serif,
                 ),
                 constraints = Constraints(maxWidth = widthPx),
             )
             result.size.height + 12.dp.toPx().toInt()
         }
-        is Block.BulletItem -> measureListItem(block.inlines, "• ", widthPx, density, measurer, fontScale)
-        is Block.OrderedItem -> measureListItem(block.inlines, "${block.n}. ", widthPx, density, measurer, fontScale)
+        is Block.BulletItem -> measureListItem(block.inlines, "• ", widthPx, density, measurer, fontScale, lineSpacing)
+        is Block.OrderedItem -> measureListItem(block.inlines, "${block.n}. ", widthPx, density, measurer, fontScale, lineSpacing)
         is Block.CustomFence -> {
             val innerWidth = widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
@@ -118,12 +120,12 @@ private fun estimateHeight(
             val bodyStyle = when (block.kind) {
                 "figure" -> TextStyle(
                     fontSize = 16.sp * fontScale,
-                    lineHeight = 26.sp * fontScale,
+                    lineHeight = 26.sp * fontScale * lineSpacing,
                     fontFamily = FontFamily.Serif,
                 )
                 else -> TextStyle(
                     fontSize = 17.sp * fontScale,
-                    lineHeight = 28.sp * fontScale,
+                    lineHeight = 28.sp * fontScale * lineSpacing,
                     fontFamily = FontFamily.Serif,
                 )
             }
@@ -132,7 +134,6 @@ private fun estimateHeight(
                 style = bodyStyle,
                 constraints = Constraints(maxWidth = innerWidth),
             )
-            // Label is a small sans-serif tag; scales with font too so it stays proportional.
             val label = (11.sp.toPx() * fontScale).toInt() + 6.dp.toPx().toInt()
             val exerciseExtra = if (block.kind == "exercise") 48.dp.toPx().toInt() else 0
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
@@ -152,12 +153,13 @@ private fun measureListItem(
     density: Density,
     measurer: TextMeasurer,
     fontScale: Float,
+    lineSpacing: Float,
 ): Int = with(density) {
     val result = measurer.measure(
         text = AnnotatedString(prefix + inlines.plainText()),
         style = TextStyle(
             fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale,
+            lineHeight = 30.sp * fontScale * lineSpacing,
             fontFamily = FontFamily.Serif,
         ),
         constraints = Constraints(maxWidth = widthPx - 8.dp.toPx().toInt()),

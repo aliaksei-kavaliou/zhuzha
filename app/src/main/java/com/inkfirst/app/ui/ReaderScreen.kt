@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.ReaderPrefs
+import com.inkfirst.app.data.TextAlignPref
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Block
 import com.inkfirst.core.Course
@@ -74,8 +76,9 @@ fun ReaderScreen(
     var course by remember { mutableStateOf<Course?>(null) }
     var markdown by remember { mutableStateOf<String?>(null) }
     var fontScale by remember { mutableStateOf(readerPrefs.getFontScale()) }
-    // Anchor to a block index rather than a page — that way font-scale changes
-    // (which repaginate) still land us on the same content.
+    var lineSpacing by remember { mutableStateOf(readerPrefs.getLineSpacing()) }
+    var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
+    var showFormatMenu by remember { mutableStateOf(false) }
     var anchorBlockIndex by remember { mutableStateOf(startBlockIndex.coerceAtLeast(0)) }
 
     LaunchedEffect(courseSlug, chapterSlug) {
@@ -96,14 +99,45 @@ fun ReaderScreen(
                 course = course,
                 chapterSlug = chapterSlug,
                 fontScale = fontScale,
+                lineSpacing = lineSpacing,
+                textAlign = textAlign,
                 anchorBlockIndex = anchorBlockIndex,
+                menuOpen = showFormatMenu,
                 onAnchorChange = { anchorBlockIndex = it },
+                onToggleMenu = { showFormatMenu = !showFormatMenu },
                 onBack = onBack,
-                onFontScaleChange = { newScale ->
-                    fontScale = newScale
-                    readerPrefs.setFontScale(newScale)
-                },
                 onBookmarkToggle = { newCourse -> course = newCourse ?: course },
+            )
+        }
+
+        if (showFormatMenu) {
+            FormatMenu(
+                fontScale = fontScale,
+                lineSpacing = lineSpacing,
+                textAlign = textAlign,
+                onFontSmaller = {
+                    val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
+                    if (idx > 0) {
+                        fontScale = ReaderPrefs.FONT_SCALES[idx - 1]
+                        readerPrefs.setFontScale(fontScale)
+                    }
+                },
+                onFontLarger = {
+                    val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
+                    if (idx < ReaderPrefs.FONT_SCALES.lastIndex) {
+                        fontScale = ReaderPrefs.FONT_SCALES[idx + 1]
+                        readerPrefs.setFontScale(fontScale)
+                    }
+                },
+                onLineSpacingChange = { newSpacing ->
+                    lineSpacing = newSpacing
+                    readerPrefs.setLineSpacing(newSpacing)
+                },
+                onTextAlignChange = { newAlign ->
+                    textAlign = newAlign
+                    readerPrefs.setTextAlign(newAlign)
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }
@@ -115,10 +149,13 @@ private fun PagedContent(
     course: Course?,
     chapterSlug: String,
     fontScale: Float,
+    lineSpacing: Float,
+    textAlign: TextAlignPref,
     anchorBlockIndex: Int,
+    menuOpen: Boolean,
     onAnchorChange: (Int) -> Unit,
+    onToggleMenu: () -> Unit,
     onBack: () -> Unit,
-    onFontScaleChange: (Float) -> Unit,
     onBookmarkToggle: (Course?) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -127,138 +164,121 @@ private fun PagedContent(
 
     val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val widthPx = with(density) { maxWidth.toPx().toInt() }
-        val availableHeightPx = with(density) { (maxHeight - 80.dp).toPx().toInt() }
+    Column(modifier = Modifier.fillMaxSize()) {
+        ReaderHeader(chapterN = chapterN, chapterCount = course?.chapters?.size, onBack = onBack)
 
-        val pages = remember(blocks, widthPx, availableHeightPx, fontScale) {
-            paginate(
-                blocks = blocks,
-                contentWidthPx = widthPx,
-                contentHeightPx = availableHeightPx,
-                density = density,
-                measurer = measurer,
-                fontScale = fontScale,
-            )
-        }
-        // pageIndex is derived from the anchor + pages — so font changes preserve position.
-        val pageIndex = remember(pages, anchorBlockIndex) {
-            findPageContainingBlock(pages, blocks, anchorBlockIndex).coerceAtLeast(0)
-        }
-        val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val widthPx = with(density) { maxWidth.toPx().toInt() }
+            val availableHeightPx = with(density) { (maxHeight - 40.dp).toPx().toInt() }
 
-        // Bookmark state for the current page's first block.
-        val firstBlockOnPage = pages.getOrNull(pageIndex)?.firstOrNull()
-        val firstBlockIndex = firstBlockOnPage?.let { blocks.indexOf(it) } ?: -1
-        val isBookmarked = course?.bookmarks?.any {
-            it.chapterSlug == chapterSlug && it.blockIndex == firstBlockIndex
-        } == true
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            ReaderHeader(
-                chapterN = chapterN,
-                chapterCount = course?.chapters?.size,
-                fontScale = fontScale,
-                onBack = onBack,
-                onFontSmaller = {
-                    val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
-                    if (idx > 0) onFontScaleChange(ReaderPrefs.FONT_SCALES[idx - 1])
-                },
-                onFontLarger = {
-                    val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
-                    if (idx < ReaderPrefs.FONT_SCALES.lastIndex) onFontScaleChange(ReaderPrefs.FONT_SCALES[idx + 1])
-                },
-            )
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .pointerInput(pages.size) {
-                        detectTapGestures { pos ->
-                            if (pos.x < size.width / 2) {
-                                if (pageIndex > 0) {
-                                    val prevPageFirstBlock = pages.getOrNull(pageIndex - 1)?.firstOrNull()
-                                    val idx = prevPageFirstBlock?.let { blocks.indexOf(it) } ?: 0
-                                    onAnchorChange(idx.coerceAtLeast(0))
-                                }
-                            } else {
-                                if (pageIndex < pages.size - 1) {
-                                    val nextPageFirstBlock = pages.getOrNull(pageIndex + 1)?.firstOrNull()
-                                    val idx = nextPageFirstBlock?.let { blocks.indexOf(it) } ?: 0
-                                    onAnchorChange(idx.coerceAtLeast(0))
-                                }
-                            }
-                        }
-                    },
-            ) {
-                // Content fills the box edge-to-edge. When a ribbon is present,
-                // it overlaps the top-right corner of text by a few characters —
-                // that's the physical-bookmark metaphor working as intended.
-                Column(modifier = Modifier.fillMaxSize()) {
-                    pages.getOrNull(pageIndex)?.forEach { block ->
-                        val globalIdx = remember(block) { blocks.indexOf(block) }
-                        RenderBlock(
-                            block = block,
-                            fontScale = fontScale,
-                            revealed = revealed[globalIdx] == true,
-                            onReveal = { revealed[globalIdx] = true },
-                        )
-                    }
-                }
-
-                // Invisible bookmark tap zone in the top-right corner. Renders
-                // a ribbon shape only when bookmarked. Clickable wins over the
-                // parent page-turn detectTapGestures (child priority).
-                BookmarkCorner(
-                    isBookmarked = isBookmarked,
-                    enabled = firstBlockIndex >= 0 && course != null,
-                    modifier = Modifier.align(Alignment.TopEnd),
-                    onToggle = {
-                        val c = course ?: return@BookmarkCorner
-                        if (firstBlockIndex < 0) return@BookmarkCorner
-                        val updated = if (isBookmarked) {
-                            store.removeBookmark(c.slug, chapterSlug, firstBlockIndex)
-                        } else {
-                            store.addBookmark(c.slug, chapterSlug, firstBlockIndex, LocalDate.now().toString())
-                        }
-                        onBookmarkToggle(updated)
-                    },
+            val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing) {
+                paginate(
+                    blocks = blocks,
+                    contentWidthPx = widthPx,
+                    contentHeightPx = availableHeightPx,
+                    density = density,
+                    measurer = measurer,
+                    fontScale = fontScale,
+                    lineSpacing = lineSpacing,
                 )
             }
+            val pageIndex = remember(pages, anchorBlockIndex) {
+                findPageContainingBlock(pages, blocks, anchorBlockIndex).coerceAtLeast(0)
+            }
+            val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (pages.isEmpty()) "" else "Page ${pageIndex + 1} of ${pages.size}",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "tap ← / → to turn",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
-                    textAlign = TextAlign.End,
-                )
+            val firstBlockOnPage = pages.getOrNull(pageIndex)?.firstOrNull()
+            val firstBlockIndex = firstBlockOnPage?.let { blocks.indexOfFirst { b -> b === it } } ?: -1
+            val isBookmarked = course?.bookmarks?.any {
+                it.chapterSlug == chapterSlug && it.blockIndex == firstBlockIndex
+            } == true
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .pointerInput(pages.size, menuOpen) {
+                            detectTapGestures { pos ->
+                                // Menu open swallows all taps outside itself into "dismiss".
+                                if (menuOpen) {
+                                    onToggleMenu()
+                                    return@detectTapGestures
+                                }
+                                val third = size.width / 3f
+                                when {
+                                    pos.x < third -> {
+                                        if (pageIndex > 0) {
+                                            val prev = pages.getOrNull(pageIndex - 1)?.firstOrNull()
+                                            val idx = prev?.let { blocks.indexOfFirst { b -> b === it } } ?: 0
+                                            onAnchorChange(idx.coerceAtLeast(0))
+                                        }
+                                    }
+                                    pos.x > 2 * third -> {
+                                        if (pageIndex < pages.size - 1) {
+                                            val next = pages.getOrNull(pageIndex + 1)?.firstOrNull()
+                                            val idx = next?.let { blocks.indexOfFirst { b -> b === it } } ?: 0
+                                            onAnchorChange(idx.coerceAtLeast(0))
+                                        }
+                                    }
+                                    else -> onToggleMenu()
+                                }
+                            }
+                        },
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        pages.getOrNull(pageIndex)?.forEach { block ->
+                            val globalIdx = remember(block) { blocks.indexOfFirst { b -> b === block } }
+                            RenderBlock(
+                                block = block,
+                                fontScale = fontScale,
+                                lineSpacing = lineSpacing,
+                                textAlign = textAlign,
+                                revealed = revealed[globalIdx] == true,
+                                onReveal = { revealed[globalIdx] = true },
+                            )
+                        }
+                    }
+
+                    BookmarkCorner(
+                        isBookmarked = isBookmarked,
+                        enabled = firstBlockIndex >= 0 && course != null,
+                        modifier = Modifier.align(Alignment.TopEnd),
+                        onToggle = {
+                            val c = course ?: return@BookmarkCorner
+                            if (firstBlockIndex < 0) return@BookmarkCorner
+                            val updated = if (isBookmarked) {
+                                store.removeBookmark(c.slug, chapterSlug, firstBlockIndex)
+                            } else {
+                                store.addBookmark(c.slug, chapterSlug, firstBlockIndex, LocalDate.now().toString())
+                            }
+                            onBookmarkToggle(updated)
+                        },
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (pages.isEmpty()) "" else "Page ${pageIndex + 1} of ${pages.size}",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "tap ← / center / → ",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                        textAlign = TextAlign.End,
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ReaderHeader(
-    chapterN: Int?,
-    chapterCount: Int?,
-    fontScale: Float,
-    onBack: () -> Unit,
-    onFontSmaller: () -> Unit,
-    onFontLarger: () -> Unit,
-) {
-    val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
-    val canShrink = idx > 0
-    val canGrow = idx < ReaderPrefs.FONT_SCALES.lastIndex
-
+private fun ReaderHeader(chapterN: Int?, chapterCount: Int?, onBack: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
@@ -271,62 +291,108 @@ private fun ReaderHeader(
                 style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
             )
         }
-        Spacer(Modifier.width(4.dp))
-        TextButton(onClick = onFontSmaller, enabled = canShrink) {
-            Text("A−", color = if (canShrink) InkColor else MutedColor)
-        }
-        TextButton(onClick = onFontLarger, enabled = canGrow) {
-            Text("A+", color = if (canGrow) InkColor else MutedColor)
-        }
     }
 }
 
 /**
- * Invisible tap zone in the top-right corner (48×48dp — the platform tap
- * target) that toggles a bookmark for the current page's first block.
- * When bookmarked, a small ribbon is drawn dangling from the top edge —
- * otherwise nothing renders and text flows underneath. Overlap with the
- * top-right of text on bookmarked pages is intentional; that's how a
- * physical bookmark works.
+ * Bottom-panel formatting menu. Opens on center-tap; dismissed by tapping
+ * anywhere outside (handled by the parent tap detector) or via one of its
+ * own controls without an explicit close button (feels lighter that way).
  */
 @Composable
-private fun BookmarkCorner(
-    isBookmarked: Boolean,
-    enabled: Boolean,
+private fun FormatMenu(
+    fontScale: Float,
+    lineSpacing: Float,
+    textAlign: TextAlignPref,
+    onFontSmaller: () -> Unit,
+    onFontLarger: () -> Unit,
+    onLineSpacingChange: (Float) -> Unit,
+    onTextAlignChange: (TextAlignPref) -> Unit,
     modifier: Modifier = Modifier,
-    onToggle: () -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    Box(
+    val canShrink = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) > 0
+    val canGrow = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) < ReaderPrefs.FONT_SCALES.lastIndex
+
+    Column(
         modifier = modifier
-            .size(48.dp)
-            .clickable(
-                enabled = enabled,
-                interactionSource = interaction,
-                indication = null,
-            ) { onToggle() },
-        contentAlignment = Alignment.TopEnd,
+            .fillMaxWidth()
+            .background(PaperColor)
+            .border(width = 1.dp, color = BorderColor)
+            // Consume taps so they don't bubble to the parent's dismiss handler.
+            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (isBookmarked) {
-            Canvas(
-                modifier = Modifier
-                    .padding(end = 8.dp)
-                    .size(width = 16.dp, height = 22.dp),
-            ) {
-                val w = size.width
-                val h = size.height
-                val notch = h * 0.28f
-                val path = Path().apply {
-                    moveTo(0f, 0f)
-                    lineTo(w, 0f)
-                    lineTo(w, h)
-                    lineTo(w / 2, h - notch)
-                    lineTo(0f, h)
-                    close()
-                }
-                drawPath(path, color = InkColor)
+        // Font size
+        MenuRow(label = "Font") {
+            TextButton(onClick = onFontSmaller, enabled = canShrink) {
+                Text("A−", fontSize = 16.sp, color = if (canShrink) InkColor else MutedColor)
+            }
+            Text(
+                text = "%.2fx".format(fontScale),
+                style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            TextButton(onClick = onFontLarger, enabled = canGrow) {
+                Text("A+", fontSize = 18.sp, color = if (canGrow) InkColor else MutedColor)
             }
         }
+
+        // Line spacing
+        MenuRow(label = "Spacing") {
+            ReaderPrefs.LINE_SPACINGS.forEachIndexed { i, v ->
+                SelectableChip(
+                    label = ReaderPrefs.LINE_SPACING_LABELS[i],
+                    selected = kotlin.math.abs(lineSpacing - v) < 0.01f,
+                    onClick = { onLineSpacingChange(v) },
+                )
+            }
+        }
+
+        // Alignment
+        MenuRow(label = "Align") {
+            TextAlignPref.entries.forEach { pref ->
+                SelectableChip(
+                    label = pref.label,
+                    selected = textAlign == pref,
+                    onClick = { onTextAlignChange(pref) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuRow(label: String, content: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium.copy(color = InkColor),
+            modifier = Modifier.width(70.dp),
+        )
+        content()
+    }
+}
+
+@Composable
+private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val border = if (selected) 1.dp else 0.dp
+    Box(
+        modifier = Modifier
+            .padding(end = 8.dp)
+            .then(
+                if (selected) Modifier.border(border, InkColor, RoundedCornerShape(4.dp))
+                else Modifier,
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = InkColor,
+        )
     }
 }
 
@@ -343,16 +409,23 @@ private fun List<Float>.indexOfNearest(value: Float): Int {
 }
 
 @Composable
-private fun RenderBlock(block: Block, fontScale: Float, revealed: Boolean, onReveal: () -> Unit) {
+private fun RenderBlock(
+    block: Block,
+    fontScale: Float,
+    lineSpacing: Float,
+    textAlign: TextAlignPref,
+    revealed: Boolean,
+    onReveal: () -> Unit,
+) {
     when (block) {
         is Block.Heading -> HeadingBlock(block, fontScale)
-        is Block.Paragraph -> ParagraphBlock(block.inlines, fontScale)
-        is Block.BulletItem -> ListItemBlock(prefix = "• ", inlines = block.inlines, fontScale = fontScale)
-        is Block.OrderedItem -> ListItemBlock(prefix = "${block.n}. ", inlines = block.inlines, fontScale = fontScale)
+        is Block.Paragraph -> ParagraphBlock(block.inlines, fontScale, lineSpacing, textAlign)
+        is Block.BulletItem -> ListItemBlock("• ", block.inlines, fontScale, lineSpacing)
+        is Block.OrderedItem -> ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing)
         is Block.CustomFence -> when (block.kind) {
-            "exercise" -> ExerciseBlock(block, fontScale, revealed = revealed, onReveal = onReveal)
-            "recap" -> RecapBlock(block, fontScale)
-            "figure" -> FigureBlock(block, fontScale)
+            "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal)
+            "recap" -> RecapBlock(block, fontScale, lineSpacing)
+            "figure" -> FigureBlock(block, fontScale, lineSpacing)
             else -> UnknownFenceBlock(block, fontScale)
         }
     }
@@ -373,53 +446,65 @@ private fun HeadingBlock(h: Block.Heading, fontScale: Float) {
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Bold,
         fontSize = fontSize,
-        lineHeight = fontSize * 1.2f,  // must be explicit; default is tight enough to overlap
+        lineHeight = fontSize * 1.2f,
         color = InkColor,
     )
     Spacer(Modifier.height(bottom))
 }
 
 @Composable
-private fun ParagraphBlock(inlines: List<Inline>, fontScale: Float) {
+private fun ParagraphBlock(
+    inlines: List<Inline>,
+    fontScale: Float,
+    lineSpacing: Float,
+    textAlign: TextAlignPref,
+) {
     Text(
         text = renderInlines(inlines),
         fontFamily = FontFamily.Serif,
         fontSize = 18.sp * fontScale,
-        lineHeight = 30.sp * fontScale,
+        lineHeight = 30.sp * fontScale * lineSpacing,
         color = InkColor,
-        modifier = Modifier.padding(bottom = 12.dp),
+        textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
     )
 }
 
 @Composable
-private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Float) {
+private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Float, lineSpacing: Float) {
     Row(modifier = Modifier.padding(start = 8.dp, bottom = 6.dp)) {
         Text(
             text = prefix,
             fontFamily = FontFamily.Serif,
             fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale,
+            lineHeight = 30.sp * fontScale * lineSpacing,
             color = InkColor,
         )
         Text(
             text = renderInlines(inlines),
             fontFamily = FontFamily.Serif,
             fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale,
+            lineHeight = 30.sp * fontScale * lineSpacing,
             color = InkColor,
         )
     }
 }
 
 @Composable
-private fun ExerciseBlock(f: Block.CustomFence, fontScale: Float, revealed: Boolean, onReveal: () -> Unit) {
+private fun ExerciseBlock(
+    f: Block.CustomFence,
+    fontScale: Float,
+    lineSpacing: Float,
+    revealed: Boolean,
+    onReveal: () -> Unit,
+) {
     val (question, answer) = splitExerciseBody(f.body)
     BorderedBlock(label = "TRY THIS", fontScale = fontScale) {
         Text(
             text = question,
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
-            lineHeight = 28.sp * fontScale,
+            lineHeight = 28.sp * fontScale * lineSpacing,
             color = InkColor,
         )
         Spacer(Modifier.height(8.dp))
@@ -429,7 +514,7 @@ private fun ExerciseBlock(f: Block.CustomFence, fontScale: Float, revealed: Bool
                     text = "Answer: $answer",
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp * fontScale,
-                    lineHeight = 26.sp * fontScale,
+                    lineHeight = 26.sp * fontScale * lineSpacing,
                     fontStyle = FontStyle.Italic,
                     color = InkColor,
                 )
@@ -441,27 +526,27 @@ private fun ExerciseBlock(f: Block.CustomFence, fontScale: Float, revealed: Bool
 }
 
 @Composable
-private fun RecapBlock(f: Block.CustomFence, fontScale: Float) {
+private fun RecapBlock(f: Block.CustomFence, fontScale: Float, lineSpacing: Float) {
     BorderedBlock(label = "RECAP", fontScale = fontScale) {
         Text(
             text = f.body.trim(),
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
-            lineHeight = 28.sp * fontScale,
+            lineHeight = 28.sp * fontScale * lineSpacing,
             color = InkColor,
         )
     }
 }
 
 @Composable
-private fun FigureBlock(f: Block.CustomFence, fontScale: Float) {
+private fun FigureBlock(f: Block.CustomFence, fontScale: Float, lineSpacing: Float) {
     val alt = f.params["alt"] ?: f.body.trim().ifBlank { "(figure)" }
     BorderedBlock(label = "FIGURE", fontScale = fontScale) {
         Text(
             text = alt,
             fontFamily = FontFamily.Serif,
             fontSize = 16.sp * fontScale,
-            lineHeight = 26.sp * fontScale,
+            lineHeight = 26.sp * fontScale * lineSpacing,
             fontStyle = FontStyle.Italic,
             color = MutedColor,
             textAlign = TextAlign.Center,
@@ -503,6 +588,47 @@ private fun BorderedBlock(label: String, fontScale: Float, content: @Composable 
         content()
     }
     Spacer(Modifier.height(4.dp))
+}
+
+@Composable
+private fun BookmarkCorner(
+    isBookmarked: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onToggle: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+            ) { onToggle() },
+        contentAlignment = Alignment.TopEnd,
+    ) {
+        if (isBookmarked) {
+            Canvas(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(width = 16.dp, height = 22.dp),
+            ) {
+                val w = size.width
+                val h = size.height
+                val notch = h * 0.28f
+                val path = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(w, 0f)
+                    lineTo(w, h)
+                    lineTo(w / 2, h - notch)
+                    lineTo(0f, h)
+                    close()
+                }
+                drawPath(path, color = InkColor)
+            }
+        }
+    }
 }
 
 private fun splitExerciseBody(body: String): Pair<String, String> {
