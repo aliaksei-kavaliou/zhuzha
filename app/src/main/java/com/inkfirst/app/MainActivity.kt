@@ -21,9 +21,13 @@ private object Routes {
     const val LIBRARY = "library"
     const val SETTINGS = "settings"
     const val NEW_COURSE = "new-course"
-    const val COURSE_DETAIL = "course/{slug}"
+    // A trailing "/-" segment means "no current chapter" (from the Library entry).
+    // From the Reader menu we pass the current chapterSlug so the Contents page
+    // can highlight the "you are here" row.
+    const val COURSE_DETAIL = "course/{slug}/{currentChapter}"
     const val READER = "reader/{courseSlug}/{chapterSlug}/{blockIndex}"
-    fun courseDetail(slug: String) = "course/$slug"
+    fun courseDetail(slug: String, currentChapter: String? = null) =
+        "course/$slug/${currentChapter?.takeIf { it.isNotBlank() } ?: "-"}"
     fun reader(courseSlug: String, chapterSlug: String, blockIndex: Int = 0) =
         "reader/$courseSlug/$chapterSlug/$blockIndex"
 }
@@ -67,8 +71,11 @@ private fun InkFirstApp() {
         }
         composable(Routes.COURSE_DETAIL) { entry ->
             val slug = entry.arguments?.getString("slug").orEmpty()
+            val currentChapter = entry.arguments?.getString("currentChapter")
+                ?.takeIf { it != "-" && it.isNotBlank() }
             CourseDetailScreen(
                 slug = slug,
+                currentChapterSlug = currentChapter,
                 onBack = { nav.popBackStack() },
                 onReadChapter = { chapterSlug, blockIndex ->
                     nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
@@ -84,6 +91,9 @@ private fun InkFirstApp() {
                 chapterSlug = chapterSlug,
                 startBlockIndex = blockIndex,
                 onBack = { nav.popBackStack() },
+                onOpenContents = {
+                    nav.navigate(Routes.courseDetail(courseSlug, chapterSlug))
+                },
             )
         }
     }

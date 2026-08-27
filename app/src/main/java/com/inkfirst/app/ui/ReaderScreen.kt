@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ fun ReaderScreen(
     chapterSlug: String,
     startBlockIndex: Int = 0,
     onBack: () -> Unit,
+    onOpenContents: () -> Unit,
 ) {
     val context = LocalContext.current
     val store = rememberCourseStore()
@@ -115,6 +117,10 @@ fun ReaderScreen(
                 fontScale = fontScale,
                 lineSpacing = lineSpacing,
                 textAlign = textAlign,
+                onOpenContents = {
+                    showFormatMenu = false
+                    onOpenContents()
+                },
                 onFontSmaller = {
                     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
                     if (idx > 0) {
@@ -305,6 +311,7 @@ private fun FormatMenu(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    onOpenContents: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
     onLineSpacingChange: (Float) -> Unit,
@@ -324,6 +331,22 @@ private fun FormatMenu(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Contents jump
+        MenuRow(label = "Go to") {
+            Box(
+                modifier = Modifier
+                    .clickable { onOpenContents() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Contents",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkColor,
+                )
+            }
+        }
+
         // Font size
         MenuRow(label = "Font") {
             TextButton(onClick = onFontSmaller, enabled = canShrink) {
@@ -462,11 +485,14 @@ private fun ParagraphBlock(
 ) {
     Text(
         text = renderInlines(inlines),
-        fontFamily = FontFamily.Serif,
-        fontSize = 18.sp * fontScale,
-        lineHeight = 30.sp * fontScale * lineSpacing,
-        color = InkColor,
-        textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
+        style = androidx.compose.ui.text.TextStyle(
+            fontFamily = FontFamily.Serif,
+            fontSize = 18.sp * fontScale,
+            lineHeight = 30.sp * fontScale * lineSpacing,
+            color = InkColor,
+            textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
+            hyphens = Hyphens.Auto,
+        ),
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
     )
 }

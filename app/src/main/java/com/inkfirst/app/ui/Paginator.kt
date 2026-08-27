@@ -5,6 +5,7 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -125,6 +126,7 @@ private fun estimateHeight(
                     fontSize = 18.sp * fontScale,
                     lineHeight = 30.sp * fontScale * lineSpacing,
                     fontFamily = FontFamily.Serif,
+                    hyphens = Hyphens.Auto,  // match renderer or line count drifts
                 ),
                 constraints = Constraints(maxWidth = widthPx),
             )
