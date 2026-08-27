@@ -32,14 +32,35 @@ fun paginate(
 ): List<List<Block>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
 
+    // Safety margin: TextMeasurer under-counts by a few px (font metric slop,
+    // sub-pixel rounding, layout-padding merge). 5% shaved off avoids the last
+    // line of a paragraph falling off the visible box. Costs at most 1 extra
+    // page per ~20 in the chapter.
+    val budget = (contentHeightPx * 0.95f).toInt()
+
     val pages = mutableListOf<MutableList<Block>>()
     pages.add(mutableListOf())
     var height = 0
 
-    for (block in blocks) {
+    for (i in blocks.indices) {
+        val block = blocks[i]
         val h = estimateHeight(block, contentWidthPx, density, measurer, fontScale, lineSpacing)
+
+        // Keep-with-next: don't orphan a heading at the bottom of a page. If a
+        // heading is about to land and the block after it wouldn't fit on the
+        // same page, push the heading to the next page too — as long as the pair
+        // actually fits together on an empty page (otherwise we'd loop).
+        val requiredHeight = if (block is Block.Heading && i + 1 < blocks.size) {
+            val nextH = estimateHeight(
+                blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing,
+            )
+            if (h + nextH <= budget) h + nextH else h
+        } else {
+            h
+        }
+
         val pageIsEmpty = pages.last().isEmpty()
-        if (height + h > contentHeightPx && !pageIsEmpty) {
+        if (height + requiredHeight > budget && !pageIsEmpty) {
             pages.add(mutableListOf())
             height = 0
         }
