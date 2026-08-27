@@ -1,8 +1,11 @@
 package com.inkfirst.app.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -153,8 +159,6 @@ private fun PagedContent(
                 chapterN = chapterN,
                 chapterCount = course?.chapters?.size,
                 fontScale = fontScale,
-                isBookmarked = isBookmarked,
-                canBookmark = firstBlockIndex >= 0 && course != null,
                 onBack = onBack,
                 onFontSmaller = {
                     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
@@ -163,16 +167,6 @@ private fun PagedContent(
                 onFontLarger = {
                     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
                     if (idx < ReaderPrefs.FONT_SCALES.lastIndex) onFontScaleChange(ReaderPrefs.FONT_SCALES[idx + 1])
-                },
-                onBookmarkToggle = {
-                    val c = course ?: return@ReaderHeader
-                    if (firstBlockIndex < 0) return@ReaderHeader
-                    val updated = if (isBookmarked) {
-                        store.removeBookmark(c.slug, chapterSlug, firstBlockIndex)
-                    } else {
-                        store.addBookmark(c.slug, chapterSlug, firstBlockIndex, LocalDate.now().toString())
-                    }
-                    onBookmarkToggle(updated)
                 },
             )
 
@@ -198,7 +192,12 @@ private fun PagedContent(
                         }
                     },
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                // Content — reserve right margin so text doesn't run under the ribbon.
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(end = 32.dp),
+                ) {
                     pages.getOrNull(pageIndex)?.forEach { block ->
                         val globalIdx = remember(block) { blocks.indexOf(block) }
                         RenderBlock(
@@ -209,6 +208,25 @@ private fun PagedContent(
                         )
                     }
                 }
+
+                // Bookmark ribbon overlay — dangles from the top-right edge.
+                // The clickable inside wins over the parent detectTapGestures
+                // by z-order + child priority.
+                BookmarkRibbon(
+                    isBookmarked = isBookmarked,
+                    enabled = firstBlockIndex >= 0 && course != null,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    onToggle = {
+                        val c = course ?: return@BookmarkRibbon
+                        if (firstBlockIndex < 0) return@BookmarkRibbon
+                        val updated = if (isBookmarked) {
+                            store.removeBookmark(c.slug, chapterSlug, firstBlockIndex)
+                        } else {
+                            store.addBookmark(c.slug, chapterSlug, firstBlockIndex, LocalDate.now().toString())
+                        }
+                        onBookmarkToggle(updated)
+                    },
+                )
             }
 
             Row(
@@ -235,12 +253,9 @@ private fun ReaderHeader(
     chapterN: Int?,
     chapterCount: Int?,
     fontScale: Float,
-    isBookmarked: Boolean,
-    canBookmark: Boolean,
     onBack: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
-    onBookmarkToggle: () -> Unit,
 ) {
     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
     val canShrink = idx > 0
@@ -259,18 +274,59 @@ private fun ReaderHeader(
             )
         }
         Spacer(Modifier.width(4.dp))
-        TextButton(onClick = onBookmarkToggle, enabled = canBookmark) {
-            Text(
-                text = if (isBookmarked) "★" else "☆",
-                fontSize = 20.sp,
-                color = if (canBookmark) InkColor else MutedColor,
-            )
-        }
         TextButton(onClick = onFontSmaller, enabled = canShrink) {
             Text("A−", color = if (canShrink) InkColor else MutedColor)
         }
         TextButton(onClick = onFontLarger, enabled = canGrow) {
             Text("A+", color = if (canGrow) InkColor else MutedColor)
+        }
+    }
+}
+
+/**
+ * A bookmark ribbon dangling from the top-right of the page — filled when
+ * bookmarked, ghost outline when not. Tap toggles. The clickable takes
+ * priority over the parent tap-to-turn gesture because child pointer
+ * handlers hit first.
+ */
+@Composable
+private fun BookmarkRibbon(
+    isBookmarked: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onToggle: () -> Unit,
+) {
+    val bookmarkColor = if (isBookmarked) InkColor else Color(0x33111111)  // ghosted when off
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .padding(end = 12.dp)
+            .size(width = 22.dp, height = 32.dp)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+            ) { onToggle() },
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Ribbon shape: rectangle from top with a V-notch at the bottom edge.
+            val w = size.width
+            val h = size.height
+            val notch = h * 0.28f
+            val path = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(w, 0f)
+                lineTo(w, h)
+                lineTo(w / 2, h - notch)
+                lineTo(0f, h)
+                close()
+            }
+            if (isBookmarked) {
+                drawPath(path, color = bookmarkColor)
+            } else {
+                // Ghost outline — only the outer edges, no fill.
+                drawPath(path, color = bookmarkColor, style = Stroke(width = 2f))
+            }
         }
     }
 }
