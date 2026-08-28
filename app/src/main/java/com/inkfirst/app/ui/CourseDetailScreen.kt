@@ -344,14 +344,9 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
                 lineHeight = 22.sp,
                 color = InkColor,
             )
-            Text(
-                text = "~${chapter.estMinutes} min · ${statusLabel(chapter.status)}",
-                fontFamily = FontFamily.Serif,
-                fontStyle = FontStyle.Italic,
-                fontSize = 12.sp,
-                color = MutedColor,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            // Details (est-minutes, status) intentionally omitted here — TOC stays
+            // scannable; the meta line renders as an intro at the start of the
+            // chapter itself instead.
             if (entry.genRunning) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                     CircularProgressIndicator(modifier = Modifier.padding(end = 6.dp).height(14.dp))
@@ -412,7 +407,7 @@ private fun BookmarkEntryBlock(entry: TocBlock.BookmarkEntry, onTap: (Bookmark) 
     }
 }
 
-private fun statusLabel(status: ChapterStatus): String = when (status) {
+internal fun statusLabel(status: ChapterStatus): String = when (status) {
     ChapterStatus.PENDING -> "not compiled"
     ChapterStatus.GENERATED -> "unread"
     ChapterStatus.READING -> "reading"
@@ -491,11 +486,10 @@ private fun estimateTocBlockHeight(
                 ),
                 constraints = Constraints(maxWidth = titleWidth),
             )
-            val subtitleH = (12.sp.toPx() * 1.3f).toInt() + 2.dp.toPx().toInt()
             val padding = 8.dp.toPx().toInt() * 2  // Row vertical padding
             val genExtra = if (block.genRunning) 24.dp.toPx().toInt() else 0
             val errorExtra = if (block.genError != null) 40.dp.toPx().toInt() else 0
-            titleResult.size.height + subtitleH + padding + genExtra + errorExtra
+            titleResult.size.height + padding + genExtra + errorExtra
         }
         is TocBlock.BookmarkEntry -> {
             // One line: "Ch 1 · block 5    2026-08-27". ~14sp + row padding.

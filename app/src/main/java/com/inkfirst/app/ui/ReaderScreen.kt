@@ -88,7 +88,21 @@ fun ReaderScreen(
         markdown = store.readChapter(courseSlug, chapterSlug)
     }
 
-    val blocks = remember(markdown) { markdown?.let { parseMarkdown(it) } ?: emptyList() }
+    val chapter = course?.chapters?.firstOrNull { it.slug == chapterSlug }
+    val blocks = remember(markdown, chapter) {
+        val parsed = markdown?.let { parseMarkdown(it) } ?: emptyList()
+        if (chapter == null || parsed.isEmpty()) parsed
+        else {
+            // Small italic intro line — shows est-minutes + status once at the
+            // start of the chapter so the TOC can stay clean.
+            val meta = Block.CustomFence(
+                kind = "meta",
+                params = emptyMap(),
+                body = "~${chapter.estMinutes} min · ${statusLabel(chapter.status)}",
+            )
+            listOf(meta) + parsed
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -450,6 +464,7 @@ private fun RenderBlock(
             "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal)
             "recap" -> RecapBlock(block, fontScale, lineSpacing)
             "figure" -> FigureBlock(block, fontScale, lineSpacing)
+            "meta" -> MetaBlock(block, fontScale)
             else -> UnknownFenceBlock(block, fontScale)
         }
     }
@@ -580,6 +595,21 @@ private fun FigureBlock(f: Block.CustomFence, fontScale: Float, lineSpacing: Flo
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         )
     }
+}
+
+@Composable
+private fun MetaBlock(f: Block.CustomFence, fontScale: Float) {
+    // Small italic muted line at the top of the chapter — the transplanted
+    // TOC subtitle. Not a bordered box; it should feel like a byline, not a
+    // block.
+    Text(
+        text = f.body,
+        fontFamily = FontFamily.Serif,
+        fontStyle = FontStyle.Italic,
+        fontSize = 13.sp * fontScale,
+        color = MutedColor,
+        modifier = Modifier.padding(bottom = 8.dp),
+    )
 }
 
 @Composable

@@ -135,6 +135,19 @@ private fun estimateHeight(
         is Block.BulletItem -> measureListItem(block.inlines, "• ", widthPx, density, measurer, fontScale, lineSpacing)
         is Block.OrderedItem -> measureListItem(block.inlines, "${block.n}. ", widthPx, density, measurer, fontScale, lineSpacing)
         is Block.CustomFence -> {
+            // Meta byline: single line, no border, no label.
+            if (block.kind == "meta") {
+                val result = measurer.measure(
+                    text = AnnotatedString(block.body),
+                    style = TextStyle(
+                        fontSize = 13.sp * fontScale,
+                        lineHeight = 17.sp * fontScale,
+                        fontFamily = FontFamily.Serif,
+                    ),
+                    constraints = Constraints(maxWidth = widthPx),
+                )
+                return@with result.size.height + 8.dp.toPx().toInt()
+            }
             val innerWidth = widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
