@@ -378,35 +378,37 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
 
 @Composable
 private fun BookmarkEntryBlock(entry: TocBlock.BookmarkEntry, onTap: (Bookmark) -> Unit) {
+    // Compact display — the full chapter title is already right above in
+    // the Contents section, no need to repeat it here.
+    val chapterLabel = entry.chapterTitle.substringBefore(":").trim()  // "Ch 1"
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onTap(entry.bookmark) }
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.Top,
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "▪",
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
             color = InkColor,
-            modifier = Modifier.padding(end = 8.dp, top = 2.dp),
+            modifier = Modifier.padding(end = 8.dp),
         )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = entry.chapterTitle,
-                fontFamily = FontFamily.Serif,
-                fontSize = 15.sp,
-                color = InkColor,
-            )
-            Text(
-                text = "saved ${entry.bookmark.created}",
-                fontFamily = FontFamily.Serif,
-                fontStyle = FontStyle.Italic,
-                fontSize = 12.sp,
-                color = MutedColor,
-            )
-        }
+        Text(
+            text = "$chapterLabel · block ${entry.bookmark.blockIndex}",
+            fontFamily = FontFamily.Serif,
+            fontSize = 14.sp,
+            color = InkColor,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = entry.bookmark.created,
+            fontFamily = FontFamily.Serif,
+            fontStyle = FontStyle.Italic,
+            fontSize = 12.sp,
+            color = MutedColor,
+        )
     }
 }
 
@@ -432,7 +434,10 @@ private fun paginateToc(
     measurer: TextMeasurer,
 ): List<List<TocBlock>> {
     if (blocks.isEmpty()) return listOf(emptyList())
-    val budget = (availableHeightPx * 0.95f).toInt()
+    // 10% shave for the same reason the reader paginator uses one: TextMeasurer
+    // undercounts by a few pixels per block, enough over ~5 blocks to push a
+    // row's subtitle off the visible edge.
+    val budget = (availableHeightPx * 0.90f).toInt()
     val pages = mutableListOf<MutableList<TocBlock>>()
     pages.add(mutableListOf())
     var height = 0
@@ -493,18 +498,8 @@ private fun estimateTocBlockHeight(
             titleResult.size.height + subtitleH + padding + genExtra + errorExtra
         }
         is TocBlock.BookmarkEntry -> {
-            val titleWidth = (contentWidthPx - 20.dp.toPx().toInt()).coerceAtLeast(1)
-            val titleResult = measurer.measure(
-                text = AnnotatedString(block.chapterTitle),
-                style = TextStyle(
-                    fontSize = 15.sp, lineHeight = 20.sp,
-                    fontFamily = FontFamily.Serif,
-                ),
-                constraints = Constraints(maxWidth = titleWidth),
-            )
-            val subtitleH = (12.sp.toPx() * 1.3f).toInt()
-            val padding = 6.dp.toPx().toInt() * 2
-            titleResult.size.height + subtitleH + padding
+            // One line: "Ch 1 · block 5    2026-08-27". ~14sp + row padding.
+            (14.sp.toPx() * 1.3f).toInt() + 4.dp.toPx().toInt() * 2
         }
     }
 }
