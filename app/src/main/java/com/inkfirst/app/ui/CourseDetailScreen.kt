@@ -31,10 +31,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -190,12 +195,17 @@ private fun PagedContents(
     onBookmarkTap: (Bookmark) -> Unit,
 ) {
     val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val availableHeightPx = with(density) { (maxHeight - 32.dp).toPx().toInt() }
+        // Content width = full width minus the two 44dp edge tap zones.
+        val contentWidthPx = with(density) {
+            (maxWidth - TocEdgeTapWidth * 2).toPx().toInt().coerceAtLeast(1)
+        }
 
-        val pages = remember(blocks, availableHeightPx) {
-            paginateToc(blocks, availableHeightPx, density)
+        val pages = remember(blocks, availableHeightPx, contentWidthPx) {
+            paginateToc(blocks, contentWidthPx, availableHeightPx, density, measurer)
         }
         var pageIndex by remember(pages) { mutableStateOf(0) }
         val hasPrev = pageIndex > 0
@@ -407,18 +417,19 @@ private fun statusLabel(status: ChapterStatus): String = when (status) {
     ChapterStatus.DONE -> "read"
 }
 
-// Fixed per-block heights (dp). Rough enough — Contents pages don't need
-// the pixel accuracy the chapter paginator does, because chapters/bookmarks
-// are all small and homogeneous.
-private const val HEIGHT_BOOK_TITLE_DP = 128
-private const val HEIGHT_SECTION_HEADER_DP = 40
-private const val HEIGHT_CHAPTER_ENTRY_DP = 88
-private const val HEIGHT_BOOKMARK_ENTRY_DP = 60
-
+/**
+ * Contents pagination. Titles wrap unpredictably at emulator/phone widths, so
+ * we can't fake it with fixed heights — that's how chapter 3 fell off the
+ * bottom of page 1. We measure the title text at the actual content width
+ * (which is what the row will render at) and add fixed heights only for
+ * subtitles/padding/status lines.
+ */
 private fun paginateToc(
     blocks: List<TocBlock>,
+    contentWidthPx: Int,
     availableHeightPx: Int,
     density: Density,
+    measurer: TextMeasurer,
 ): List<List<TocBlock>> {
     if (blocks.isEmpty()) return listOf(emptyList())
     val budget = (availableHeightPx * 0.95f).toInt()
@@ -426,19 +437,7 @@ private fun paginateToc(
     pages.add(mutableListOf())
     var height = 0
     for (block in blocks) {
-        val h = with(density) {
-            when (block) {
-                is TocBlock.BookTitle -> HEIGHT_BOOK_TITLE_DP.dp.toPx().toInt()
-                is TocBlock.SectionHeader -> HEIGHT_SECTION_HEADER_DP.dp.toPx().toInt()
-                is TocBlock.ChapterEntry -> {
-                    var extra = 0
-                    if (block.genRunning) extra += 24
-                    if (block.genError != null) extra += 40
-                    (HEIGHT_CHAPTER_ENTRY_DP + extra).dp.toPx().toInt()
-                }
-                is TocBlock.BookmarkEntry -> HEIGHT_BOOKMARK_ENTRY_DP.dp.toPx().toInt()
-            }
-        }
+        val h = estimateTocBlockHeight(block, contentWidthPx, density, measurer)
         val pageEmpty = pages.last().isEmpty()
         if (height + h > budget && !pageEmpty) {
             pages.add(mutableListOf())
@@ -448,6 +447,66 @@ private fun paginateToc(
         height += h
     }
     return pages.map { it.toList() }
+}
+
+private fun estimateTocBlockHeight(
+    block: TocBlock,
+    contentWidthPx: Int,
+    density: Density,
+    measurer: TextMeasurer,
+): Int = with(density) {
+    when (block) {
+        is TocBlock.BookTitle -> {
+            val titleResult = measurer.measure(
+                text = AnnotatedString(block.title),
+                style = TextStyle(
+                    fontSize = 26.sp, lineHeight = 32.sp,
+                    fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold,
+                ),
+                constraints = Constraints(maxWidth = contentWidthPx),
+            )
+            // 16dp top spacer + 6dp gap + subtitle (~1 line at 13sp) + 16dp bottom spacer.
+            val subtitleH = (13.sp.toPx() * 1.3f).toInt()
+            16.dp.toPx().toInt() + titleResult.size.height + 6.dp.toPx().toInt() +
+                subtitleH + 16.dp.toPx().toInt()
+        }
+        is TocBlock.SectionHeader -> {
+            // 12dp top spacer + label height + 6dp bottom spacer.
+            12.dp.toPx().toInt() + (12.sp.toPx() * 1.3f).toInt() + 6.dp.toPx().toInt()
+        }
+        is TocBlock.ChapterEntry -> {
+            // Row layout leaves ~24dp for the marker column; that shrinks the title width.
+            val titleWidth = (contentWidthPx - 24.dp.toPx().toInt()).coerceAtLeast(1)
+            val titleResult = measurer.measure(
+                text = AnnotatedString("${block.chapter.n}. ${block.chapter.title}"),
+                style = TextStyle(
+                    fontSize = 16.sp, lineHeight = 22.sp,
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = if (block.isCurrent) FontWeight.Bold else FontWeight.Normal,
+                ),
+                constraints = Constraints(maxWidth = titleWidth),
+            )
+            val subtitleH = (12.sp.toPx() * 1.3f).toInt() + 2.dp.toPx().toInt()
+            val padding = 8.dp.toPx().toInt() * 2  // Row vertical padding
+            val genExtra = if (block.genRunning) 24.dp.toPx().toInt() else 0
+            val errorExtra = if (block.genError != null) 40.dp.toPx().toInt() else 0
+            titleResult.size.height + subtitleH + padding + genExtra + errorExtra
+        }
+        is TocBlock.BookmarkEntry -> {
+            val titleWidth = (contentWidthPx - 20.dp.toPx().toInt()).coerceAtLeast(1)
+            val titleResult = measurer.measure(
+                text = AnnotatedString(block.chapterTitle),
+                style = TextStyle(
+                    fontSize = 15.sp, lineHeight = 20.sp,
+                    fontFamily = FontFamily.Serif,
+                ),
+                constraints = Constraints(maxWidth = titleWidth),
+            )
+            val subtitleH = (12.sp.toPx() * 1.3f).toInt()
+            val padding = 6.dp.toPx().toInt() * 2
+            titleResult.size.height + subtitleH + padding
+        }
+    }
 }
 
 private fun startGenerate(
