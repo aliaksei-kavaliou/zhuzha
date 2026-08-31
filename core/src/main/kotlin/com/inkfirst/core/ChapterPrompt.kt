@@ -42,6 +42,7 @@ internal fun buildChapterPrompt(
     appendLine("  - ```figure alt=\"…\" ``` for figure slots — alt text only (images come later).")
     appendLine("- Where a metaphor or term from an earlier chapter helps, reuse it explicitly.")
     appendLine("- Do NOT restate the outline or objectives — just write the chapter.")
+    appendLine("- Punctuation: put a space on each side of every em-dash. Write \"word — word\", not \"word—word\" or \"word---word\". This reads more comfortably on narrow e-ink pages.")
 }
 
 /**

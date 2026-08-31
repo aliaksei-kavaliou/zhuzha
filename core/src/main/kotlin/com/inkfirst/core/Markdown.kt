@@ -29,6 +29,12 @@ sealed interface Inline {
  * are treated as literal characters.
  */
 fun parseMarkdown(input: String): List<Block> {
+    // Book-typography normalization: em-dashes (U+2014) read tightly on narrow
+    // e-ink pages when used US-style (word—word). Force a space on each side —
+    // matches UK convention and dodges cramped renders. Regular hyphens ("-")
+    // used for compound modifiers (brand-new) are untouched.
+    val normalized = input.replace(Regex("\\s*—\\s*"), " — ")
+
     val blocks = mutableListOf<Block>()
     val paragraphBuf = mutableListOf<String>()
 
@@ -39,7 +45,7 @@ fun parseMarkdown(input: String): List<Block> {
         }
     }
 
-    val lines = input.lines()
+    val lines = normalized.lines()
     var i = 0
     while (i < lines.size) {
         val line = lines[i]
