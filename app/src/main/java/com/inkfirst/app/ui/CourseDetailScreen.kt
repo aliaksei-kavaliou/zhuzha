@@ -77,7 +77,10 @@ fun CourseDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onBack) { Text("← Back", color = InkColor) }
+                // Same idea as the Reader's "≡ Contents" — label the destination
+                // instead of the direction. Popping back from Contents lands on
+                // the Library shelf.
+                TextButton(onClick = onBack) { Text("≡ Library", color = InkColor) }
             }
 
             val c = course

@@ -92,7 +92,14 @@ private fun InkFirstApp() {
                 startBlockIndex = blockIndex,
                 onBack = { nav.popBackStack() },
                 onOpenContents = {
-                    nav.navigate(Routes.courseDetail(courseSlug, chapterSlug))
+                    // Reader → Contents shouldn't stack a new Contents entry each
+                    // time; pop any existing Contents off first so the back stack
+                    // stays flat (Library → Contents → Reader), and the new
+                    // Contents entry can pass the current-chapter highlight.
+                    nav.navigate(Routes.courseDetail(courseSlug, chapterSlug)) {
+                        popUpTo(Routes.COURSE_DETAIL) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 },
                 onOpenChapter = { newChapterSlug, newBlockIndex ->
                     nav.navigate(Routes.reader(courseSlug, newChapterSlug, newBlockIndex)) {
