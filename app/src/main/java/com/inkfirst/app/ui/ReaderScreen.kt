@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,19 +53,32 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.inkfirst.app.data.ApiKeyStore
 import com.inkfirst.app.data.ReaderPrefs
 import com.inkfirst.app.data.TextAlignPref
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Block
+import com.inkfirst.core.ChapterGenerator
+import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
 import com.inkfirst.core.Inline
+import com.inkfirst.core.KtorGeminiClient
+import com.inkfirst.core.MemoryUpdater
+import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.parseMarkdown
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 private val InkColor = Color(0xFF111111)
 private val PaperColor = Color(0xFFF8F5EE)
 private val MutedColor = Color(0xFF555555)
 private val BorderColor = Color(0xFF888888)
+
+private sealed interface CompileState {
+    data object Idle : CompileState
+    data object Running : CompileState
+    data class Failed(val message: String) : CompileState
+}
 
 @Composable
 fun ReaderScreen(
@@ -73,7 +90,9 @@ fun ReaderScreen(
 ) {
     val context = LocalContext.current
     val store = rememberCourseStore()
+    val apiKeyStore = remember { ApiKeyStore(context) }
     val readerPrefs = remember { ReaderPrefs(context) }
+    val scope = rememberCoroutineScope()
 
     var course by remember { mutableStateOf<Course?>(null) }
     var markdown by remember { mutableStateOf<String?>(null) }
@@ -82,6 +101,7 @@ fun ReaderScreen(
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
     var showFormatMenu by remember { mutableStateOf(false) }
     var anchorBlockIndex by remember { mutableStateOf(startBlockIndex.coerceAtLeast(0)) }
+    var compileState by remember { mutableStateOf<CompileState>(CompileState.Idle) }
 
     LaunchedEffect(courseSlug, chapterSlug) {
         course = store.load(courseSlug)
@@ -104,12 +124,41 @@ fun ReaderScreen(
         }
     }
 
+    val isPending = chapter != null && chapter.status == ChapterStatus.PENDING && markdown == null
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(PaperColor),
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            if (isPending) {
+                CompilePrompt(
+                    chapter = chapter!!,
+                    chapterCount = course?.chapters?.size ?: 0,
+                    compileState = compileState,
+                    onBack = onBack,
+                    onCompile = {
+                        val c = course ?: return@CompilePrompt
+                        compileChapter(
+                            course = c,
+                            chapterN = chapter.n,
+                            scope = scope,
+                            store = store,
+                            apiKeyStore = apiKeyStore,
+                            onState = { compileState = it },
+                            onDone = { updatedCourse, newMarkdown ->
+                                if (updatedCourse != null && newMarkdown != null) {
+                                    course = updatedCourse
+                                    markdown = newMarkdown
+                                }
+                            },
+                        )
+                    },
+                )
+                return@Column
+            }
+
             PagedContent(
                 blocks = blocks,
                 course = course,
@@ -708,6 +757,159 @@ private fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotat
             is Inline.Code -> withStyle(
                 SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x14000000)),
             ) { append(i.text) }
+        }
+    }
+}
+
+@Composable
+private fun CompilePrompt(
+    chapter: PersistedChapter,
+    chapterCount: Int,
+    compileState: CompileState,
+    onBack: () -> Unit,
+    onCompile: () -> Unit,
+) {
+    // Book-native "front matter" for a not-yet-compiled chapter: user sees the
+    // title, meta, and objectives before spending a Gemini call. Tap Compile
+    // to generate; on success the Reader auto-flips to the paginated content.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+    ) {
+        TextButton(onClick = onBack) { Text("← Back", color = InkColor) }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "Ch ${chapter.n}/$chapterCount",
+            style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+        )
+    }
+
+    Spacer(Modifier.height(20.dp))
+    Text(
+        text = "~${chapter.estMinutes} min · not compiled",
+        fontFamily = FontFamily.Serif,
+        fontStyle = FontStyle.Italic,
+        fontSize = 13.sp,
+        color = MutedColor,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = "Chapter ${chapter.n}: ${chapter.title}",
+        fontFamily = FontFamily.Serif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 26.sp,
+        lineHeight = 32.sp,
+        color = InkColor,
+    )
+
+    if (chapter.objectives.isNotEmpty()) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = "What you'll learn",
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            color = MutedColor,
+        )
+        Spacer(Modifier.height(8.dp))
+        chapter.objectives.forEach { obj ->
+            Row(modifier = Modifier.padding(bottom = 4.dp)) {
+                Text(
+                    text = "• ",
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 16.sp,
+                    color = InkColor,
+                )
+                Text(
+                    text = obj,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 16.sp,
+                    lineHeight = 22.sp,
+                    color = InkColor,
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(28.dp))
+
+    when (compileState) {
+        CompileState.Running -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                    color = InkColor,
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = "Compiling chapter…",
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 15.sp,
+                    color = InkColor,
+                )
+            }
+        }
+        is CompileState.Failed -> {
+            Text(
+                text = compileState.message,
+                fontFamily = FontFamily.Serif,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            Button(
+                onClick = onCompile,
+                colors = ButtonDefaults.buttonColors(containerColor = InkColor),
+            ) {
+                Text("Try again", color = PaperColor)
+            }
+        }
+        CompileState.Idle -> {
+            Button(
+                onClick = onCompile,
+                colors = ButtonDefaults.buttonColors(containerColor = InkColor),
+            ) {
+                Text("Compile chapter", color = PaperColor)
+            }
+        }
+    }
+}
+
+private fun compileChapter(
+    course: Course,
+    chapterN: Int,
+    scope: kotlinx.coroutines.CoroutineScope,
+    store: com.inkfirst.core.CourseStore,
+    apiKeyStore: ApiKeyStore,
+    onState: (CompileState) -> Unit,
+    onDone: (Course?, String?) -> Unit,
+) {
+    val apiKey = apiKeyStore.getApiKey().orEmpty()
+    val model = apiKeyStore.getModelName()
+    if (apiKey.isBlank()) {
+        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        return
+    }
+    onState(CompileState.Running)
+    scope.launch {
+        try {
+            KtorGeminiClient().use { client ->
+                val memory = store.readMemory(course.slug)
+                val markdown = ChapterGenerator(client, model).generate(course, chapterN, memory, apiKey)
+                val chapter = course.chapters.first { it.n == chapterN }
+                store.saveChapter(course.slug, chapter.slug, markdown)
+                val updated = store.updateChapterStatus(course.slug, chapterN, ChapterStatus.GENERATED)
+                try {
+                    val summary = MemoryUpdater(client, model).summarize(course, chapterN, markdown, apiKey)
+                    store.appendMemory(course.slug, chapterN, chapter.title, summary)
+                } catch (e: Exception) {
+                    System.err.println("memory update failed for chapter $chapterN: ${e.message}")
+                }
+                onState(CompileState.Idle)
+                onDone(updated, markdown)
+            }
+        } catch (e: Exception) {
+            onState(CompileState.Failed(e.message ?: "Unknown error"))
         }
     }
 }
