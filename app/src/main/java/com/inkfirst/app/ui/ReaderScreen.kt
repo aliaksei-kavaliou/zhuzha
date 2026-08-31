@@ -87,6 +87,7 @@ fun ReaderScreen(
     startBlockIndex: Int = 0,
     onBack: () -> Unit,
     onOpenContents: () -> Unit,
+    onOpenChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val context = LocalContext.current
     val store = rememberCourseStore()
@@ -100,8 +101,11 @@ fun ReaderScreen(
     var lineSpacing by remember { mutableStateOf(readerPrefs.getLineSpacing()) }
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
     var showFormatMenu by remember { mutableStateOf(false) }
-    var anchorBlockIndex by remember { mutableStateOf(startBlockIndex.coerceAtLeast(0)) }
-    var compileState by remember { mutableStateOf<CompileState>(CompileState.Idle) }
+    // startBlockIndex = -1 is the "open at last block" sentinel — used when
+    // flipping left off the first page of a chapter into the previous
+    // chapter's tail. Resolved once blocks are parsed (LaunchedEffect below).
+    var anchorBlockIndex by remember(chapterSlug) { mutableStateOf(startBlockIndex.coerceAtLeast(0)) }
+    var compileState by remember(chapterSlug) { mutableStateOf<CompileState>(CompileState.Idle) }
 
     LaunchedEffect(courseSlug, chapterSlug) {
         course = store.load(courseSlug)
@@ -121,6 +125,13 @@ fun ReaderScreen(
                 body = "~${chapter.estMinutes} min · ${statusLabel(chapter.status)}",
             )
             listOf(meta) + parsed
+        }
+    }
+
+    // Resolve the "-1 = open at last" sentinel once blocks arrive.
+    LaunchedEffect(blocks, startBlockIndex) {
+        if (startBlockIndex < 0 && blocks.isNotEmpty()) {
+            anchorBlockIndex = blocks.lastIndex
         }
     }
 
@@ -159,6 +170,10 @@ fun ReaderScreen(
                 return@Column
             }
 
+            val chapterIndex = course?.chapters?.indexOfFirst { it.slug == chapterSlug } ?: -1
+            val prevChapter = course?.chapters?.getOrNull(chapterIndex - 1)
+            val nextChapter = course?.chapters?.getOrNull(chapterIndex + 1)
+
             PagedContent(
                 blocks = blocks,
                 course = course,
@@ -167,6 +182,8 @@ fun ReaderScreen(
                 lineSpacing = lineSpacing,
                 textAlign = textAlign,
                 anchorBlockIndex = anchorBlockIndex,
+                onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
+                onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
                 menuOpen = showFormatMenu,
                 onAnchorChange = { anchorBlockIndex = it },
                 onToggleMenu = { showFormatMenu = !showFormatMenu },
@@ -226,6 +243,8 @@ private fun PagedContent(
     onToggleMenu: () -> Unit,
     onBack: () -> Unit,
     onBookmarkToggle: (Course?) -> Unit,
+    onOpenPrevChapter: (() -> Unit)?,
+    onOpenNextChapter: (() -> Unit)?,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -282,12 +301,18 @@ private fun PagedContent(
                                         if (pageIndex > 0) {
                                             val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
                                             onAnchorChange(prevAnchor)
+                                        } else {
+                                            // Already at page 1 — chain into the previous chapter's tail.
+                                            onOpenPrevChapter?.invoke()
                                         }
                                     }
                                     pos.x > 2 * third -> {
                                         if (pageIndex < pages.size - 1) {
                                             val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
                                             onAnchorChange(nextAnchor)
+                                        } else {
+                                            // Already at last page — chain into the next chapter's head.
+                                            onOpenNextChapter?.invoke()
                                         }
                                     }
                                     else -> onToggleMenu()
@@ -353,7 +378,10 @@ private fun ReaderHeader(chapterN: Int?, chapterCount: Int?, onBack: () -> Unit)
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
     ) {
-        TextButton(onClick = onBack) { Text("← Back", color = InkColor) }
+        // The header button pops back to the last screen on the nav stack,
+        // which in practice is always Contents — labeling it "Contents"
+        // makes the destination explicit, no functional change.
+        TextButton(onClick = onBack) { Text("≡ Contents", color = InkColor) }
         Spacer(Modifier.weight(1f))
         if (chapterN != null && chapterCount != null) {
             Text(

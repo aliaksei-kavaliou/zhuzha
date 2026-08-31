@@ -94,6 +94,11 @@ private fun InkFirstApp() {
                 onOpenContents = {
                     nav.navigate(Routes.courseDetail(courseSlug, chapterSlug))
                 },
+                onOpenChapter = { newChapterSlug, newBlockIndex ->
+                    nav.navigate(Routes.reader(courseSlug, newChapterSlug, newBlockIndex)) {
+                        popUpTo(Routes.READER) { inclusive = true }
+                    }
+                },
             )
         }
     }
