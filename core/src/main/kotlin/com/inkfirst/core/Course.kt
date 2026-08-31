@@ -44,7 +44,9 @@ data class PersistedChapter(
     val objectives: List<String>,
     @SerialName("est_minutes") val estMinutes: Int,
     val status: ChapterStatus = ChapterStatus.PENDING,
-    @SerialName("last_page") val lastPage: Int = 0,
+    // Index into the chapter's parsed Block list — NOT a page number. Pages
+    // recompute with font/spacing/screen changes; block index stays valid.
+    @SerialName("last_block_index") val lastBlockIndex: Int = 0,
 )
 
 @Serializable

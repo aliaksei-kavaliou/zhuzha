@@ -123,6 +123,22 @@ class CourseStore(private val root: File) {
     }
 
     /**
+     * Persists the reader's current position in [chapterN] as a block index
+     * (see PersistedChapter.lastBlockIndex — block index, not page number).
+     * Cheap: rewrites the small course.json.
+     */
+    fun updateChapterProgress(courseSlug: String, chapterN: Int, blockIndex: Int): Course? {
+        val course = load(courseSlug) ?: return null
+        val updated = course.copy(
+            chapters = course.chapters.map {
+                if (it.n == chapterN) it.copy(lastBlockIndex = blockIndex) else it
+            },
+        )
+        writeCourse(courseSlug, updated)
+        return updated
+    }
+
+    /**
      * Flips the status field on chapter [chapterN] of the given course.
      * Rewrites the whole course.json (small file, atomicity below single-record
      * granularity isn't worth the ceremony here).

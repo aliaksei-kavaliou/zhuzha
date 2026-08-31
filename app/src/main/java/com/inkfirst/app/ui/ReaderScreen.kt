@@ -135,6 +135,33 @@ fun ReaderScreen(
         }
     }
 
+    // Persist the anchor whenever it changes — this is the "last block read"
+    // that Contents uses to resume you where you left off.
+    LaunchedEffect(anchorBlockIndex, courseSlug, chapterSlug) {
+        if (course != null && chapter != null && blocks.isNotEmpty()) {
+            store.updateChapterProgress(courseSlug, chapter.n, anchorBlockIndex)
+        }
+    }
+
+    // Status transitions:
+    //   GENERATED → READING when the reader opens a fresh chapter
+    //   READING   → DONE    when the reader reaches the last block
+    LaunchedEffect(chapter, anchorBlockIndex, blocks) {
+        val c = course ?: return@LaunchedEffect
+        val ch = chapter ?: return@LaunchedEffect
+        val newStatus = when {
+            ch.status == ChapterStatus.GENERATED -> ChapterStatus.READING
+            ch.status == ChapterStatus.READING &&
+                blocks.isNotEmpty() &&
+                anchorBlockIndex >= blocks.lastIndex -> ChapterStatus.DONE
+            else -> null
+        }
+        if (newStatus != null) {
+            val updated = store.updateChapterStatus(c.slug, ch.n, newStatus)
+            if (updated != null) course = updated
+        }
+    }
+
     val isPending = chapter != null && chapter.status == ChapterStatus.PENDING && markdown == null
 
     Box(

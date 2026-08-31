@@ -99,7 +99,11 @@ fun CourseDetailScreen(
 
             PagedContents(
                 blocks = tocBlocks,
-                onChapterTap = { chapter -> onReadChapter(chapter.slug, 0) },
+                onChapterTap = { chapter ->
+                    // Resume at the saved anchor if the reader was mid-chapter.
+                    // For fresh chapters lastBlockIndex is 0 → opens at the top.
+                    onReadChapter(chapter.slug, chapter.lastBlockIndex)
+                },
                 onBookmarkTap = { bookmark -> onReadChapter(bookmark.chapterSlug, bookmark.blockIndex) },
             )
         }
@@ -114,10 +118,13 @@ private fun buildTocBlocks(course: Course, currentChapterSlug: String?): List<To
     )
     blocks += TocBlock.SectionHeader("Contents")
     course.chapters.forEach { chapter ->
-        blocks += TocBlock.ChapterEntry(
-            chapter = chapter,
-            isCurrent = currentChapterSlug != null && chapter.slug == currentChapterSlug,
-        )
+        // Mark as "here" if either (a) we jumped to Contents from the Reader
+        // for this exact chapter, or (b) the chapter is in READING status —
+        // the latter is what surfaces the "resume where you left off" hint
+        // when the user arrives at Contents fresh from Library.
+        val isCurrent = (currentChapterSlug != null && chapter.slug == currentChapterSlug) ||
+            chapter.status == ChapterStatus.READING
+        blocks += TocBlock.ChapterEntry(chapter = chapter, isCurrent = isCurrent)
     }
     if (course.bookmarks.isNotEmpty()) {
         blocks += TocBlock.SectionHeader("Bookmarks")
