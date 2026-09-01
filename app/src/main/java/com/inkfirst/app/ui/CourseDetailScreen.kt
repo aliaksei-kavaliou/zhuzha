@@ -100,9 +100,14 @@ fun CourseDetailScreen(
             PagedContents(
                 blocks = tocBlocks,
                 onChapterTap = { chapter ->
-                    // Resume at the saved anchor if the reader was mid-chapter.
-                    // For fresh chapters lastBlockIndex is 0 → opens at the top.
-                    onReadChapter(chapter.slug, chapter.lastBlockIndex)
+                    // Only READING chapters resume at the saved anchor. DONE
+                    // chapters open at the top — a finished chapter's "resume"
+                    // point is meaningless; bookmarks are the right tool for
+                    // jumping to a specific spot.
+                    val startIndex = if (chapter.status == ChapterStatus.READING) {
+                        chapter.lastBlockIndex
+                    } else 0
+                    onReadChapter(chapter.slug, startIndex)
                 },
                 onBookmarkTap = { bookmark -> onReadChapter(bookmark.chapterSlug, bookmark.blockIndex) },
             )
