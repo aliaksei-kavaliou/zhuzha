@@ -4,7 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -375,44 +377,47 @@ private fun PagedContent(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        // pageIndex MUST be in the key list — without it, the tap closure
-                        // captures a stale pageIndex and every tap advances from 0.
-                        // No onLongPress here — long-press is owned by SelectionContainer
-                        // below, which handles native text selection.
+                        // Unified gesture handler — tap for zoned page-turn, horizontal
+                        // drag for swipe-to-turn. Compose's gesture arbitration between
+                        // two separate pointerInput modifiers got confused after certain
+                        // recompositions (e.g., after a bookmark toggle) and one detector
+                        // would go silent. Handling both in one awaitEachGesture avoids it.
                         .pointerInput(pageIndex, pages.size, menuOpen) {
-                            detectTapGestures { pos ->
-                                if (menuOpen) {
-                                    onToggleMenu()
-                                    return@detectTapGestures
-                                }
-                                val third = size.width / 3f
-                                when {
-                                    pos.x < third -> goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
-                                    pos.x > 2 * third -> goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
-                                    else -> onToggleMenu()
+                            val dragThresholdPx = 60.dp.toPx()
+                            val dragStartPx = 10.dp.toPx()
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val downPos = down.position
+                                var totalDx = 0f
+                                var isDrag = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull() ?: break
+                                    if (!change.pressed) {
+                                        if (menuOpen) {
+                                            onToggleMenu()
+                                        } else if (isDrag) {
+                                            if (totalDx <= -dragThresholdPx) {
+                                                goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                            } else if (totalDx >= dragThresholdPx) {
+                                                goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                            }
+                                        } else {
+                                            // Plain tap.
+                                            val third = size.width / 3f
+                                            when {
+                                                downPos.x < third -> goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                                downPos.x > 2 * third -> goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                                else -> onToggleMenu()
+                                            }
+                                        }
+                                        break
+                                    }
+                                    val dx = change.positionChange().x
+                                    totalDx += dx
+                                    if (!isDrag && kotlin.math.abs(totalDx) > dragStartPx) isDrag = true
                                 }
                             }
-                        }
-                        // Swipe navigation — horizontal drags page-turn the same as
-                        // edge taps. Coexists with SelectionContainer's long-press-drag
-                        // because Selection needs long-press to start; a quick swipe
-                        // doesn't trigger it.
-                        .pointerInput(pageIndex, pages.size, menuOpen) {
-                            var totalDx = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = { totalDx = 0f },
-                                onDragEnd = {
-                                    if (menuOpen) return@detectHorizontalDragGestures
-                                    val threshold = 60.dp.toPx()
-                                    if (totalDx <= -threshold) {
-                                        goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
-                                    } else if (totalDx >= threshold) {
-                                        goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
-                                    }
-                                },
-                                onDragCancel = {},
-                                onHorizontalDrag = { _, dx -> totalDx += dx },
-                            )
                         },
                 ) {
                     // SelectionContainer lets the user long-press-drag to select
