@@ -2,6 +2,8 @@ package com.inkfirst.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -180,7 +182,36 @@ private fun PagedContents(
                             indication = null,
                         ) { pageIndex-- },
                 )
-                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        // Swipe support in the middle content area — matches the
+                        // reader's horizontal-drag-to-turn. Consumed-check keeps
+                        // row taps (chapter/bookmark) working unimpeded.
+                        .pointerInput(pageIndex, pages.size) {
+                            val threshold = 60.dp.toPx()
+                            val startPx = 10.dp.toPx()
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var dx = 0f
+                                var isDrag = false
+                                while (true) {
+                                    val ev = awaitPointerEvent()
+                                    val ch = ev.changes.firstOrNull() ?: break
+                                    if (!ch.pressed) {
+                                        if (isDrag && !ch.isConsumed) {
+                                            if (dx <= -threshold && hasNext) pageIndex++
+                                            else if (dx >= threshold && hasPrev) pageIndex--
+                                        }
+                                        break
+                                    }
+                                    dx += ch.positionChange().x
+                                    if (!isDrag && kotlin.math.abs(dx) > startPx) isDrag = true
+                                }
+                            }
+                        },
+                ) {
                     pages.getOrNull(pageIndex)?.forEach { block ->
                         RenderTocBlock(
                             block = block,

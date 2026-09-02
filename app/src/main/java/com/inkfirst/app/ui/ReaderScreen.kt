@@ -209,11 +209,16 @@ fun ReaderScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             if (isPending) {
+                val pendingChapterIndex = course?.chapters?.indexOfFirst { it.slug == chapterSlug } ?: -1
+                val pendingPrev = course?.chapters?.getOrNull(pendingChapterIndex - 1)
+                val pendingNext = course?.chapters?.getOrNull(pendingChapterIndex + 1)
                 CompilePrompt(
                     chapter = chapter!!,
                     chapterCount = course?.chapters?.size ?: 0,
                     compileState = compileState,
                     onBack = onBack,
+                    onOpenPrevChapter = pendingPrev?.let { p -> { onOpenChapter(p.slug, -1) } },
+                    onOpenNextChapter = pendingNext?.let { n -> { onOpenChapter(n.slug, 0) } },
                     onCompile = {
                         val c = course ?: return@CompilePrompt
                         compileChapter(
@@ -432,17 +437,19 @@ private fun PagedContent(
                         .focusRequester(focusRequester)
                         .focusable()
                         .onKeyEvent { event ->
-                            // Hardware page-turn on Boox (and most other e-readers):
-                            // PageUp = previous page, PageDown = next page.
-                            // Also accept the DirectionUp/DirectionDown keys that some
-                            // Boox firmwares map the buttons to.
+                            // Boox side buttons fire VolumeUp/VolumeDown by default
+                            // (Onyx remaps them from the standard Android Volume codes
+                            // for use as page-turn keys). Also accept PageUp/PageDown
+                            // and DirectionUp/DirectionDown for external keyboards.
+                            // Returning true CONSUMES the event so Android doesn't
+                            // also show the system volume popup.
                             if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                             when (event.key) {
-                                Key.PageUp, Key.DirectionUp -> {
+                                Key.VolumeUp, Key.PageUp, Key.DirectionUp -> {
                                     goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
                                     true
                                 }
-                                Key.PageDown, Key.DirectionDown -> {
+                                Key.VolumeDown, Key.PageDown, Key.DirectionDown -> {
                                     goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
                                     true
                                 }
@@ -1100,7 +1107,42 @@ private fun CompilePrompt(
     compileState: CompileState,
     onBack: () -> Unit,
     onCompile: () -> Unit,
+    onOpenPrevChapter: (() -> Unit)? = null,
+    onOpenNextChapter: (() -> Unit)? = null,
 ) {
+    // Swipe support on the compile prompt: horizontal or vertical swipe still
+    // lets you nav to adjacent chapters. Without this, hitting a pending
+    // chapter via vertical-swipe-forward is a dead end until the user compiles.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(onOpenPrevChapter, onOpenNextChapter) {
+                val hDrag = 60.dp.toPx()
+                val vDrag = 80.dp.toPx()
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var dx = 0f
+                    var dy = 0f
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull() ?: break
+                        if (!ch.pressed) {
+                            if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
+                                if (dx <= -hDrag) onOpenNextChapter?.invoke()
+                                else if (dx >= hDrag) onOpenPrevChapter?.invoke()
+                            } else {
+                                if (dy <= -vDrag) onOpenNextChapter?.invoke()
+                                else if (dy >= vDrag) onOpenPrevChapter?.invoke()
+                            }
+                            break
+                        }
+                        val p = ch.positionChange()
+                        dx += p.x
+                        dy += p.y
+                    }
+                }
+            },
+    ) {
     // Book-native "front matter" for a not-yet-compiled chapter: user sees the
     // title, meta, and objectives before spending a Gemini call. Tap Compile
     // to generate; on success the Reader auto-flips to the paginated content.
