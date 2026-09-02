@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,12 +36,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.TextToolbarStatus
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -103,6 +111,13 @@ fun ReaderScreen(
     var showFormatMenu by remember { mutableStateOf(false) }
     // null = closed. "" = open general chat. non-empty = open with quoted passage.
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
+    // The Ask toolbar for the paged content — intercepts text-selection UI.
+    // Hoisted to ReaderScreen scope so the floating chip can live in the outer
+    // Box (which is what supports Alignment.BottomCenter).
+    val clipboard = LocalClipboardManager.current
+    val askToolbar = remember(clipboard) {
+        AskTextToolbar(clipboard) { selectedText -> chatSelection = selectedText }
+    }
     // startBlockIndex = -1 is the "open at last block" sentinel — used when
     // flipping left off the first page of a chapter into the previous
     // chapter's tail. Resolved once blocks are parsed (LaunchedEffect below).
@@ -203,23 +218,45 @@ fun ReaderScreen(
             val prevChapter = course?.chapters?.getOrNull(chapterIndex - 1)
             val nextChapter = course?.chapters?.getOrNull(chapterIndex + 1)
 
-            PagedContent(
-                blocks = blocks,
-                course = course,
-                chapterSlug = chapterSlug,
-                fontScale = fontScale,
-                lineSpacing = lineSpacing,
-                textAlign = textAlign,
-                anchorBlockIndex = anchorBlockIndex,
-                onAskAboutBlock = { text -> chatSelection = text },
-                onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
-                onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
-                menuOpen = showFormatMenu,
-                onAnchorChange = { anchorBlockIndex = it },
-                onToggleMenu = { showFormatMenu = !showFormatMenu },
-                onBack = onBack,
-                onBookmarkToggle = { newCourse -> course = newCourse ?: course },
-            )
+            CompositionLocalProvider(LocalTextToolbar provides askToolbar) {
+                PagedContent(
+                    blocks = blocks,
+                    course = course,
+                    chapterSlug = chapterSlug,
+                    fontScale = fontScale,
+                    lineSpacing = lineSpacing,
+                    textAlign = textAlign,
+                    anchorBlockIndex = anchorBlockIndex,
+                    onAskAboutBlock = { text -> chatSelection = text },
+                    onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
+                    onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
+                    menuOpen = showFormatMenu,
+                    onAnchorChange = { anchorBlockIndex = it },
+                    onToggleMenu = { showFormatMenu = !showFormatMenu },
+                    onBack = onBack,
+                    onBookmarkToggle = { newCourse -> course = newCourse ?: course },
+                )
+            }
+        }
+
+        // Floating Ask chip — appears when there's an active text selection in
+        // the reader. Lives here in the outer Box (which supports
+        // Alignment.BottomCenter) rather than inside the Column-based content.
+        askToolbar.selectionRect?.let {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 64.dp)
+                    .background(InkColor, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                TextButton(onClick = { askToolbar.ask() }) {
+                    Text("Ask about this", color = PaperColor)
+                }
+                TextButton(onClick = { askToolbar.hide() }) {
+                    Text("Cancel", color = PaperColor)
+                }
+            }
         }
 
         // Chat panel sits on top of everything when open.
@@ -335,61 +372,55 @@ private fun PagedContent(
                         .fillMaxWidth()
                         // pageIndex MUST be in the key list — without it, the tap closure
                         // captures a stale pageIndex and every tap advances from 0.
+                        // No onLongPress here — long-press is owned by SelectionContainer
+                        // below, which handles native text selection.
                         .pointerInput(pageIndex, pages.size, menuOpen) {
-                            detectTapGestures(
-                                onLongPress = {
-                                    // Long-press anywhere on the page = "ask about
-                                    // this page" — concatenate all askable blocks on
-                                    // the current page as the quoted passage. Precise
-                                    // sub-passage selection is a follow-up (needs
-                                    // SelectionContainer + custom TextToolbar).
-                                    val pageText = pages.getOrNull(pageIndex)
-                                        ?.mapNotNull { extractAskableText(it) }
-                                        ?.joinToString("\n\n")
-                                        ?.takeIf { it.isNotBlank() }
-                                    if (pageText != null) onAskAboutBlock(pageText)
-                                },
-                                onTap = { pos ->
-                                    if (menuOpen) {
-                                        onToggleMenu()
-                                        return@detectTapGestures
-                                    }
-                                    val third = size.width / 3f
-                                    when {
-                                        pos.x < third -> {
-                                            if (pageIndex > 0) {
-                                                val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
-                                                onAnchorChange(prevAnchor)
-                                            } else {
-                                                onOpenPrevChapter?.invoke()
-                                            }
+                            detectTapGestures { pos ->
+                                if (menuOpen) {
+                                    onToggleMenu()
+                                    return@detectTapGestures
+                                }
+                                val third = size.width / 3f
+                                when {
+                                    pos.x < third -> {
+                                        if (pageIndex > 0) {
+                                            val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
+                                            onAnchorChange(prevAnchor)
+                                        } else {
+                                            onOpenPrevChapter?.invoke()
                                         }
-                                        pos.x > 2 * third -> {
-                                            if (pageIndex < pages.size - 1) {
-                                                val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
-                                                onAnchorChange(nextAnchor)
-                                            } else {
-                                                onOpenNextChapter?.invoke()
-                                            }
-                                        }
-                                        else -> onToggleMenu()
                                     }
-                                },
-                            )
+                                    pos.x > 2 * third -> {
+                                        if (pageIndex < pages.size - 1) {
+                                            val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
+                                            onAnchorChange(nextAnchor)
+                                        } else {
+                                            onOpenNextChapter?.invoke()
+                                        }
+                                    }
+                                    else -> onToggleMenu()
+                                }
+                            }
                         },
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        val pageStart = firstBlockIndex  // computed above, arithmetic
-                        pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
-                            val globalIdx = pageStart + i
-                            RenderBlock(
-                                block = block,
-                                fontScale = fontScale,
-                                lineSpacing = lineSpacing,
-                                textAlign = textAlign,
-                                revealed = revealed[globalIdx] == true,
-                                onReveal = { revealed[globalIdx] = true },
-                            )
+                    // SelectionContainer lets the user long-press-drag to select
+                    // specific text; our custom AskTextToolbar (installed via
+                    // LocalTextToolbar above) is what surfaces the "Ask" action
+                    // for whatever gets selected.
+                    SelectionContainer {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            val pageStart = firstBlockIndex  // computed above, arithmetic
+                            pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
+                                val globalIdx = pageStart + i
+                                RenderBlock(
+                                    block = block,
+                                    fontScale = fontScale,
+                                    lineSpacing = lineSpacing,
+                                    textAlign = textAlign,
+                                    revealed = revealed[globalIdx] == true,
+                                    onReveal = { revealed[globalIdx] = true },
+                                )
+                            }
                         }
                     }
 
