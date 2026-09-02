@@ -342,8 +342,34 @@ private fun PagedContent(
 
     val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
 
+    // Hoist the bookmark state up so the header (rendered above the paged content)
+    // can show it and toggle it. The actual read of `firstBlockIndex` etc. happens
+    // inside the BoxWithConstraints below.
     Column(modifier = Modifier.fillMaxSize()) {
-        ReaderHeader(chapterN = chapterN, chapterCount = course?.chapters?.size, onBack = onBack)
+        // The header's bookmark button needs to know the current page's first
+        // block. That's computed inside PagedContent's BoxWithConstraints scope,
+        // so we forward a callback + the observed state via the header inputs.
+        var headerFirstBlock by remember(chapterSlug) { mutableStateOf(-1) }
+        val headerBookmarked = course?.bookmarks?.any {
+            it.chapterSlug == chapterSlug && it.blockIndex == headerFirstBlock
+        } == true
+        ReaderHeader(
+            chapterN = chapterN,
+            chapterCount = course?.chapters?.size,
+            isBookmarked = headerBookmarked,
+            canBookmark = headerFirstBlock >= 0 && course != null,
+            onBack = onBack,
+            onBookmarkToggle = {
+                val c = course ?: return@ReaderHeader
+                if (headerFirstBlock < 0) return@ReaderHeader
+                val updated = if (headerBookmarked) {
+                    store.removeBookmark(c.slug, chapterSlug, headerFirstBlock)
+                } else {
+                    store.addBookmark(c.slug, chapterSlug, headerFirstBlock, LocalDate.now().toString())
+                }
+                onBookmarkToggle(updated)
+            },
+        )
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val widthPx = with(density) { maxWidth.toPx().toInt() }
@@ -368,9 +394,7 @@ private fun PagedContent(
             // The block index of a page's first block is just the sum of block counts
             // in all prior pages — paginate() preserves order and never splits blocks.
             val firstBlockIndex = pages.take(pageIndex).sumOf { it.size }
-            val isBookmarked = course?.bookmarks?.any {
-                it.chapterSlug == chapterSlug && it.blockIndex == firstBlockIndex
-            } == true
+            LaunchedEffect(firstBlockIndex) { headerFirstBlock = firstBlockIndex }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
@@ -441,21 +465,9 @@ private fun PagedContent(
                         }
                     }
 
-                    BookmarkCorner(
-                        isBookmarked = isBookmarked,
-                        enabled = firstBlockIndex >= 0 && course != null,
-                        modifier = Modifier.align(Alignment.TopEnd),
-                        onToggle = {
-                            val c = course ?: return@BookmarkCorner
-                            if (firstBlockIndex < 0) return@BookmarkCorner
-                            val updated = if (isBookmarked) {
-                                store.removeBookmark(c.slug, chapterSlug, firstBlockIndex)
-                            } else {
-                                store.addBookmark(c.slug, chapterSlug, firstBlockIndex, LocalDate.now().toString())
-                            }
-                            onBookmarkToggle(updated)
-                        },
-                    )
+                    // Bookmark used to live here as an overlay in the top-right corner,
+                    // but at 96dp it was eating page-turn taps/swipes. Moved to the
+                    // header row — small ribbon icon next to Ch N/M.
                 }
 
                 Row(
@@ -479,7 +491,14 @@ private fun PagedContent(
 }
 
 @Composable
-private fun ReaderHeader(chapterN: Int?, chapterCount: Int?, onBack: () -> Unit) {
+private fun ReaderHeader(
+    chapterN: Int?,
+    chapterCount: Int?,
+    isBookmarked: Boolean,
+    canBookmark: Boolean,
+    onBack: () -> Unit,
+    onBookmarkToggle: () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
@@ -493,7 +512,35 @@ private fun ReaderHeader(chapterN: Int?, chapterCount: Int?, onBack: () -> Unit)
             Text(
                 text = "Ch $chapterN/$chapterCount",
                 style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                modifier = Modifier.padding(end = 8.dp),
             )
+        }
+        // Small ribbon-toggle button. Fills when the current page's first block
+        // is bookmarked; outline when not. Fixed spot in the header so it never
+        // competes with tap/swipe gestures in the reading area.
+        TextButton(
+            onClick = onBookmarkToggle,
+            enabled = canBookmark,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+        ) {
+            Canvas(modifier = Modifier.size(width = 14.dp, height = 20.dp)) {
+                val w = size.width
+                val h = size.height
+                val notch = h * 0.28f
+                val path = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(w, 0f)
+                    lineTo(w, h)
+                    lineTo(w / 2, h - notch)
+                    lineTo(0f, h)
+                    close()
+                }
+                if (isBookmarked) {
+                    drawPath(path, color = InkColor)
+                } else {
+                    drawPath(path, color = InkColor, style = Stroke(width = 2f))
+                }
+            }
         }
     }
 }
