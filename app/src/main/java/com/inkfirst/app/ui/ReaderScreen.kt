@@ -850,9 +850,13 @@ private fun BookmarkCorner(
     onToggle: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
+    // 96dp tap zone — "whole top-right corner". At 300 DPI on the Boox this is
+    // about a fingertip's worth. We're only losing the top-right of the
+    // right-third tap-to-turn area; users have swipe as the primary
+    // page-turn gesture anyway.
     Box(
         modifier = modifier
-            .size(48.dp)
+            .size(96.dp)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
@@ -863,8 +867,8 @@ private fun BookmarkCorner(
         if (isBookmarked) {
             Canvas(
                 modifier = Modifier
-                    .padding(end = 8.dp)
-                    .size(width = 16.dp, height = 22.dp),
+                    .padding(end = 12.dp, top = 0.dp)
+                    .size(width = 24.dp, height = 32.dp),
             ) {
                 val w = size.width
                 val h = size.height
