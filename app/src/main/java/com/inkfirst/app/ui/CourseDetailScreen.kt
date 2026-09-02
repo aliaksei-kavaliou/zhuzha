@@ -45,8 +45,8 @@ import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
 import com.inkfirst.core.PersistedChapter
 
-private val InkColor = Color(0xFF111111)
-private val PaperColor = Color(0xFFF8F5EE)
+private val InkColor = Color(0xFF000000)
+private val PaperColor = Color(0xFFFFFFFF)
 private val MutedColor = Color(0xFF555555)
 
 private sealed interface TocBlock {

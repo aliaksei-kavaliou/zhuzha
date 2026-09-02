@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -77,8 +78,12 @@ import com.inkfirst.core.parseMarkdown
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-private val InkColor = Color(0xFF111111)
-private val PaperColor = Color(0xFFF8F5EE)
+// E-ink can only render pure black + pure white directly; anything between
+// gets dithered (visible dot pattern). Our warm off-white paper looked nice on
+// screens but rendered as noise on the Boox. Pure black on pure white is the
+// canonical e-ink palette.
+private val InkColor = Color(0xFF000000)
+private val PaperColor = Color(0xFFFFFFFF)
 private val MutedColor = Color(0xFF555555)
 private val BorderColor = Color(0xFF888888)
 
@@ -382,25 +387,32 @@ private fun PagedContent(
                                 }
                                 val third = size.width / 3f
                                 when {
-                                    pos.x < third -> {
-                                        if (pageIndex > 0) {
-                                            val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
-                                            onAnchorChange(prevAnchor)
-                                        } else {
-                                            onOpenPrevChapter?.invoke()
-                                        }
-                                    }
-                                    pos.x > 2 * third -> {
-                                        if (pageIndex < pages.size - 1) {
-                                            val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
-                                            onAnchorChange(nextAnchor)
-                                        } else {
-                                            onOpenNextChapter?.invoke()
-                                        }
-                                    }
+                                    pos.x < third -> goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                    pos.x > 2 * third -> goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
                                     else -> onToggleMenu()
                                 }
                             }
+                        }
+                        // Swipe navigation — horizontal drags page-turn the same as
+                        // edge taps. Coexists with SelectionContainer's long-press-drag
+                        // because Selection needs long-press to start; a quick swipe
+                        // doesn't trigger it.
+                        .pointerInput(pageIndex, pages.size, menuOpen) {
+                            var totalDx = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { totalDx = 0f },
+                                onDragEnd = {
+                                    if (menuOpen) return@detectHorizontalDragGestures
+                                    val threshold = 60.dp.toPx()
+                                    if (totalDx <= -threshold) {
+                                        goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                    } else if (totalDx >= threshold) {
+                                        goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                    }
+                                },
+                                onDragCancel = {},
+                                onHorizontalDrag = { _, dx -> totalDx += dx },
+                            )
                         },
                 ) {
                     // SelectionContainer lets the user long-press-drag to select
@@ -905,6 +917,34 @@ private fun List<Inline>.plainText(): String = joinToString("") { i ->
         is Inline.Bold -> i.text
         is Inline.Italic -> i.text
         is Inline.Code -> i.text
+    }
+}
+
+private fun goPrev(
+    pageIndex: Int,
+    pages: List<List<Block>>,
+    onAnchorChange: (Int) -> Unit,
+    onOpenPrevChapter: (() -> Unit)?,
+) {
+    if (pageIndex > 0) {
+        val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
+        onAnchorChange(prevAnchor)
+    } else {
+        onOpenPrevChapter?.invoke()
+    }
+}
+
+private fun goNext(
+    pageIndex: Int,
+    pages: List<List<Block>>,
+    onAnchorChange: (Int) -> Unit,
+    onOpenNextChapter: (() -> Unit)?,
+) {
+    if (pageIndex < pages.size - 1) {
+        val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
+        onAnchorChange(nextAnchor)
+    } else {
+        onOpenNextChapter?.invoke()
     }
 }
 

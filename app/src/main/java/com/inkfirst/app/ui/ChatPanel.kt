@@ -51,8 +51,8 @@ import com.inkfirst.core.QaGenerator
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-private val ChatInkColor = Color(0xFF111111)
-private val ChatPaperColor = Color(0xFFF8F5EE)
+private val ChatInkColor = Color(0xFF000000)
+private val ChatPaperColor = Color(0xFFFFFFFF)
 private val ChatMutedColor = Color(0xFF555555)
 private val ChatBorderColor = Color(0xFF888888)
 
