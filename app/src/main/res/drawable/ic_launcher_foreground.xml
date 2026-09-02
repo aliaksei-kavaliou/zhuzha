@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    InkFirst launcher icon foreground: the same V-notched ribbon shape used
+    in the reader's BookmarkCorner. Bold black-on-white matches the e-ink
+    palette. Positioned inside the 66×66 safe zone (viewport 21..87) so the
+    ribbon survives circular/squircle/rounded-square adaptive-icon masks
+    across launchers.
+
+    Ribbon math (identical proportions to BookmarkCorner.kt):
+      corners: (34,22) → (74,22) → (74,84) → notch(54, 84 - 62*0.28 ≈ 66) → (34,84)
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M34,22 L74,22 L74,84 L54,66 L34,84 Z" />
+</vector>
