@@ -42,6 +42,14 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.ClipboardManager
@@ -112,6 +120,12 @@ fun ReaderScreen(
 
     var course by remember { mutableStateOf<Course?>(null) }
     var markdown by remember { mutableStateOf<String?>(null) }
+    // Hoisted here so both the header (bookmark ribbon indicator) and the
+    // format menu (Bookmark this page row) can read/toggle without prop-drilling.
+    var headerFirstBlock by remember(chapterSlug) { mutableStateOf(-1) }
+    val headerBookmarked = course?.bookmarks?.any {
+        it.chapterSlug == chapterSlug && it.blockIndex == headerFirstBlock
+    } == true
     var fontScale by remember { mutableStateOf(readerPrefs.getFontScale()) }
     var lineSpacing by remember { mutableStateOf(readerPrefs.getLineSpacing()) }
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
@@ -224,6 +238,30 @@ fun ReaderScreen(
             val chapterIndex = course?.chapters?.indexOfFirst { it.slug == chapterSlug } ?: -1
             val prevChapter = course?.chapters?.getOrNull(chapterIndex - 1)
             val nextChapter = course?.chapters?.getOrNull(chapterIndex + 1)
+            // Boox side buttons fire PageUp / PageDown. Request focus so the
+            // Reader receives key events without the user having to tap first.
+            val focusRequester = remember { FocusRequester() }
+            LaunchedEffect(chapterSlug) { focusRequester.requestFocus() }
+
+            // Header at ReaderScreen scope so it can read/toggle bookmarks
+            // via the hoisted headerFirstBlock / headerBookmarked state.
+            ReaderHeader(
+                chapterN = chapter?.n,
+                chapterCount = course?.chapters?.size,
+                isBookmarked = headerBookmarked,
+                canBookmark = headerFirstBlock >= 0 && course != null,
+                onBack = onBack,
+                onBookmarkToggle = {
+                    val c = course ?: return@ReaderHeader
+                    if (headerFirstBlock < 0) return@ReaderHeader
+                    val updated = if (headerBookmarked) {
+                        store.removeBookmark(c.slug, chapterSlug, headerFirstBlock)
+                    } else {
+                        store.addBookmark(c.slug, chapterSlug, headerFirstBlock, LocalDate.now().toString())
+                    }
+                    course = updated ?: course
+                },
+            )
 
             CompositionLocalProvider(LocalTextToolbar provides askToolbar) {
                 PagedContent(
@@ -234,14 +272,14 @@ fun ReaderScreen(
                     lineSpacing = lineSpacing,
                     textAlign = textAlign,
                     anchorBlockIndex = anchorBlockIndex,
+                    focusRequester = focusRequester,
+                    onFirstBlockChange = { headerFirstBlock = it },
                     onAskAboutBlock = { text -> chatSelection = text },
                     onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
                     onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
                     menuOpen = showFormatMenu,
                     onAnchorChange = { anchorBlockIndex = it },
                     onToggleMenu = { showFormatMenu = !showFormatMenu },
-                    onBack = onBack,
-                    onBookmarkToggle = { newCourse -> course = newCourse ?: course },
                 )
             }
         }
@@ -341,10 +379,10 @@ private fun PagedContent(
     textAlign: TextAlignPref,
     anchorBlockIndex: Int,
     menuOpen: Boolean,
+    focusRequester: FocusRequester,
     onAnchorChange: (Int) -> Unit,
     onToggleMenu: () -> Unit,
-    onBack: () -> Unit,
-    onBookmarkToggle: (Course?) -> Unit,
+    onFirstBlockChange: (Int) -> Unit,
     onOpenPrevChapter: (() -> Unit)?,
     onOpenNextChapter: (() -> Unit)?,
     onAskAboutBlock: (String) -> Unit,
@@ -355,35 +393,7 @@ private fun PagedContent(
 
     val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
 
-    // Hoist the bookmark state up so the header (rendered above the paged content)
-    // can show it and toggle it. The actual read of `firstBlockIndex` etc. happens
-    // inside the BoxWithConstraints below.
     Column(modifier = Modifier.fillMaxSize()) {
-        // The header's bookmark button needs to know the current page's first
-        // block. That's computed inside PagedContent's BoxWithConstraints scope,
-        // so we forward a callback + the observed state via the header inputs.
-        var headerFirstBlock by remember(chapterSlug) { mutableStateOf(-1) }
-        val headerBookmarked = course?.bookmarks?.any {
-            it.chapterSlug == chapterSlug && it.blockIndex == headerFirstBlock
-        } == true
-        ReaderHeader(
-            chapterN = chapterN,
-            chapterCount = course?.chapters?.size,
-            isBookmarked = headerBookmarked,
-            canBookmark = headerFirstBlock >= 0 && course != null,
-            onBack = onBack,
-            onBookmarkToggle = {
-                val c = course ?: return@ReaderHeader
-                if (headerFirstBlock < 0) return@ReaderHeader
-                val updated = if (headerBookmarked) {
-                    store.removeBookmark(c.slug, chapterSlug, headerFirstBlock)
-                } else {
-                    store.addBookmark(c.slug, chapterSlug, headerFirstBlock, LocalDate.now().toString())
-                }
-                onBookmarkToggle(updated)
-            },
-        )
-
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val widthPx = with(density) { maxWidth.toPx().toInt() }
             val availableHeightPx = with(density) { (maxHeight - 40.dp).toPx().toInt() }
@@ -407,7 +417,7 @@ private fun PagedContent(
             // The block index of a page's first block is just the sum of block counts
             // in all prior pages — paginate() preserves order and never splits blocks.
             val firstBlockIndex = pages.take(pageIndex).sumOf { it.size }
-            LaunchedEffect(firstBlockIndex) { headerFirstBlock = firstBlockIndex }
+            LaunchedEffect(firstBlockIndex) { onFirstBlockChange(firstBlockIndex) }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
@@ -419,6 +429,26 @@ private fun PagedContent(
                         // two separate pointerInput modifiers got confused after certain
                         // recompositions (e.g., after a bookmark toggle) and one detector
                         // would go silent. Handling both in one awaitEachGesture avoids it.
+                        .focusRequester(focusRequester)
+                        .focusable()
+                        .onKeyEvent { event ->
+                            // Hardware page-turn on Boox (and most other e-readers):
+                            // PageUp = previous page, PageDown = next page.
+                            // Also accept the DirectionUp/DirectionDown keys that some
+                            // Boox firmwares map the buttons to.
+                            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                            when (event.key) {
+                                Key.PageUp, Key.DirectionUp -> {
+                                    goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                    true
+                                }
+                                Key.PageDown, Key.DirectionDown -> {
+                                    goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
                         .pointerInput(pageIndex, pages.size, menuOpen) {
                             val dragThresholdPx = 60.dp.toPx()
                             val vDragThresholdPx = 80.dp.toPx()  // slightly higher — vertical drags happen more accidentally
@@ -433,6 +463,11 @@ private fun PagedContent(
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull() ?: break
                                     if (!change.pressed) {
+                                        // If a child composable (TextButton, SelectionContainer,
+                                        // etc.) already consumed this tap, don't page-turn on top
+                                        // of it. That was the "Show answer button also flipped a
+                                        // page" bug.
+                                        if (change.isConsumed) break
                                         if (menuOpen) {
                                             onToggleMenu()
                                         } else if (isDrag) {
