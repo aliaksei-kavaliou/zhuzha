@@ -72,17 +72,23 @@ fun paginate(
 }
 
 /**
- * Returns the page index that contains the block at [blockIndex] within [blocks].
- * Used to jump a Reader to a bookmark that's anchored to a block, not a page.
- * Returns 0 if the index is out of range.
+ * Returns the page index that contains the block at [blockIndex]. Purely
+ * arithmetic: sum block counts across pages until we find the range that
+ * contains the index. Works whether pages was rebuilt with fresh block
+ * instances or cached from an equal-but-different-reference blocks list —
+ * something the earlier identity-based (===) implementation didn't handle.
+ *
+ * [blocks] is kept as a parameter for API symmetry with the old signature;
+ * only its size matters for the range check.
  */
 fun findPageContainingBlock(pages: List<List<Block>>, blocks: List<Block>, blockIndex: Int): Int {
-    if (blockIndex < 0 || blockIndex >= blocks.size) return 0
-    val target = blocks[blockIndex]
+    if (blockIndex < 0 || pages.isEmpty()) return 0
+    var cumulative = 0
     pages.forEachIndexed { pageIdx, page ->
-        if (page.any { it === target }) return pageIdx
+        if (blockIndex < cumulative + page.size) return pageIdx
+        cumulative += page.size
     }
-    return 0
+    return pages.lastIndex.coerceAtLeast(0)
 }
 
 /**
