@@ -336,59 +336,60 @@ private fun PagedContent(
                         // pageIndex MUST be in the key list — without it, the tap closure
                         // captures a stale pageIndex and every tap advances from 0.
                         .pointerInput(pageIndex, pages.size, menuOpen) {
-                            detectTapGestures { pos ->
-                                if (menuOpen) {
-                                    onToggleMenu()
-                                    return@detectTapGestures
-                                }
-                                val third = size.width / 3f
-                                when {
-                                    pos.x < third -> {
-                                        if (pageIndex > 0) {
-                                            val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
-                                            onAnchorChange(prevAnchor)
-                                        } else {
-                                            // Already at page 1 — chain into the previous chapter's tail.
-                                            onOpenPrevChapter?.invoke()
-                                        }
+                            detectTapGestures(
+                                onLongPress = {
+                                    // Long-press anywhere on the page = "ask about
+                                    // this page" — concatenate all askable blocks on
+                                    // the current page as the quoted passage. Precise
+                                    // sub-passage selection is a follow-up (needs
+                                    // SelectionContainer + custom TextToolbar).
+                                    val pageText = pages.getOrNull(pageIndex)
+                                        ?.mapNotNull { extractAskableText(it) }
+                                        ?.joinToString("\n\n")
+                                        ?.takeIf { it.isNotBlank() }
+                                    if (pageText != null) onAskAboutBlock(pageText)
+                                },
+                                onTap = { pos ->
+                                    if (menuOpen) {
+                                        onToggleMenu()
+                                        return@detectTapGestures
                                     }
-                                    pos.x > 2 * third -> {
-                                        if (pageIndex < pages.size - 1) {
-                                            val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
-                                            onAnchorChange(nextAnchor)
-                                        } else {
-                                            // Already at last page — chain into the next chapter's head.
-                                            onOpenNextChapter?.invoke()
+                                    val third = size.width / 3f
+                                    when {
+                                        pos.x < third -> {
+                                            if (pageIndex > 0) {
+                                                val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
+                                                onAnchorChange(prevAnchor)
+                                            } else {
+                                                onOpenPrevChapter?.invoke()
+                                            }
                                         }
+                                        pos.x > 2 * third -> {
+                                            if (pageIndex < pages.size - 1) {
+                                                val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
+                                                onAnchorChange(nextAnchor)
+                                            } else {
+                                                onOpenNextChapter?.invoke()
+                                            }
+                                        }
+                                        else -> onToggleMenu()
                                     }
-                                    else -> onToggleMenu()
-                                }
-                            }
+                                },
+                            )
                         },
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         val pageStart = firstBlockIndex  // computed above, arithmetic
                         pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
                             val globalIdx = pageStart + i
-                            val askableText = extractAskableText(block)
-                            val blockMod = if (askableText != null) {
-                                // Long-press on a text block opens the chat with that
-                                // paragraph quoted. Coexists with parent tap-to-turn:
-                                // long-press consumes the release, tap doesn't fire.
-                                Modifier.pointerInput(block) {
-                                    detectTapGestures(onLongPress = { onAskAboutBlock(askableText) })
-                                }
-                            } else Modifier
-                            Box(modifier = blockMod) {
-                                RenderBlock(
-                                    block = block,
-                                    fontScale = fontScale,
-                                    lineSpacing = lineSpacing,
-                                    textAlign = textAlign,
-                                    revealed = revealed[globalIdx] == true,
-                                    onReveal = { revealed[globalIdx] = true },
-                                )
-                            }
+                            RenderBlock(
+                                block = block,
+                                fontScale = fontScale,
+                                lineSpacing = lineSpacing,
+                                textAlign = textAlign,
+                                revealed = revealed[globalIdx] == true,
+                                onReveal = { revealed[globalIdx] = true },
+                            )
                         }
                     }
 
