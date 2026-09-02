@@ -101,6 +101,8 @@ fun ReaderScreen(
     var lineSpacing by remember { mutableStateOf(readerPrefs.getLineSpacing()) }
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
     var showFormatMenu by remember { mutableStateOf(false) }
+    // null = closed. "" = open general chat. non-empty = open with quoted passage.
+    var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
     // startBlockIndex = -1 is the "open at last block" sentinel — used when
     // flipping left off the first page of a chapter into the previous
     // chapter's tail. Resolved once blocks are parsed (LaunchedEffect below).
@@ -209,6 +211,7 @@ fun ReaderScreen(
                 lineSpacing = lineSpacing,
                 textAlign = textAlign,
                 anchorBlockIndex = anchorBlockIndex,
+                onAskAboutBlock = { text -> chatSelection = text },
                 onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
                 onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
                 menuOpen = showFormatMenu,
@@ -216,6 +219,17 @@ fun ReaderScreen(
                 onToggleMenu = { showFormatMenu = !showFormatMenu },
                 onBack = onBack,
                 onBookmarkToggle = { newCourse -> course = newCourse ?: course },
+            )
+        }
+
+        // Chat panel sits on top of everything when open.
+        if (chatSelection != null && course != null && chapter != null && markdown != null) {
+            ChatPanel(
+                course = course!!,
+                chapter = chapter,
+                chapterMarkdown = markdown!!,
+                initialSelection = chatSelection?.takeIf { it.isNotBlank() },
+                onClose = { chatSelection = null },
             )
         }
 
@@ -227,6 +241,10 @@ fun ReaderScreen(
                 onOpenContents = {
                     showFormatMenu = false
                     onOpenContents()
+                },
+                onAskAboutChapter = {
+                    showFormatMenu = false
+                    chatSelection = ""  // open with no selection = general Q&A
                 },
                 onFontSmaller = {
                     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
@@ -272,6 +290,7 @@ private fun PagedContent(
     onBookmarkToggle: (Course?) -> Unit,
     onOpenPrevChapter: (() -> Unit)?,
     onOpenNextChapter: (() -> Unit)?,
+    onAskAboutBlock: (String) -> Unit,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -351,14 +370,25 @@ private fun PagedContent(
                         val pageStart = firstBlockIndex  // computed above, arithmetic
                         pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
                             val globalIdx = pageStart + i
-                            RenderBlock(
-                                block = block,
-                                fontScale = fontScale,
-                                lineSpacing = lineSpacing,
-                                textAlign = textAlign,
-                                revealed = revealed[globalIdx] == true,
-                                onReveal = { revealed[globalIdx] = true },
-                            )
+                            val askableText = extractAskableText(block)
+                            val blockMod = if (askableText != null) {
+                                // Long-press on a text block opens the chat with that
+                                // paragraph quoted. Coexists with parent tap-to-turn:
+                                // long-press consumes the release, tap doesn't fire.
+                                Modifier.pointerInput(block) {
+                                    detectTapGestures(onLongPress = { onAskAboutBlock(askableText) })
+                                }
+                            } else Modifier
+                            Box(modifier = blockMod) {
+                                RenderBlock(
+                                    block = block,
+                                    fontScale = fontScale,
+                                    lineSpacing = lineSpacing,
+                                    textAlign = textAlign,
+                                    revealed = revealed[globalIdx] == true,
+                                    onReveal = { revealed[globalIdx] = true },
+                                )
+                            }
                         }
                     }
 
@@ -430,6 +460,7 @@ private fun FormatMenu(
     lineSpacing: Float,
     textAlign: TextAlignPref,
     onOpenContents: () -> Unit,
+    onAskAboutChapter: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
     onLineSpacingChange: (Float) -> Unit,
@@ -458,6 +489,22 @@ private fun FormatMenu(
             ) {
                 Text(
                     text = "Contents",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkColor,
+                )
+            }
+        }
+
+        // Ask about this chapter (general Q&A, no selection)
+        MenuRow(label = "Ask") {
+            Box(
+                modifier = Modifier
+                    .clickable { onAskAboutChapter() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "About this chapter",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkColor,
@@ -801,6 +848,32 @@ private fun splitExerciseBody(body: String): Pair<String, String> {
     val extra = lines.drop(answerIdx + 1).joinToString("\n").trim()
     val answer = if (extra.isEmpty()) answerLine else "$answerLine\n$extra"
     return question to answer
+}
+
+/**
+ * Extract long-pressable plain text from a block. Only prose blocks are
+ * askable (paragraphs, list items, recap/exercise bodies). Headings and
+ * figures don't offer a chat entry point — a heading isn't a "passage" to
+ * ask about, and figures already have alt-text that's the passage.
+ */
+private fun extractAskableText(block: Block): String? = when (block) {
+    is Block.Paragraph -> block.inlines.plainText()
+    is Block.BulletItem -> block.inlines.plainText()
+    is Block.OrderedItem -> block.inlines.plainText()
+    is Block.CustomFence -> when (block.kind) {
+        "recap", "exercise" -> block.body.trim()
+        else -> null
+    }
+    else -> null
+}
+
+private fun List<Inline>.plainText(): String = joinToString("") { i ->
+    when (i) {
+        is Inline.Text -> i.text
+        is Inline.Bold -> i.text
+        is Inline.Italic -> i.text
+        is Inline.Code -> i.text
+    }
 }
 
 private fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotatedString {

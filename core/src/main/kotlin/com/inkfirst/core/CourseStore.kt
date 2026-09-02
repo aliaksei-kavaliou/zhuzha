@@ -179,6 +179,57 @@ class CourseStore(private val root: File) {
         return updated
     }
 
+    /**
+     * Appends a Q&A entry to notes/<chapterSlug>.qa.md. Format:
+     *
+     *     ## 2026-09-01
+     *
+     *     > selected passage (or omitted if none)
+     *
+     *     **Q:** the question
+     *
+     *     **A:** the answer
+     *
+     *     ---
+     *
+     * Human-readable Markdown; the ChatPanel reloads the raw file to render
+     * history. Each new entry is separated by a horizontal rule.
+     */
+    fun appendQa(
+        courseSlug: String,
+        chapterSlug: String,
+        selection: String?,
+        question: String,
+        answer: String,
+        created: String,
+    ) {
+        val notesDir = File(root, "$courseSlug/notes").apply { mkdirs() }
+        val file = File(notesDir, "$chapterSlug.qa.md")
+        val block = buildString {
+            appendLine("## $created")
+            appendLine()
+            if (!selection.isNullOrBlank()) {
+                selection.trim().lines().forEach { appendLine("> $it") }
+                appendLine()
+            }
+            appendLine("**Q:** ${question.trim()}")
+            appendLine()
+            appendLine("**A:** ${answer.trim()}")
+            appendLine()
+            appendLine("---")
+            appendLine()
+        }
+        val existing = if (file.exists()) file.readText() else ""
+        val prefix = if (existing.isBlank() || existing.endsWith("\n\n")) existing else "$existing\n"
+        file.writeText(prefix + block)
+    }
+
+    /** Returns raw markdown of the saved Q&A history, or empty if none saved yet. */
+    fun readQa(courseSlug: String, chapterSlug: String): String {
+        val file = File(root, "$courseSlug/notes/$chapterSlug.qa.md")
+        return if (file.exists()) file.readText() else ""
+    }
+
     private fun writeCourse(courseSlug: String, course: Course) {
         File(root, "$courseSlug/course.json")
             .writeText(json.encodeToString(Course.serializer(), course))
