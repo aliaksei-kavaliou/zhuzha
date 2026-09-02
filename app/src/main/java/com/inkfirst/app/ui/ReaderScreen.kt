@@ -282,6 +282,8 @@ fun ReaderScreen(
                 fontScale = fontScale,
                 lineSpacing = lineSpacing,
                 textAlign = textAlign,
+                isBookmarked = headerBookmarked,
+                canBookmark = headerFirstBlock >= 0 && course != null,
                 onOpenContents = {
                     showFormatMenu = false
                     onOpenContents()
@@ -289,6 +291,17 @@ fun ReaderScreen(
                 onAskAboutChapter = {
                     showFormatMenu = false
                     chatSelection = ""  // open with no selection = general Q&A
+                },
+                onToggleBookmark = {
+                    showFormatMenu = false
+                    val c = course ?: return@FormatMenu
+                    if (headerFirstBlock < 0) return@FormatMenu
+                    val updated = if (headerBookmarked) {
+                        store.removeBookmark(c.slug, chapterSlug, headerFirstBlock)
+                    } else {
+                        store.addBookmark(c.slug, chapterSlug, headerFirstBlock, LocalDate.now().toString())
+                    }
+                    course = updated ?: course
                 },
                 onFontSmaller = {
                     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
@@ -408,11 +421,13 @@ private fun PagedContent(
                         // would go silent. Handling both in one awaitEachGesture avoids it.
                         .pointerInput(pageIndex, pages.size, menuOpen) {
                             val dragThresholdPx = 60.dp.toPx()
+                            val vDragThresholdPx = 80.dp.toPx()  // slightly higher — vertical drags happen more accidentally
                             val dragStartPx = 10.dp.toPx()
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 val downPos = down.position
                                 var totalDx = 0f
+                                var totalDy = 0f
                                 var isDrag = false
                                 while (true) {
                                     val event = awaitPointerEvent()
@@ -421,10 +436,14 @@ private fun PagedContent(
                                         if (menuOpen) {
                                             onToggleMenu()
                                         } else if (isDrag) {
-                                            if (totalDx <= -dragThresholdPx) {
-                                                goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
-                                            } else if (totalDx >= dragThresholdPx) {
-                                                goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                            // Which axis dominates decides the meaning.
+                                            if (kotlin.math.abs(totalDx) >= kotlin.math.abs(totalDy)) {
+                                                if (totalDx <= -dragThresholdPx) goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                                else if (totalDx >= dragThresholdPx) goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                            } else {
+                                                // Vertical: swipe UP → next chapter, swipe DOWN → previous chapter.
+                                                if (totalDy <= -vDragThresholdPx) onOpenNextChapter?.invoke()
+                                                else if (totalDy >= vDragThresholdPx) onOpenPrevChapter?.invoke()
                                             }
                                         } else {
                                             // Plain tap.
@@ -437,9 +456,12 @@ private fun PagedContent(
                                         }
                                         break
                                     }
-                                    val dx = change.positionChange().x
-                                    totalDx += dx
-                                    if (!isDrag && kotlin.math.abs(totalDx) > dragStartPx) isDrag = true
+                                    val pc = change.positionChange()
+                                    totalDx += pc.x
+                                    totalDy += pc.y
+                                    if (!isDrag && (kotlin.math.abs(totalDx) > dragStartPx || kotlin.math.abs(totalDy) > dragStartPx)) {
+                                        isDrag = true
+                                    }
                                 }
                             }
                         },
@@ -515,30 +537,30 @@ private fun ReaderHeader(
                 modifier = Modifier.padding(end = 8.dp),
             )
         }
-        // Small ribbon-toggle button. Fills when the current page's first block
-        // is bookmarked; outline when not. Fixed spot in the header so it never
-        // competes with tap/swipe gestures in the reading area.
-        TextButton(
-            onClick = onBookmarkToggle,
-            enabled = canBookmark,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
-        ) {
-            Canvas(modifier = Modifier.size(width = 14.dp, height = 20.dp)) {
-                val w = size.width
-                val h = size.height
-                val notch = h * 0.28f
-                val path = Path().apply {
-                    moveTo(0f, 0f)
-                    lineTo(w, 0f)
-                    lineTo(w, h)
-                    lineTo(w / 2, h - notch)
-                    lineTo(0f, h)
-                    close()
-                }
-                if (isBookmarked) {
+        // Bookmark ribbon: appears in the header only when this page is
+        // bookmarked. Tap to remove. Setting a bookmark happens via the
+        // reader menu (center tap → "Bookmark this page"). This keeps the
+        // header quiet when no bookmark is set — the "appear-only-when-on"
+        // pattern we agreed on earlier.
+        if (isBookmarked) {
+            TextButton(
+                onClick = onBookmarkToggle,
+                enabled = canBookmark,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+            ) {
+                Canvas(modifier = Modifier.size(width = 14.dp, height = 20.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val notch = h * 0.28f
+                    val path = Path().apply {
+                        moveTo(0f, 0f)
+                        lineTo(w, 0f)
+                        lineTo(w, h)
+                        lineTo(w / 2, h - notch)
+                        lineTo(0f, h)
+                        close()
+                    }
                     drawPath(path, color = InkColor)
-                } else {
-                    drawPath(path, color = InkColor, style = Stroke(width = 2f))
                 }
             }
         }
@@ -555,8 +577,11 @@ private fun FormatMenu(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    isBookmarked: Boolean,
+    canBookmark: Boolean,
     onOpenContents: () -> Unit,
     onAskAboutChapter: () -> Unit,
+    onToggleBookmark: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
     onLineSpacingChange: (Float) -> Unit,
@@ -604,6 +629,22 @@ private fun FormatMenu(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkColor,
+                )
+            }
+        }
+
+        // Bookmark toggle for the current page.
+        MenuRow(label = "Mark") {
+            Box(
+                modifier = Modifier
+                    .clickable(enabled = canBookmark) { onToggleBookmark() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = if (isBookmarked) "Remove bookmark" else "Bookmark this page",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (canBookmark) InkColor else MutedColor,
                 )
             }
         }
