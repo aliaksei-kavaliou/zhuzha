@@ -1247,6 +1247,7 @@ private fun CompilePrompt(
             }
         }
     }
+    }  // close Column
 }
 
 private fun compileChapter(
