@@ -928,9 +928,25 @@ private fun ParagraphBlock(
     } else {
         renderInlinesWithUnderlines(inlines, textAnnotations.map { it.quote })
     }
+    // Precompute character ranges of each underlined quote so a tap inside
+    // one opens the note directly, matching how physical marginalia work
+    // (the mark IS the affordance). Falls through to the parent page-turn
+    // handler when the tap misses every range — we only .consume() on a hit.
+    val plainText = annotated.text
+    val annotationRanges = remember(plainText, textAnnotations) {
+        textAnnotations.mapNotNull { a ->
+            val needle = firstLineOf(a.quote.trim())
+            if (needle.isBlank()) return@mapNotNull null
+            val start = plainText.indexOf(needle)
+            if (start < 0) null else (start until start + needle.length) to a
+        }
+    }
+    var textLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    val hitSlop = with(LocalDensity.current) { 8.dp.toPx() }
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         Text(
             text = annotated,
+            onTextLayout = { textLayout = it },
             style = androidx.compose.ui.text.TextStyle(
                 fontFamily = FontFamily.Serif,
                 fontSize = 18.sp * fontScale,
@@ -939,7 +955,35 @@ private fun ParagraphBlock(
                 textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
                 hyphens = Hyphens.Auto,
             ),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .pointerInput(annotationRanges) {
+                    if (annotationRanges.isEmpty()) return@pointerInput
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var moved = false
+                        while (true) {
+                            val ev = awaitPointerEvent()
+                            val ch = ev.changes.firstOrNull() ?: break
+                            val pc = ch.positionChange()
+                            if (kotlin.math.abs(pc.x) > hitSlop || kotlin.math.abs(pc.y) > hitSlop) moved = true
+                            if (!ch.pressed) {
+                                if (!moved) {
+                                    val layout = textLayout
+                                    if (layout != null) {
+                                        val pos = layout.getOffsetForPosition(down.position)
+                                        val hit = annotationRanges.firstOrNull { pos in it.first }
+                                        if (hit != null) {
+                                            ch.consume()
+                                            onOpenAnnotation(hit.second)
+                                        }
+                                    }
+                                }
+                                break
+                            }
+                        }
+                    }
+                },
         )
         // Note markers to the right of the paragraph — one small ✎ per
         // annotation, tappable to open the note. Sits outside the Text so

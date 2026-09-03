@@ -93,12 +93,10 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        OutlinedTextField(
+        LanguagePicker(
+            label = "Preferred language",
             value = languageDraft,
             onValueChange = { languageDraft = it },
-            label = { Text("Preferred language") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
         )
         Text(
             text = "Used to pre-fill the language on new courses. Existing courses keep the language they were created with.",

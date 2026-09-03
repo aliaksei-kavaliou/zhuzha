@@ -138,12 +138,10 @@ fun NewCourseScreen(
 
         StylePicker(current = style, onSelected = { style = it })
 
-        OutlinedTextField(
+        LanguagePicker(
+            label = "Language",
             value = language,
             onValueChange = { language = it },
-            label = { Text("Language") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(Modifier.height(8.dp))
