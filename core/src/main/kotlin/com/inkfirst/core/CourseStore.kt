@@ -36,6 +36,7 @@ class CourseStore(private val root: File) {
         dailyMinutes: Int,
         style: String,
         model: String,
+        language: String = "English",
         created: String,
     ): Course {
         root.mkdirs()
@@ -49,6 +50,7 @@ class CourseStore(private val root: File) {
             dailyMinutes = dailyMinutes,
             style = style,
             model = model,
+            language = language,
             created = created,
         )
 
@@ -228,6 +230,119 @@ class CourseStore(private val root: File) {
     fun readQa(courseSlug: String, chapterSlug: String): String {
         val file = File(root, "$courseSlug/notes/$chapterSlug.qa.md")
         return if (file.exists()) file.readText() else ""
+    }
+
+    /**
+     * Adds a passage-anchored annotation to the course. Idempotency on
+     * (chapter, quote, note) is intentionally weak — a user re-writing the
+     * same note on the same passage creates two entries; timestamps disambiguate.
+     */
+    fun addAnnotation(
+        courseSlug: String,
+        chapterSlug: String,
+        blockIndex: Int,
+        quote: String,
+        note: String,
+        created: String,
+    ): Course? {
+        val course = load(courseSlug) ?: return null
+        val updated = course.copy(
+            annotations = course.annotations + Annotation(
+                chapterSlug = chapterSlug,
+                blockIndex = blockIndex,
+                quote = quote,
+                note = note,
+                created = created,
+            ),
+        )
+        writeCourse(courseSlug, updated)
+        return updated
+    }
+
+    /**
+     * Persists the full set of freehand strokes for a chapter as
+     * ink/<chapterSlug>.ink.json. Overwrites — the reader keeps the working
+     * set in memory and writes the complete list on close. An empty list
+     * deletes the file so unused chapters don't leave stubs.
+     */
+    fun saveStrokes(courseSlug: String, chapterSlug: String, strokes: List<Stroke>) {
+        val dir = File(root, "$courseSlug/ink").apply { mkdirs() }
+        val file = File(dir, "$chapterSlug.ink.json")
+        if (strokes.isEmpty()) {
+            file.delete()
+        } else {
+            file.writeText(json.encodeToString(kotlinx.serialization.builtins.ListSerializer(Stroke.serializer()), strokes))
+        }
+    }
+
+    /** Reads the freehand strokes for a chapter, or empty if none saved yet. */
+    fun readStrokes(courseSlug: String, chapterSlug: String): List<Stroke> {
+        val file = File(root, "$courseSlug/ink/$chapterSlug.ink.json")
+        if (!file.exists()) return emptyList()
+        return try {
+            json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Stroke.serializer()), file.readText())
+        } catch (_: SerializationException) {
+            emptyList()
+        }
+    }
+
+    /** Chapter slugs that currently have at least one ink stroke on file. */
+    fun chaptersWithInk(courseSlug: String): Set<String> {
+        val dir = File(root, "$courseSlug/ink")
+        if (!dir.isDirectory) return emptySet()
+        return dir.listFiles().orEmpty()
+            .filter { it.isFile && it.name.endsWith(".ink.json") && it.length() > 0L }
+            .map { it.name.removeSuffix(".ink.json") }
+            .toSet()
+    }
+
+    /**
+     * Removes the annotation matching the given key (chapter + quote + created).
+     * (chapter, created) is unique in practice — two annotations added in the
+     * same second by the same user on the same passage is not a concern; but
+     * we include quote to avoid ambiguity if we ever migrate `created` to
+     * lower resolution.
+     */
+    fun removeAnnotation(
+        courseSlug: String,
+        chapterSlug: String,
+        quote: String,
+        created: String,
+    ): Course? {
+        val course = load(courseSlug) ?: return null
+        val updated = course.copy(
+            annotations = course.annotations.filterNot {
+                it.chapterSlug == chapterSlug && it.quote == quote && it.created == created
+            },
+        )
+        writeCourse(courseSlug, updated)
+        return updated
+    }
+
+    /**
+     * Persists the "last chapter the user opened" pointer at
+     * <root>/last_read.json. Cold starts read this to jump straight into the
+     * Reader on the last-open chapter.
+     */
+    fun writeLastRead(courseSlug: String, chapterSlug: String) {
+        root.mkdirs()
+        val pointer = LastRead(courseSlug = courseSlug, chapterSlug = chapterSlug)
+        File(root, "last_read.json").writeText(json.encodeToString(LastRead.serializer(), pointer))
+    }
+
+    /** Returns the last-read pointer if present and parseable, else null. */
+    fun readLastRead(): LastRead? {
+        val file = File(root, "last_read.json").takeIf { it.exists() } ?: return null
+        return try {
+            json.decodeFromString(LastRead.serializer(), file.readText())
+        } catch (_: SerializationException) {
+            null
+        }
+    }
+
+    /** Removes the pointer (used when it references a course/chapter that no longer exists). */
+    fun clearLastRead() {
+        File(root, "last_read.json").delete()
     }
 
     private fun writeCourse(courseSlug: String, course: Course) {

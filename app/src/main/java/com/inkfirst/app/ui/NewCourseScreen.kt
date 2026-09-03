@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.inkfirst.app.data.ApiKeyStore
+import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.CourseOutline
 import com.inkfirst.core.KtorGeminiClient
@@ -72,6 +73,7 @@ fun NewCourseScreen(
     var priorKnowledge by remember { mutableStateOf("") }
     var expectations by remember { mutableStateOf("") }
     var style by remember { mutableStateOf(StylePresets.DEFAULT) }
+    var language by remember { mutableStateOf(store.getPreferredLanguage()) }
     var uiState by remember { mutableStateOf<OutlineUiState>(OutlineUiState.Idle) }
 
     val apiKey = store.getApiKey()
@@ -136,12 +138,21 @@ fun NewCourseScreen(
 
         StylePicker(current = style, onSelected = { style = it })
 
+        OutlinedTextField(
+            value = language,
+            onValueChange = { language = it },
+            label = { Text("Language") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
         Spacer(Modifier.height(8.dp))
 
         Button(
             enabled = uiState !is OutlineUiState.Loading &&
                 !apiKey.isNullOrBlank() &&
                 topic.isNotBlank() &&
+                language.isNotBlank() &&
                 (dailyMinutes.toIntOrNull() ?: 0) > 0,
             onClick = {
                 focusManager.clearFocus()  // hide keyboard before the async call
@@ -149,7 +160,7 @@ fun NewCourseScreen(
                 val key = apiKey!!
                 uiState = OutlineUiState.Loading
                 scope.launch {
-                    uiState = runOutline(topic, minutes, priorKnowledge, expectations, style, model, key)
+                    uiState = runOutline(topic, minutes, priorKnowledge, expectations, style, language, model, key)
                 }
             },
         ) {
@@ -183,6 +194,7 @@ fun NewCourseScreen(
                             dailyMinutes = dailyMinutes.toIntOrNull() ?: 30,
                             style = style.key,
                             model = model,
+                            language = language.trim().ifBlank { "English" },
                             created = created,
                         )
                         onCourseCreated(course.slug)
@@ -259,6 +271,7 @@ private suspend fun runOutline(
     priorKnowledge: String,
     expectations: String,
     style: StylePreset,
+    language: String,
     model: String,
     apiKey: String,
 ): OutlineUiState {
@@ -272,13 +285,14 @@ private suspend fun runOutline(
                     priorKnowledge = priorKnowledge,
                     expectations = expectations,
                     style = style,
+                    language = language.trim().ifBlank { "English" },
                     apiKey = apiKey,
                 ),
             )
         } catch (e: OutlineParseException) {
             OutlineUiState.Failed("Gemini returned malformed JSON. Try again.\n${e.message}")
         } catch (e: Exception) {
-            OutlineUiState.Failed(e.message ?: "Unknown error")
+            OutlineUiState.Failed(geminiErrorLabel(e))
         }
     }
 }

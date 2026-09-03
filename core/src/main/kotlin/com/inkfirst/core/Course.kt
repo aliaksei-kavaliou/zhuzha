@@ -19,9 +19,61 @@ data class Course(
     @SerialName("daily_minutes") val dailyMinutes: Int,
     val style: String,
     val model: String,
+    // Human-readable language name — "English", "Belarusian", "Español", etc.
+    // Threaded into every generation prompt (outline, chapters, Q&A) as a
+    // "write in this language" instruction. Free-text so exotic choices work;
+    // memory.md stays in English regardless (internal-only artifact).
+    val language: String = "English",
     val created: String,
     val chapters: List<PersistedChapter>,
     val bookmarks: List<Bookmark> = emptyList(),
+    val annotations: List<Annotation> = emptyList(),
+)
+
+/**
+ * A passage-anchored note. The reader selects text ("quote"), taps "Add note"
+ * on the selection chip, types a "note", and the pair is saved. [blockIndex]
+ * anchors to the first block on the page where the annotation was made so
+ * jumping back from the TOC lands on the right page.
+ */
+@Serializable
+data class Annotation(
+    @SerialName("chapter_slug") val chapterSlug: String,
+    @SerialName("block_index") val blockIndex: Int,
+    val quote: String,
+    val note: String,
+    val created: String,
+    // "text" for hand-selected annotations (render as an underline on the
+    // matched quote); "curve" for stylus lasso-selected annotations (render
+    // the stored path). Kept as free-text string not enum so JSON migration
+    // is a non-event when we add more kinds.
+    val kind: String = "text",
+)
+
+/**
+ * A single freehand ink stroke — one continuous pen contact. Anchored to a
+ * chapter block so the stroke survives font/spacing changes: [InkPoint.x]
+ * and [InkPoint.y] are relative to that block's top-left corner at the
+ * moment of drawing. Coordinates are in device pixels; the reader converts
+ * when rendering.
+ */
+@Serializable
+data class Stroke(
+    @SerialName("block_index") val blockIndex: Int,
+    val points: List<InkPoint>,
+    /** Free-text brush hint for future styling ("pen", "pencil", "marker"). Default "pen". */
+    val brush: String = "pen",
+    val created: String,
+)
+
+@Serializable
+data class InkPoint(
+    val x: Float,
+    val y: Float,
+    /** 0f..1f pressure if the device reports it; 0.5f for no-pressure sources. */
+    val pressure: Float = 0.5f,
+    /** Optional monotonic timestamp (ms since epoch). Handy for future replay. */
+    val t: Long = 0,
 )
 
 /**
@@ -66,6 +118,19 @@ data class CourseSummary(
 )
 
 /**
+ * Pointer to "where the reader was last." Lives at <courses-root>/last_read.json
+ * so cold-starts can resume straight into the Reader. Just a pointer — the
+ * actual block index is looked up in course.json (source of truth for
+ * per-chapter progress).
+ */
+@Serializable
+data class LastRead(
+    @SerialName("course_slug") val courseSlug: String,
+    @SerialName("chapter_slug") val chapterSlug: String,
+)
+
+
+/**
  * Kebab-cases a course title. Unlike [chapterSlug] this has no numeric prefix
  * because there's no natural ordinal — the *store* handles collisions by
  * appending "-2", "-3", etc.
@@ -89,6 +154,7 @@ fun CourseOutline.toCourse(
     dailyMinutes: Int,
     style: String,
     model: String,
+    language: String,
     created: String,
 ): Course = Course(
     title = title,
@@ -99,6 +165,7 @@ fun CourseOutline.toCourse(
     dailyMinutes = dailyMinutes,
     style = style,
     model = model,
+    language = language,
     created = created,
     chapters = chapters.map {
         PersistedChapter(

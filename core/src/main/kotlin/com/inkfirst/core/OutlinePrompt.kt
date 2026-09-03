@@ -6,6 +6,7 @@ internal data class OutlineRequestInputs(
     val priorKnowledge: String,
     val expectations: String,
     val style: StylePreset,
+    val language: String = "English",
 )
 
 /**
@@ -26,4 +27,5 @@ internal fun buildOutlinePrompt(inputs: OutlineRequestInputs): String = buildStr
     appendLine("- Objectives are concrete outcomes the learner will be able to do, 2-5 per chapter.")
     appendLine("- The slug field is a placeholder; leave it empty, it will be derived deterministically.")
     appendLine("- Titles should reflect the chosen teaching style (see system instruction).")
+    appendLine("- Write the title, chapter titles, and all objectives in ${inputs.language}. Do not include translations.")
 }

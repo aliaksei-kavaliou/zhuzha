@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.ApiKeyStore
+import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Course
 import com.inkfirst.core.KtorGeminiClient
@@ -232,7 +233,7 @@ fun ChatPanel(
                                     pending = false
                                 }
                             } catch (e: Exception) {
-                                error = e.message ?: "Unknown error"
+                                error = geminiErrorLabel(e)
                                 pending = false
                             }
                         }

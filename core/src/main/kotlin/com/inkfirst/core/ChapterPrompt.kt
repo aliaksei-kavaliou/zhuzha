@@ -35,6 +35,7 @@ internal fun buildChapterPrompt(
     appendLine()
     appendLine("FORMAT RULES")
     appendLine("- Return Markdown. Do NOT wrap the whole output in a code fence.")
+    appendLine("- Write the entire chapter in ${course.language}. All headings, prose, exercise text, recap text, and figure alt-text must be in ${course.language}. Technical terms may stay in English if that's how the field uses them.")
     appendLine("- Aim for content that fills ~${chapter.estMinutes} minutes of slow, e-ink reading. Redundancy is welcome if it's pedagogical.")
     appendLine("- Use custom fenced blocks where they fit:")
     appendLine("  - ```exercise … ``` for practice; put the answer inside on a line starting with \"answer: \".")

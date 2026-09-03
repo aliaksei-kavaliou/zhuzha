@@ -30,4 +30,12 @@ class OutlinePromptTest {
         // Both optional inputs share the same fallback string.
         assertTrue(prompt.split("(none stated)").size - 1 == 2)
     }
+
+    @Test
+    fun `prompt tells the model which language to write outline in`() {
+        val prompt = buildOutlinePrompt(
+            OutlineRequestInputs("X", 30, "", "", StylePresets.TEXTBOOK, language = "Belarusian"),
+        )
+        assertTrue(prompt.contains("in Belarusian"))
+    }
 }

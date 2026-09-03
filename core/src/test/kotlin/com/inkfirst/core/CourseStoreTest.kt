@@ -210,6 +210,82 @@ class CourseStoreTest {
     }
 
     @Test
+    fun `saveStrokes and readStrokes round-trip, empty list deletes the file`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        assertTrue(store.readStrokes("kotlin", "01-intro").isEmpty())
+
+        val strokes = listOf(
+            Stroke(
+                blockIndex = 3,
+                points = listOf(InkPoint(1f, 2f), InkPoint(3f, 4f, 0.7f, 10L)),
+                created = "2026-09-03",
+            ),
+            Stroke(blockIndex = 5, points = listOf(InkPoint(10f, 20f)), created = "2026-09-03"),
+        )
+        store.saveStrokes("kotlin", "01-intro", strokes)
+
+        val read = store.readStrokes("kotlin", "01-intro")
+        assertEquals(2, read.size)
+        assertEquals(3, read[0].blockIndex)
+        assertEquals(2, read[0].points.size)
+        assertEquals(0.7f, read[0].points[1].pressure)
+        assertEquals(setOf("01-intro"), store.chaptersWithInk("kotlin"))
+
+        store.saveStrokes("kotlin", "01-intro", emptyList())
+        assertTrue(store.readStrokes("kotlin", "01-intro").isEmpty())
+        assertTrue(!File(tmp, "kotlin/ink/01-intro.ink.json").exists())
+    }
+
+    @Test
+    fun `addAnnotation appends and removeAnnotation deletes by key`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        val a1 = store.addAnnotation(
+            "kotlin", "01-intro", 3, "quote one", "note one", "2026-09-03",
+        )!!
+        assertEquals(1, a1.annotations.size)
+        val a2 = store.addAnnotation(
+            "kotlin", "01-intro", 5, "quote two", "note two", "2026-09-03",
+        )!!
+        assertEquals(2, a2.annotations.size)
+
+        // Persisted.
+        val reloaded = store.load("kotlin")!!
+        assertEquals(2, reloaded.annotations.size)
+        assertEquals("quote one", reloaded.annotations[0].quote)
+        assertEquals("note two", reloaded.annotations[1].note)
+
+        val after = store.removeAnnotation("kotlin", "01-intro", "quote one", "2026-09-03")!!
+        assertEquals(1, after.annotations.size)
+        assertEquals("quote two", after.annotations[0].quote)
+
+        // Non-matching remove is a no-op (course still returned).
+        val same = store.removeAnnotation("kotlin", "01-intro", "nope", "2026-01-01")!!
+        assertEquals(1, same.annotations.size)
+    }
+
+    @Test
+    fun `writeLastRead, readLastRead, clearLastRead round-trip`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        assertNull(store.readLastRead())
+
+        store.writeLastRead("kotlin", "01-intro")
+        val read = store.readLastRead()!!
+        assertEquals("kotlin", read.courseSlug)
+        assertEquals("01-intro", read.chapterSlug)
+
+        // Overwrite is fine — later chapter opens replace the pointer.
+        store.writeLastRead("kotlin", "02-null")
+        assertEquals("02-null", store.readLastRead()!!.chapterSlug)
+
+        store.clearLastRead()
+        assertNull(store.readLastRead())
+    }
+
+    @Test
     fun `removeBookmark deletes matching entry only`(@TempDir tmp: File) {
         val store = CourseStore(tmp)
         store.createTest("kotlin")

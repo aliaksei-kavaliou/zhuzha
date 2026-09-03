@@ -19,12 +19,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,10 +52,13 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.rememberCourseStore
+import com.inkfirst.core.Annotation
 import com.inkfirst.core.Bookmark
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
 import com.inkfirst.core.PersistedChapter
+import com.inkfirst.core.courseDaySchedule
+import com.inkfirst.core.totalCourseDays
 
 private val InkColor = Color(0xFF000000)
 private val PaperColor = Color(0xFFFFFFFF)
@@ -56,8 +67,15 @@ private val MutedColor = Color(0xFF555555)
 private sealed interface TocBlock {
     data class BookTitle(val title: String, val subtitle: String) : TocBlock
     data class SectionHeader(val text: String) : TocBlock
-    data class ChapterEntry(val chapter: PersistedChapter, val isCurrent: Boolean) : TocBlock
+    data class ChapterEntry(
+        val chapter: PersistedChapter,
+        val isCurrent: Boolean,
+        val hasNotes: Boolean,
+        // "Day 3" / "Day 5–6" — derived from courseDaySchedule.
+        val dayLabel: String,
+    ) : TocBlock
     data class BookmarkEntry(val bookmark: Bookmark, val chapterTitle: String) : TocBlock
+    data class NoteEntry(val annotation: Annotation, val chapterLabel: String) : TocBlock
 }
 
 @Composable
@@ -69,7 +87,26 @@ fun CourseDetailScreen(
 ) {
     val courseStore = rememberCourseStore()
     var course by remember { mutableStateOf<Course?>(null) }
+    // Fallback for the "you are here" indicator when the user opens Contents
+    // from Library (no currentChapterSlug is passed). Reading state as it
+    // stands after Reader recorded it, so it points at the most recently
+    // opened chapter — not every chapter marked READING.
+    val lastReadChapterSlug = remember(slug) {
+        courseStore.readLastRead()
+            ?.takeIf { it.courseSlug == slug }
+            ?.chapterSlug
+    }
     LaunchedEffect(slug) { course = courseStore.load(slug) }
+
+    // In-place remove that also updates local state so the TOC re-renders
+    // without a full course reload. The store still owns the disk write.
+    val onDeleteAnnotation: (Annotation) -> Unit = { a ->
+        val c = course
+        if (c != null) {
+            val updated = courseStore.removeAnnotation(c.slug, a.chapterSlug, a.quote, a.created)
+            if (updated != null) course = updated
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -97,8 +134,9 @@ fun CourseDetailScreen(
                 return@Column
             }
 
-            val tocBlocks = remember(c, currentChapterSlug) {
-                buildTocBlocks(c, currentChapterSlug)
+            val effectiveCurrentSlug = currentChapterSlug ?: lastReadChapterSlug
+            val tocBlocks = remember(c, effectiveCurrentSlug) {
+                buildTocBlocks(c, effectiveCurrentSlug)
             }
 
             PagedContents(
@@ -114,6 +152,8 @@ fun CourseDetailScreen(
                     onReadChapter(chapter.slug, startIndex)
                 },
                 onBookmarkTap = { bookmark -> onReadChapter(bookmark.chapterSlug, bookmark.blockIndex) },
+                onNoteTap = { note -> onReadChapter(note.chapterSlug, note.blockIndex) },
+                onNoteDelete = onDeleteAnnotation,
             )
         }
     }
@@ -121,19 +161,41 @@ fun CourseDetailScreen(
 
 private fun buildTocBlocks(course: Course, currentChapterSlug: String?): List<TocBlock> {
     val blocks = mutableListOf<TocBlock>()
+    val totalDays = totalCourseDays(course)
     blocks += TocBlock.BookTitle(
         title = course.title,
-        subtitle = "${course.chapters.size} chapters · ${course.dailyMinutes} min/day · ${course.style}",
+        subtitle = "${course.chapters.size} chapters · ${course.dailyMinutes} min/day · ~$totalDays days",
     )
     blocks += TocBlock.SectionHeader("Contents")
+    val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
+    val schedule = courseDaySchedule(course).associateBy { it.chapterN }
     course.chapters.forEach { chapter ->
-        // Mark as "here" if either (a) we jumped to Contents from the Reader
-        // for this exact chapter, or (b) the chapter is in READING status —
-        // the latter is what surfaces the "resume where you left off" hint
-        // when the user arrives at Contents fresh from Library.
-        val isCurrent = (currentChapterSlug != null && chapter.slug == currentChapterSlug) ||
-            chapter.status == ChapterStatus.READING
-        blocks += TocBlock.ChapterEntry(chapter = chapter, isCurrent = isCurrent)
+        // "You are here" — a single chapter, the one we came from in the
+        // Reader (currentChapterSlug) or the last-opened one (fallback
+        // computed by the caller). READING status is no longer enough on
+        // its own; multiple chapters can be READING at once and we'd bold
+        // all of them.
+        val isCurrent = currentChapterSlug != null && chapter.slug == currentChapterSlug
+        blocks += TocBlock.ChapterEntry(
+            chapter = chapter,
+            isCurrent = isCurrent,
+            hasNotes = chapter.slug in chaptersWithNotes,
+            dayLabel = schedule[chapter.n]?.label.orEmpty(),
+        )
+    }
+    if (course.annotations.isNotEmpty()) {
+        blocks += TocBlock.SectionHeader("Notes")
+        // Group by chapter order — annotations within a chapter appear in
+        // creation order (order they were added), which is the persisted order.
+        val chapterOrder = course.chapters.mapIndexed { i, ch -> ch.slug to i }.toMap()
+        val sorted = course.annotations.sortedWith(
+            compareBy({ chapterOrder[it.chapterSlug] ?: Int.MAX_VALUE }, { it.created }),
+        )
+        sorted.forEach { a ->
+            val label = course.chapters.firstOrNull { it.slug == a.chapterSlug }
+                ?.let { "Ch ${it.n}" } ?: a.chapterSlug
+            blocks += TocBlock.NoteEntry(a, label)
+        }
     }
     if (course.bookmarks.isNotEmpty()) {
         blocks += TocBlock.SectionHeader("Bookmarks")
@@ -154,6 +216,8 @@ private fun PagedContents(
     blocks: List<TocBlock>,
     onChapterTap: (PersistedChapter) -> Unit,
     onBookmarkTap: (Bookmark) -> Unit,
+    onNoteTap: (Annotation) -> Unit,
+    onNoteDelete: (Annotation) -> Unit,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -167,12 +231,37 @@ private fun PagedContents(
         val pages = remember(blocks, availableHeightPx, contentWidthPx) {
             paginateToc(blocks, contentWidthPx, availableHeightPx, density, measurer)
         }
-        var pageIndex by remember(pages) { mutableStateOf(0) }
+        // Preserve pageIndex across content changes (e.g. deleting a note).
+        // Only clamp if the current page no longer exists — otherwise stay put.
+        var pageIndex by remember { mutableStateOf(0) }
+        LaunchedEffect(pages.size) {
+            if (pageIndex >= pages.size) pageIndex = (pages.size - 1).coerceAtLeast(0)
+        }
         val hasPrev = pageIndex > 0
         val hasNext = pageIndex < pages.size - 1
         val interaction = remember { MutableInteractionSource() }
+        // Boox side buttons fire VolumeUp/VolumeDown; page TOC same as Reader.
+        val focusRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .focusRequester(focusRequester)
+                .focusable()
+                .onKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (event.key) {
+                        Key.VolumeUp, Key.PageUp, Key.DirectionUp -> {
+                            if (hasPrev) { pageIndex--; true } else false
+                        }
+                        Key.VolumeDown, Key.PageDown, Key.DirectionDown -> {
+                            if (hasNext) { pageIndex++; true } else false
+                        }
+                        else -> false
+                    }
+                },
+        ) {
             Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 Box(
                     modifier = Modifier
@@ -219,6 +308,8 @@ private fun PagedContents(
                             block = block,
                             onChapterTap = onChapterTap,
                             onBookmarkTap = onBookmarkTap,
+                            onNoteTap = onNoteTap,
+                            onNoteDelete = onNoteDelete,
                         )
                     }
                 }
@@ -258,12 +349,15 @@ private fun RenderTocBlock(
     block: TocBlock,
     onChapterTap: (PersistedChapter) -> Unit,
     onBookmarkTap: (Bookmark) -> Unit,
+    onNoteTap: (Annotation) -> Unit,
+    onNoteDelete: (Annotation) -> Unit,
 ) {
     when (block) {
         is TocBlock.BookTitle -> BookTitleBlock(block)
         is TocBlock.SectionHeader -> SectionHeaderBlock(block)
         is TocBlock.ChapterEntry -> ChapterEntryBlock(block, onChapterTap)
         is TocBlock.BookmarkEntry -> BookmarkEntryBlock(block, onBookmarkTap)
+        is TocBlock.NoteEntry -> NoteEntryBlock(block, onNoteTap, onNoteDelete)
     }
 }
 
@@ -327,6 +421,89 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
             lineHeight = 22.sp,
             color = InkColor,
             modifier = Modifier.weight(1f),
+        )
+        if (entry.dayLabel.isNotEmpty()) {
+            Text(
+                text = entry.dayLabel,
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                fontSize = 12.sp,
+                color = MutedColor,
+                modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+            )
+        }
+        // At-a-glance marker for chapters that carry annotations. Renders
+        // dim when absent so the row width stays constant (no reflow when a
+        // note is added/removed elsewhere).
+        Text(
+            text = if (entry.hasNotes) "✎" else " ",
+            fontFamily = FontFamily.Serif,
+            fontSize = 14.sp,
+            color = if (entry.hasNotes) InkColor else Color.Transparent,
+            modifier = Modifier.padding(start = 8.dp, top = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun NoteEntryBlock(
+    entry: TocBlock.NoteEntry,
+    onTap: (Annotation) -> Unit,
+    onDelete: (Annotation) -> Unit,
+) {
+    val a = entry.annotation
+    val quotePreview = a.quote.let { if (it.length > 80) it.take(77) + "…" else it }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTap(a) }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = "✎ ",
+            fontFamily = FontFamily.Serif,
+            fontSize = 14.sp,
+            color = InkColor,
+            modifier = Modifier.padding(end = 4.dp, top = 2.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "\"$quotePreview\"",
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = InkColor,
+            )
+            Text(
+                text = a.note.trim().replace('\n', ' '),
+                fontFamily = FontFamily.Serif,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = MutedColor,
+                modifier = Modifier.padding(top = 2.dp, start = 8.dp),
+            )
+        }
+        Text(
+            text = entry.chapterLabel,
+            fontFamily = FontFamily.Serif,
+            fontStyle = FontStyle.Italic,
+            fontSize = 12.sp,
+            color = MutedColor,
+            modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 2.dp),
+        )
+        // Small delete affordance — its own clickable so the outer row's
+        // navigation tap doesn't fire when the user aims for the ×.
+        Text(
+            text = "×",
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            color = MutedColor,
+            modifier = Modifier
+                .clickable { onDelete(a) }
+                .padding(horizontal = 8.dp),
         )
     }
 }
@@ -442,6 +619,13 @@ private fun estimateTocBlockHeight(
         }
         is TocBlock.BookmarkEntry -> {
             (14.sp.toPx() * 1.3f).toInt() + 4.dp.toPx().toInt() * 2
+        }
+        is TocBlock.NoteEntry -> {
+            // Approx: two lines (quote + note preview), each ~20sp line-height,
+            // plus vertical padding. We don't measure exact wrap here — the
+            // preview strings are capped and the 15% budget shave in
+            // paginateToc absorbs modest overflow.
+            (20.sp.toPx() * 2).toInt() + 6.dp.toPx().toInt() * 2 + 4.dp.toPx().toInt()
         }
     }
 }

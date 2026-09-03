@@ -59,6 +59,13 @@ class ChapterPromptTest {
     }
 
     @Test
+    fun `chapter prompt tells the model which language to write in`() {
+        val ru = course.copy(language = "Belarusian")
+        val prompt = buildChapterPrompt(ru, ru.chapters[0], memory = "")
+        assertTrue(prompt.contains("in Belarusian"))
+    }
+
+    @Test
     fun `memory-update prompt includes chapter markdown and asks for prose`() {
         val md = "# The Artificial Neuron\n\nA neuron is like a tiny scale..."
         val prompt = buildMemoryUpdatePrompt(course.chapters[1], md, learnerGoal = "build basic ai model")

@@ -42,10 +42,20 @@ class ApiKeyStore(context: Context) {
         prefs.edit().putString(KEY_MODEL, value.trim().ifEmpty { DEFAULT_GEMINI_MODEL }).apply()
     }
 
+    /** Default language pre-filled on the New Course form. Not encrypted-secret but shares the same prefs file. */
+    fun getPreferredLanguage(): String =
+        prefs.getString(KEY_LANGUAGE, null)?.ifBlank { null } ?: DEFAULT_LANGUAGE
+
+    fun setPreferredLanguage(value: String) {
+        prefs.edit().putString(KEY_LANGUAGE, value.trim().ifEmpty { DEFAULT_LANGUAGE }).apply()
+    }
+
     private companion object {
         const val PREFS_NAME = "inkfirst_secrets"
         const val KEY_API = "gemini_api_key"
         const val KEY_MODEL = "gemini_model"
+        const val KEY_LANGUAGE = "preferred_language"
+        const val DEFAULT_LANGUAGE = "English"
     }
 }
 

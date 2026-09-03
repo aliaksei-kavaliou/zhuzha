@@ -7,15 +7,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.inkfirst.app.data.courseStoreFor
 import com.inkfirst.app.ui.CourseDetailScreen
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
 import com.inkfirst.app.ui.ReaderScreen
 import com.inkfirst.app.ui.SettingsScreen
+import com.inkfirst.core.ChapterStatus
 
 private object Routes {
     const val LIBRARY = "library"
@@ -48,6 +53,35 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun InkFirstApp() {
     val nav = rememberNavController()
+    val context = LocalContext.current
+
+    // Resolve at cold start: if the last-read pointer names a course + chapter
+    // that still exist on disk, push the Reader on top of Library so back
+    // still lands on the shelf. Otherwise stay on Library. Computed once via
+    // `remember(Unit)` — we don't want auto-resume triggering on config changes.
+    val resumeRoute = remember {
+        val store = courseStoreFor(context)
+        val pointer = store.readLastRead() ?: return@remember null
+        val course = store.load(pointer.courseSlug)
+        val chapter = course?.chapters?.firstOrNull { it.slug == pointer.chapterSlug }
+        if (course == null || chapter == null) {
+            // Course/chapter gone (deleted, renamed) — drop the stale pointer.
+            store.clearLastRead()
+            return@remember null
+        }
+        // Match Contents' behavior: READING resumes at the saved anchor,
+        // DONE/GENERATED open at the top. PENDING opens on the CompilePrompt
+        // regardless of blockIndex.
+        val blockIndex = if (chapter.status == ChapterStatus.READING) chapter.lastBlockIndex else 0
+        Routes.reader(course.slug, chapter.slug, blockIndex)
+    }
+
+    if (resumeRoute != null) {
+        LaunchedEffect(Unit) {
+            nav.navigate(resumeRoute) { launchSingleTop = true }
+        }
+    }
+
     NavHost(navController = nav, startDestination = Routes.LIBRARY) {
         composable(Routes.LIBRARY) {
             LibraryScreen(

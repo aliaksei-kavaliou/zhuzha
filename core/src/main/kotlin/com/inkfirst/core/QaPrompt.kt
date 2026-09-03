@@ -34,7 +34,7 @@ internal fun buildQaUserPrompt(
     appendLine("QUESTION")
     appendLine(question.trim())
     appendLine()
-    appendLine("Answer the question. Keep it grounded in this chapter (use the highlighted passage as focal point if given). Be concise — a few short paragraphs at most, no preamble.")
+    appendLine("Answer the question in ${course.language}. Keep it grounded in this chapter (use the highlighted passage as focal point if given). Be concise — a few short paragraphs at most, no preamble.")
 }
 
 /**

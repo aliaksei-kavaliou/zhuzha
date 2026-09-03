@@ -40,6 +40,7 @@ fun SettingsScreen(
 
     var apiKeyDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf(store.getModelName()) }
+    var languageDraft by remember { mutableStateOf(store.getPreferredLanguage()) }
     var showKey by remember { mutableStateOf(false) }
     var storedKey by remember { mutableStateOf(store.getApiKey()) }
     var savedNote by remember { mutableStateOf<String?>(null) }
@@ -92,6 +93,18 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
+        OutlinedTextField(
+            value = languageDraft,
+            onValueChange = { languageDraft = it },
+            label = { Text("Preferred language") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "Used to pre-fill the language on new courses. Existing courses keep the language they were created with.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         savedNote?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
@@ -109,6 +122,7 @@ fun SettingsScreen(
                         store.setApiKey(apiKeyDraft)
                     }
                     store.setModelName(modelDraft)
+                    store.setPreferredLanguage(languageDraft)
                     storedKey = store.getApiKey()
                     showKey = false
                     apiKeyDraft = ""

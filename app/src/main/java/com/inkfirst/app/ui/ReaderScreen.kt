@@ -75,15 +75,18 @@ import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.ApiKeyStore
 import com.inkfirst.app.data.ReaderPrefs
 import com.inkfirst.app.data.TextAlignPref
+import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Block
 import com.inkfirst.core.ChapterGenerator
 import com.inkfirst.core.ChapterStatus
+import com.inkfirst.core.Annotation
 import com.inkfirst.core.Course
 import com.inkfirst.core.Inline
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.MemoryUpdater
 import com.inkfirst.core.PersistedChapter
+import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.parseMarkdown
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -132,12 +135,20 @@ fun ReaderScreen(
     var showFormatMenu by remember { mutableStateOf(false) }
     // null = closed. "" = open general chat. non-empty = open with quoted passage.
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
+    // When non-null, an AddNote overlay is up with this quoted passage.
+    var pendingNoteQuote by remember(chapterSlug) { mutableStateOf<String?>(null) }
+    // When non-null, the NoteView overlay shows this annotation for read + delete.
+    var viewingAnnotation by remember(chapterSlug) { mutableStateOf<Annotation?>(null) }
     // The Ask toolbar for the paged content — intercepts text-selection UI.
     // Hoisted to ReaderScreen scope so the floating chip can live in the outer
     // Box (which is what supports Alignment.BottomCenter).
     val clipboard = LocalClipboardManager.current
     val askToolbar = remember(clipboard) {
-        AskTextToolbar(clipboard) { selectedText -> chatSelection = selectedText }
+        AskTextToolbar(
+            clipboard = clipboard,
+            onAsk = { selectedText -> chatSelection = selectedText },
+            onAddNote = { selectedText -> pendingNoteQuote = selectedText },
+        )
     }
     // startBlockIndex = -1 is the "open at last block" sentinel — used when
     // flipping left off the first page of a chapter into the previous
@@ -148,19 +159,30 @@ fun ReaderScreen(
     LaunchedEffect(courseSlug, chapterSlug) {
         course = store.load(courseSlug)
         markdown = store.readChapter(courseSlug, chapterSlug)
+        // Record where we are so a cold start of the app resumes here.
+        store.writeLastRead(courseSlug, chapterSlug)
     }
 
     val chapter = course?.chapters?.firstOrNull { it.slug == chapterSlug }
-    val blocks = remember(markdown, chapter) {
+    val chapterAnnotations = course?.annotations?.filter { it.chapterSlug == chapterSlug }.orEmpty()
+    val blocks = remember(markdown, chapter, course) {
         val parsed = markdown?.let { parseMarkdown(it) } ?: emptyList()
         if (chapter == null || parsed.isEmpty()) parsed
         else {
-            // Small italic intro line — shows est-minutes + status once at the
-            // start of the chapter so the TOC can stay clean.
+            // Small italic intro line — shows est-minutes + day range + status
+            // once at the start of the chapter so the TOC can stay clean.
+            val dayLabel = course?.let { c ->
+                courseDaySchedule(c).firstOrNull { it.chapterN == chapter.n }?.label
+            }
+            val metaBody = buildString {
+                append("~${chapter.estMinutes} min")
+                if (!dayLabel.isNullOrEmpty()) append(" · $dayLabel")
+                append(" · ${statusLabel(chapter.status)}")
+            }
             val meta = Block.CustomFence(
                 kind = "meta",
                 params = emptyMap(),
-                body = "~${chapter.estMinutes} min · ${statusLabel(chapter.status)}",
+                body = metaBody,
             )
             listOf(meta) + parsed
         }
@@ -212,9 +234,13 @@ fun ReaderScreen(
                 val pendingChapterIndex = course?.chapters?.indexOfFirst { it.slug == chapterSlug } ?: -1
                 val pendingPrev = course?.chapters?.getOrNull(pendingChapterIndex - 1)
                 val pendingNext = course?.chapters?.getOrNull(pendingChapterIndex + 1)
+                val pendingDayLabel = course?.let { c ->
+                    courseDaySchedule(c).firstOrNull { it.chapterN == chapter!!.n }?.label
+                }
                 CompilePrompt(
                     chapter = chapter!!,
                     chapterCount = course?.chapters?.size ?: 0,
+                    dayLabel = pendingDayLabel,
                     compileState = compileState,
                     onBack = onBack,
                     onOpenPrevChapter = pendingPrev?.let { p -> { onOpenChapter(p.slug, -1) } },
@@ -271,6 +297,7 @@ fun ReaderScreen(
             CompositionLocalProvider(LocalTextToolbar provides askToolbar) {
                 PagedContent(
                     blocks = blocks,
+                    annotations = chapterAnnotations,
                     course = course,
                     chapterSlug = chapterSlug,
                     fontScale = fontScale,
@@ -280,6 +307,7 @@ fun ReaderScreen(
                     focusRequester = focusRequester,
                     onFirstBlockChange = { headerFirstBlock = it },
                     onAskAboutBlock = { text -> chatSelection = text },
+                    onOpenAnnotation = { a -> viewingAnnotation = a },
                     onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
                     onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
                     menuOpen = showFormatMenu,
@@ -289,9 +317,11 @@ fun ReaderScreen(
             }
         }
 
-        // Floating Ask chip — appears when there's an active text selection in
-        // the reader. Lives here in the outer Box (which supports
-        // Alignment.BottomCenter) rather than inside the Column-based content.
+        // Floating selection chip — appears when there's an active text
+        // selection in the reader. Two book-native actions on the same
+        // passage: ask the AI about it, or annotate it with a note. Lives in
+        // the outer Box (which supports Alignment.BottomCenter) rather than
+        // inside the Column-based content.
         askToolbar.selectionRect?.let {
             Row(
                 modifier = Modifier
@@ -302,6 +332,9 @@ fun ReaderScreen(
             ) {
                 TextButton(onClick = { askToolbar.ask() }) {
                     Text("Ask about this", color = PaperColor)
+                }
+                TextButton(onClick = { askToolbar.addNote() }) {
+                    Text("Add note", color = PaperColor)
                 }
                 TextButton(onClick = { askToolbar.hide() }) {
                     Text("Cancel", color = PaperColor)
@@ -317,6 +350,55 @@ fun ReaderScreen(
                 chapterMarkdown = markdown!!,
                 initialSelection = chatSelection?.takeIf { it.isNotBlank() },
                 onClose = { chatSelection = null },
+            )
+        }
+
+        // Add-note overlay — small modal with the quoted passage + a note
+        // field. Anchors the annotation to the block whose plain text
+        // actually contains the quote (found via substring match), falling
+        // back to the current page's first block if no match — that way
+        // navigation from the TOC lands on the right block, and the inline
+        // underline renderer finds the same block for the highlight.
+        pendingNoteQuote?.let { quote ->
+            AddNoteOverlay(
+                quote = quote,
+                onCancel = { pendingNoteQuote = null },
+                onSave = { noteText ->
+                    val c = course ?: return@AddNoteOverlay
+                    val trimmedQuote = quote.trim()
+                    val matchedBlock = findBlockContainingQuote(blocks, trimmedQuote)
+                    val anchor = matchedBlock ?: headerFirstBlock.coerceAtLeast(0)
+                    val updated = store.addAnnotation(
+                        courseSlug = c.slug,
+                        chapterSlug = chapterSlug,
+                        blockIndex = anchor,
+                        quote = trimmedQuote,
+                        note = noteText.trim(),
+                        created = LocalDate.now().toString(),
+                    )
+                    if (updated != null) course = updated
+                    pendingNoteQuote = null
+                },
+            )
+        }
+
+        // Note-view overlay — tap an inline ✎ on the page to open. Shows the
+        // note text with a Delete button.
+        viewingAnnotation?.let { annotation ->
+            NoteViewOverlay(
+                annotation = annotation,
+                onClose = { viewingAnnotation = null },
+                onDelete = {
+                    val c = course ?: return@NoteViewOverlay
+                    val updated = store.removeAnnotation(
+                        courseSlug = c.slug,
+                        chapterSlug = annotation.chapterSlug,
+                        quote = annotation.quote,
+                        created = annotation.created,
+                    )
+                    if (updated != null) course = updated
+                    viewingAnnotation = null
+                },
             )
         }
 
@@ -377,6 +459,7 @@ fun ReaderScreen(
 @Composable
 private fun PagedContent(
     blocks: List<Block>,
+    annotations: List<Annotation>,
     course: Course?,
     chapterSlug: String,
     fontScale: Float,
@@ -391,6 +474,7 @@ private fun PagedContent(
     onOpenPrevChapter: (() -> Unit)?,
     onOpenNextChapter: (() -> Unit)?,
     onAskAboutBlock: (String) -> Unit,
+    onOpenAnnotation: (Annotation) -> Unit,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -517,13 +601,16 @@ private fun PagedContent(
                             val pageStart = firstBlockIndex  // computed above, arithmetic
                             pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
                                 val globalIdx = pageStart + i
+                                val blockAnnotations = annotationsForBlock(annotations, block, globalIdx)
                                 RenderBlock(
                                     block = block,
                                     fontScale = fontScale,
                                     lineSpacing = lineSpacing,
                                     textAlign = textAlign,
+                                    annotations = blockAnnotations,
                                     revealed = revealed[globalIdx] == true,
                                     onReveal = { revealed[globalIdx] = true },
+                                    onOpenAnnotation = onOpenAnnotation,
                                 )
                             }
                         }
@@ -782,12 +869,17 @@ private fun RenderBlock(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    annotations: List<Annotation>,
     revealed: Boolean,
     onReveal: () -> Unit,
+    onOpenAnnotation: (Annotation) -> Unit,
 ) {
     when (block) {
         is Block.Heading -> HeadingBlock(block, fontScale)
-        is Block.Paragraph -> ParagraphBlock(block.inlines, fontScale, lineSpacing, textAlign)
+        is Block.Paragraph -> ParagraphBlock(
+            block.inlines, fontScale, lineSpacing, textAlign,
+            annotations, onOpenAnnotation,
+        )
         is Block.BulletItem -> ListItemBlock("• ", block.inlines, fontScale, lineSpacing)
         is Block.OrderedItem -> ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing)
         is Block.CustomFence -> when (block.kind) {
@@ -827,19 +919,47 @@ private fun ParagraphBlock(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    annotations: List<Annotation>,
+    onOpenAnnotation: (Annotation) -> Unit,
 ) {
-    Text(
-        text = renderInlines(inlines),
-        style = androidx.compose.ui.text.TextStyle(
-            fontFamily = FontFamily.Serif,
-            fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale * lineSpacing,
-            color = InkColor,
-            textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
-            hyphens = Hyphens.Auto,
-        ),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-    )
+    val textAnnotations = annotations.filter { it.kind == "text" }
+    val annotated = if (textAnnotations.isEmpty()) {
+        renderInlines(inlines)
+    } else {
+        renderInlinesWithUnderlines(inlines, textAnnotations.map { it.quote })
+    }
+    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Text(
+            text = annotated,
+            style = androidx.compose.ui.text.TextStyle(
+                fontFamily = FontFamily.Serif,
+                fontSize = 18.sp * fontScale,
+                lineHeight = 30.sp * fontScale * lineSpacing,
+                color = InkColor,
+                textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
+                hyphens = Hyphens.Auto,
+            ),
+            modifier = Modifier.weight(1f),
+        )
+        // Note markers to the right of the paragraph — one small ✎ per
+        // annotation, tappable to open the note. Sits outside the Text so
+        // clicks aren't fighting SelectionContainer.
+        if (annotations.isNotEmpty()) {
+            Column(modifier = Modifier.padding(start = 6.dp, top = 2.dp)) {
+                annotations.forEach { a ->
+                    Text(
+                        text = "✎",
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 14.sp * fontScale,
+                        color = InkColor,
+                        modifier = Modifier
+                            .clickable { onOpenAnnotation(a) }
+                            .padding(vertical = 2.dp, horizontal = 4.dp),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1100,10 +1220,103 @@ private fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotat
     }
 }
 
+/**
+ * Same as [renderInlines] but also adds an underline SpanStyle over any
+ * substring matching a quote. Whitespace is normalized before the match,
+ * so line wraps or double spaces at annotation-time don't defeat the lookup.
+ * Multi-line quotes: we match the first-line prefix as the underline range
+ * so at least the head of the annotated passage gets marked; the intent is
+ * a visual cue, not a legal citation.
+ */
+private fun renderInlinesWithUnderlines(
+    inlines: List<Inline>,
+    quotes: List<String>,
+): AnnotatedString {
+    // Track plain text alongside the styled builder so we can look up quote
+    // offsets — AnnotatedString.Builder has no text accessor mid-build, and
+    // its length is character-count which equals the plain-text length
+    // because SpanStyle transitions don't insert characters.
+    val plain = StringBuilder()
+    return buildAnnotatedString {
+        inlines.forEach { i ->
+            when (i) {
+                is Inline.Text -> {
+                    append(i.text); plain.append(i.text)
+                }
+                is Inline.Bold -> {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(i.text) }
+                    plain.append(i.text)
+                }
+                is Inline.Italic -> {
+                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(i.text) }
+                    plain.append(i.text)
+                }
+                is Inline.Code -> {
+                    withStyle(
+                        SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x14000000)),
+                    ) { append(i.text) }
+                    plain.append(i.text)
+                }
+            }
+        }
+        val flat = plain.toString()
+        quotes.forEach { q ->
+            val needle = firstLineOf(q.trim())
+            if (needle.isBlank()) return@forEach
+            val idx = flat.indexOf(needle)
+            if (idx >= 0) {
+                addStyle(
+                    SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                    idx,
+                    idx + needle.length,
+                )
+            }
+        }
+    }
+}
+
+private fun firstLineOf(s: String): String = s.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+
+/**
+ * Which of [annotations] belong to the block at [globalIdx]. An annotation
+ * "belongs" only if its stored blockIndex matches this block AND the quote
+ * substring is still findable in the block's plain text (defensive against
+ * post-hoc chapter edits). This keeps single-word notes like "kitchen"
+ * highlighted on the passage they were made on, not on every block that
+ * happens to mention the word.
+ */
+private fun annotationsForBlock(
+    annotations: List<Annotation>,
+    block: Block,
+    globalIdx: Int,
+): List<Annotation> {
+    if (annotations.isEmpty()) return emptyList()
+    val plain = extractAskableText(block) ?: return emptyList()
+    return annotations.filter { a ->
+        if (a.blockIndex != globalIdx) return@filter false
+        val needle = firstLineOf(a.quote.trim())
+        needle.isNotBlank() && plain.contains(needle)
+    }
+}
+
+/**
+ * Walk [blocks] and return the index of the first whose plain text contains
+ * [quote]. Used at annotation-creation time so the stored blockIndex points
+ * at the passage's actual block rather than the page's top block. Null if
+ * no block matches (e.g., a multi-block selection).
+ */
+private fun findBlockContainingQuote(blocks: List<Block>, quote: String): Int? {
+    val needle = firstLineOf(quote.trim())
+    if (needle.isBlank()) return null
+    return blocks.indexOfFirst { extractAskableText(it)?.contains(needle) == true }
+        .takeIf { it >= 0 }
+}
+
 @Composable
 private fun CompilePrompt(
     chapter: PersistedChapter,
     chapterCount: Int,
+    dayLabel: String?,
     compileState: CompileState,
     onBack: () -> Unit,
     onCompile: () -> Unit,
@@ -1160,7 +1373,11 @@ private fun CompilePrompt(
 
     Spacer(Modifier.height(20.dp))
     Text(
-        text = "~${chapter.estMinutes} min · not compiled",
+        text = buildString {
+            append("~${chapter.estMinutes} min")
+            if (!dayLabel.isNullOrEmpty()) append(" · $dayLabel")
+            append(" · not compiled")
+        },
         fontFamily = FontFamily.Serif,
         fontStyle = FontStyle.Italic,
         fontSize = 13.sp,
@@ -1283,8 +1500,14 @@ private fun compileChapter(
                 onState(CompileState.Idle)
                 onDone(updated, markdown)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // User navigated away or the screen recomposed; don't paint this
+            // as an error — just let the coroutine unwind.
+            throw e
         } catch (e: Exception) {
-            onState(CompileState.Failed(e.message ?: "Unknown error"))
+            System.err.println("chapter compile failed: ${e::class.simpleName}: ${e.message}")
+            e.printStackTrace()
+            onState(CompileState.Failed(geminiErrorLabel(e)))
         }
     }
 }

@@ -24,9 +24,10 @@ import androidx.compose.ui.platform.TextToolbarStatus
 class AskTextToolbar(
     private val clipboard: ClipboardManager,
     private val onAsk: (String) -> Unit,
+    private val onAddNote: (String) -> Unit,
 ) : TextToolbar {
 
-    /** When non-null, a selection is active and the Reader should show the Ask chip. */
+    /** When non-null, a selection is active and the Reader should show the selection chips. */
     var selectionRect: Rect? by mutableStateOf(null)
         private set
 
@@ -52,11 +53,16 @@ class AskTextToolbar(
     }
 
     /** User tapped Ask — copy selection to clipboard, read it back, dispatch. */
-    fun ask() {
+    fun ask() = dispatch(onAsk)
+
+    /** User tapped Add note — same selection-fetch trick as ask(). */
+    fun addNote() = dispatch(onAddNote)
+
+    private fun dispatch(action: (String) -> Unit) {
         val copy = copyCallback ?: return
         copy()
         val text = clipboard.getText()?.text?.takeIf { it.isNotBlank() }
-        if (text != null) onAsk(text)
+        if (text != null) action(text)
         hide()
     }
 }
