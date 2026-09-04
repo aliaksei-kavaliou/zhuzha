@@ -56,16 +56,31 @@ fun parseMarkdown(input: String): List<Block> {
 
             trimmed.startsWith("```") -> {
                 flushParagraph()
-                val (kind, params) = parseFenceInfo(trimmed.removePrefix("```").trim())
-                val body = StringBuilder()
-                i++
-                while (i < lines.size && !lines[i].trim().startsWith("```")) {
-                    if (body.isNotEmpty()) body.append('\n')
-                    body.append(lines[i])
+                val afterOpen = trimmed.removePrefix("```")
+                // Single-line fence: ```kind params...``` — opener and closer
+                // on the same line. Common shape emitted by the model for
+                // empty-body figure blocks (all content in the alt= param).
+                // Without this branch the parser would treat the trailing ```
+                // as part of the info string and swallow every following line
+                // up to the NEXT ``` — cascading into wrong fence boundaries
+                // downstream (was breaking exercise/recap/code on real chapters).
+                val closeOnSameLine = afterOpen.indexOf("```")
+                if (closeOnSameLine >= 0) {
+                    val info = afterOpen.substring(0, closeOnSameLine).trim()
+                    val (kind, params) = parseFenceInfo(info)
+                    blocks += Block.CustomFence(kind, params, "")
+                } else {
+                    val (kind, params) = parseFenceInfo(afterOpen.trim())
+                    val body = StringBuilder()
                     i++
+                    while (i < lines.size && !lines[i].trim().startsWith("```")) {
+                        if (body.isNotEmpty()) body.append('\n')
+                        body.append(lines[i])
+                        i++
+                    }
+                    blocks += Block.CustomFence(kind, params, body.toString())
+                    // fall through to the i++ below to skip the closing ``` (if any)
                 }
-                blocks += Block.CustomFence(kind, params, body.toString())
-                // fall through to the i++ below to skip the closing ``` (if any)
             }
 
             trimmed.startsWith("#") -> {

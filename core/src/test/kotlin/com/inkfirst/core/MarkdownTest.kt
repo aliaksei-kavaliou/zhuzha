@@ -105,6 +105,47 @@ class MarkdownTest {
     }
 
     @Test
+    fun `single-line fence with same-line closer parses as empty-body`() {
+        // The model routinely emits figure blocks on one line — the whole
+        // opening backticks, kind, params, AND closing backticks together.
+        // Without dedicated handling the trailing ``` gets swallowed into the
+        // info string and the parser looks for a closer on subsequent lines.
+        val md = """```figure alt="A diagram"```"""
+        val f = parseMarkdown(md).single() as Block.CustomFence
+        assertEquals("figure", f.kind)
+        assertEquals("A diagram", f.params["alt"])
+        assertEquals("", f.body)
+    }
+
+    @Test
+    fun `single-line figure fence does NOT swallow following blocks`() {
+        // Real chapter shape: single-line figure fence, then prose, then a
+        // proper multi-line recap fence. Regression fixture — this exact
+        // cascade was rendering the recap body as part of the "figure" body
+        // and turning downstream fences into an empty CODE box + wrong
+        // chapter-summary-inside-a-code-block on the Boox.
+        val md = """
+            ```figure alt="Diagram"```
+
+            Some prose between the figure and the recap.
+
+            ```recap
+            The key point.
+            ```
+        """.trimIndent()
+        val blocks = parseMarkdown(md)
+        val fences = blocks.filterIsInstance<Block.CustomFence>()
+        assertEquals(2, fences.size)
+        assertEquals("figure", fences[0].kind)
+        assertEquals("Diagram", fences[0].params["alt"])
+        assertEquals("", fences[0].body)
+        assertEquals("recap", fences[1].kind)
+        assertTrue(fences[1].body.contains("The key point"))
+        // Prose paragraph is preserved as its own Paragraph block.
+        assertTrue(blocks.any { it is Block.Paragraph })
+    }
+
+    @Test
     fun `real chapter fixture with all block types parses without loss`() {
         val md = """
             # Chapter Title
