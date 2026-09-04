@@ -281,7 +281,7 @@ fun ReaderScreen(
                 chapterCount = course?.chapters?.size,
                 isBookmarked = headerBookmarked,
                 canBookmark = headerFirstBlock >= 0 && course != null,
-                onBack = onBack,
+                onOpenContents = onOpenContents,
                 onBookmarkToggle = {
                     val c = course ?: return@ReaderHeader
                     if (headerFirstBlock < 0) return@ReaderHeader
@@ -647,17 +647,18 @@ private fun ReaderHeader(
     chapterCount: Int?,
     isBookmarked: Boolean,
     canBookmark: Boolean,
-    onBack: () -> Unit,
+    onOpenContents: () -> Unit,
     onBookmarkToggle: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
     ) {
-        // The header button pops back to the last screen on the nav stack,
-        // which in practice is always Contents — labeling it "Contents"
-        // makes the destination explicit, no functional change.
-        TextButton(onClick = onBack) { Text("≡ Contents", color = InkColor) }
+        // Explicit-destination nav rather than popBackStack — the auto-resume
+        // cold-start pushes Reader directly on top of Library with no
+        // Contents in between, so a back-pop would land on Library. The
+        // button label says Contents; it should always go to Contents.
+        TextButton(onClick = onOpenContents) { Text("≡ Contents", color = InkColor) }
         Spacer(Modifier.weight(1f))
         if (chapterN != null && chapterCount != null) {
             Text(
