@@ -1568,7 +1568,12 @@ private fun isEnclosingStroke(stroke: InkStroke): Boolean {
 }
 
 private const val ENCLOSURE_MIN_AREA_PX = 400f
-private const val ENCLOSURE_MAX_GAP_RATIO = 0.25f
+// Gap = distance between the stroke's first and last points, as a
+// fraction of the bbox diagonal. A tight 0.25 threshold rejected typical
+// hand-drawn circles (users routinely close the loop within 30–50% of the
+// diameter, not 25%). 0.5 = at least half-closed, which still filters out
+// underlines / straight lines (gap ≈ diagonal → ratio ≈ 1.0).
+private const val ENCLOSURE_MAX_GAP_RATIO = 0.5f
 
 /**
  * Given a freshly-drawn [stroke] anchored to [block], measure the block's
