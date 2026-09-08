@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.inkfirst.app.data.ApiKeyStore
+import com.inkfirst.app.data.ReaderPrefs
 import com.inkfirst.app.data.maskApiKey
 
 @Composable
@@ -36,11 +37,13 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val store = remember { ApiKeyStore(context) }
+    val readerPrefs = remember { ReaderPrefs(context) }
     val focusManager = LocalFocusManager.current
 
     var apiKeyDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf(store.getModelName()) }
     var languageDraft by remember { mutableStateOf(store.getPreferredLanguage()) }
+    var fingerDraws by remember { mutableStateOf(readerPrefs.getFingerDraws()) }
     var showKey by remember { mutableStateOf(false) }
     var storedKey by remember { mutableStateOf(store.getApiKey()) }
     var savedNote by remember { mutableStateOf<String?>(null) }
@@ -100,6 +103,28 @@ fun SettingsScreen(
         )
         Text(
             text = "Used to pre-fill the language on new courses. Existing courses keep the language they were created with.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        // Dev toggle: on a device without a stylus (emulator), let finger
+        // input draw ink so the capture path can be exercised. On the Boox
+        // this stays off — finger keeps page-turn / text-selection duties.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Finger draws ink (dev)",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(end = 12.dp),
+            )
+            androidx.compose.material3.Switch(
+                checked = fingerDraws,
+                onCheckedChange = {
+                    fingerDraws = it
+                    readerPrefs.setFingerDraws(it)
+                },
+            )
+        }
+        Text(
+            text = "Off: stylus draws, finger navigates. On: finger draws too (for testing on non-stylus devices).",
             style = MaterialTheme.typography.bodySmall,
         )
 

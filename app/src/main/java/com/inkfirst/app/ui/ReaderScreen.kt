@@ -39,6 +39,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -66,8 +68,12 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -86,6 +92,7 @@ import com.inkfirst.core.Inline
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.MemoryUpdater
 import com.inkfirst.core.PersistedChapter
+import com.inkfirst.core.Stroke as InkStroke
 import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.parseMarkdown
 import kotlinx.coroutines.launch
@@ -123,6 +130,13 @@ fun ReaderScreen(
 
     var course by remember { mutableStateOf<Course?>(null) }
     var markdown by remember { mutableStateOf<String?>(null) }
+    // Chapter-scoped freehand strokes. Load in the same effect that pulls
+    // the chapter markdown so both are ready by the time PagedContent runs.
+    var strokes by remember(chapterSlug) { mutableStateOf<List<InkStroke>>(emptyList()) }
+    // Dev toggle read once per session; the Settings screen writes it and it
+    // takes effect on next chapter open (no live rebinding — a chapter's
+    // gestures are re-keyed on chapter change so this is fine).
+    val fingerDraws = remember { readerPrefs.getFingerDraws() }
     // Hoisted here so both the header (bookmark ribbon indicator) and the
     // format menu (Bookmark this page row) can read/toggle without prop-drilling.
     var headerFirstBlock by remember(chapterSlug) { mutableStateOf(-1) }
@@ -132,6 +146,7 @@ fun ReaderScreen(
     var fontScale by remember { mutableStateOf(readerPrefs.getFontScale()) }
     var lineSpacing by remember { mutableStateOf(readerPrefs.getLineSpacing()) }
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
+    var horizontalPadding by remember { mutableStateOf(readerPrefs.getHorizontalPadding()) }
     var showFormatMenu by remember { mutableStateOf(false) }
     // null = closed. "" = open general chat. non-empty = open with quoted passage.
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
@@ -139,6 +154,18 @@ fun ReaderScreen(
     var pendingNoteQuote by remember(chapterSlug) { mutableStateOf<String?>(null) }
     // When non-null, the NoteView overlay shows this annotation for read + delete.
     var viewingAnnotation by remember(chapterSlug) { mutableStateOf<Annotation?>(null) }
+    // When non-null, a chip is showing for a tapped drawing — mirrors the
+    // text-selection chip's actions (Ask / Add note / Delete). Anchor block
+    // (and thus context text) is resolved lazily from stroke.blockIndex.
+    var viewingStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
+    // Fresh enclosure gesture waiting for the user's action. Distinct from
+    // viewingStroke because the semantics differ: this stroke will be
+    // removed on Ask (via chatOriginStroke) or Cancel, kept on Add note.
+    var pendingGestureStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
+    // Set when a chat was opened as the result of an enclosure gesture, so
+    // the ChatPanel's onClose knows to remove that stroke afterwards (the
+    // stroke served as a selection gesture, not a persistent mark).
+    var chatOriginStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
     // The Ask toolbar for the paged content — intercepts text-selection UI.
     // Hoisted to ReaderScreen scope so the floating chip can live in the outer
     // Box (which is what supports Alignment.BottomCenter).
@@ -159,6 +186,7 @@ fun ReaderScreen(
     LaunchedEffect(courseSlug, chapterSlug) {
         course = store.load(courseSlug)
         markdown = store.readChapter(courseSlug, chapterSlug)
+        strokes = store.readStrokes(courseSlug, chapterSlug)
         // Record where we are so a cold start of the app resumes here.
         store.writeLastRead(courseSlug, chapterSlug)
     }
@@ -229,7 +257,7 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(PaperColor),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding.dp)) {
             if (isPending) {
                 val pendingChapterIndex = course?.chapters?.indexOfFirst { it.slug == chapterSlug } ?: -1
                 val pendingPrev = course?.chapters?.getOrNull(pendingChapterIndex - 1)
@@ -305,6 +333,20 @@ fun ReaderScreen(
                     textAlign = textAlign,
                     anchorBlockIndex = anchorBlockIndex,
                     focusRequester = focusRequester,
+                    strokes = strokes,
+                    fingerDraws = fingerDraws,
+                    onStrokeAdded = { added ->
+                        val updated = strokes + added
+                        strokes = updated
+                        store.saveStrokes(courseSlug, chapterSlug, updated)
+                    },
+                    onStrokeErased = { gone ->
+                        val updated = strokes - gone
+                        strokes = updated
+                        store.saveStrokes(courseSlug, chapterSlug, updated)
+                    },
+                    onStrokeTapped = { s -> viewingStroke = s },
+                    onStrokeGesture = { g -> pendingGestureStroke = g },
                     onFirstBlockChange = { headerFirstBlock = it },
                     onAskAboutBlock = { text -> chatSelection = text },
                     onOpenAnnotation = { a -> viewingAnnotation = a },
@@ -342,6 +384,88 @@ fun ReaderScreen(
             }
         }
 
+        // Tap-on-drawing chip — mirrors the text-selection chip but with
+        // "Delete" for the drawing itself. Context text = plain text of the
+        // stroke's anchor block, so Ask/Add-note behave the same way they
+        // would if the user had highlighted that block by hand.
+        // Fresh-enclosure gesture chip — auto-opens on a closed stroke that
+        // covers text. Semantics differ from viewingStroke: Ask removes the
+        // stroke on chat close, Add note keeps it, Cancel removes it.
+        pendingGestureStroke?.let { stroke ->
+            val text = stroke.annotatedText.orEmpty()
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 64.dp)
+                    .background(InkColor, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                TextButton(onClick = {
+                    chatOriginStroke = stroke
+                    chatSelection = text
+                    pendingGestureStroke = null
+                }) {
+                    Text("Ask about this", color = PaperColor)
+                }
+                TextButton(onClick = {
+                    pendingNoteQuote = text
+                    pendingGestureStroke = null
+                }) {
+                    Text("Add note", color = PaperColor)
+                }
+                TextButton(onClick = {
+                    val updated = strokes - stroke
+                    strokes = updated
+                    store.saveStrokes(courseSlug, chapterSlug, updated)
+                    pendingGestureStroke = null
+                }) {
+                    Text("Cancel", color = PaperColor)
+                }
+            }
+        }
+
+        viewingStroke?.let { stroke ->
+            val anchorBlock = blocks.getOrNull(stroke.blockIndex)
+            val fallback = anchorBlock?.let { extractAskableText(it) }?.takeIf { it.isNotBlank() }
+            // Prefer the text the stroke actually sits over (captured at
+            // draw time) so Ask/Add-note reference the exact phrase the user
+            // pointed at, not the whole paragraph.
+            val blockText = stroke.annotatedText?.takeIf { it.isNotBlank() } ?: fallback
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 64.dp)
+                    .background(InkColor, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                if (blockText != null) {
+                    TextButton(onClick = {
+                        chatSelection = blockText
+                        viewingStroke = null
+                    }) {
+                        Text("Ask about this", color = PaperColor)
+                    }
+                    TextButton(onClick = {
+                        pendingNoteQuote = blockText
+                        viewingStroke = null
+                    }) {
+                        Text("Add note", color = PaperColor)
+                    }
+                }
+                TextButton(onClick = {
+                    val updated = strokes - stroke
+                    strokes = updated
+                    store.saveStrokes(courseSlug, chapterSlug, updated)
+                    viewingStroke = null
+                }) {
+                    Text("Delete", color = PaperColor)
+                }
+                TextButton(onClick = { viewingStroke = null }) {
+                    Text("Cancel", color = PaperColor)
+                }
+            }
+        }
+
         // Chat panel sits on top of everything when open.
         if (chatSelection != null && course != null && chapter != null && markdown != null) {
             ChatPanel(
@@ -349,7 +473,18 @@ fun ReaderScreen(
                 chapter = chapter,
                 chapterMarkdown = markdown!!,
                 initialSelection = chatSelection?.takeIf { it.isNotBlank() },
-                onClose = { chatSelection = null },
+                onClose = {
+                    chatSelection = null
+                    // If this chat was launched from an enclosure gesture,
+                    // the stroke served as a selection cue — remove it now
+                    // so the page doesn't accumulate pen marks after Q&A.
+                    chatOriginStroke?.let { origin ->
+                        val updated = strokes - origin
+                        strokes = updated
+                        store.saveStrokes(courseSlug, chapterSlug, updated)
+                        chatOriginStroke = null
+                    }
+                },
             )
         }
 
@@ -407,6 +542,7 @@ fun ReaderScreen(
                 fontScale = fontScale,
                 lineSpacing = lineSpacing,
                 textAlign = textAlign,
+                horizontalPadding = horizontalPadding,
                 isBookmarked = headerBookmarked,
                 canBookmark = headerFirstBlock >= 0 && course != null,
                 onOpenContents = {
@@ -450,6 +586,10 @@ fun ReaderScreen(
                     textAlign = newAlign
                     readerPrefs.setTextAlign(newAlign)
                 },
+                onHorizontalPaddingChange = { newPad ->
+                    horizontalPadding = newPad
+                    readerPrefs.setHorizontalPadding(newPad)
+                },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -468,6 +608,12 @@ private fun PagedContent(
     anchorBlockIndex: Int,
     menuOpen: Boolean,
     focusRequester: FocusRequester,
+    strokes: List<InkStroke>,
+    fingerDraws: Boolean,
+    onStrokeAdded: (InkStroke) -> Unit,
+    onStrokeErased: (InkStroke) -> Unit,
+    onStrokeTapped: (InkStroke) -> Unit,
+    onStrokeGesture: (InkStroke) -> Unit,
     onAnchorChange: (Int) -> Unit,
     onToggleMenu: () -> Unit,
     onFirstBlockChange: (Int) -> Unit,
@@ -503,10 +649,25 @@ private fun PagedContent(
             }
             val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
 
+            // Block bounds tracked for the ink overlay: each rendered block's
+            // top edge in root-layout coords, minus the overlay's own top,
+            // gives us the block's top in overlay-local coords (which is what
+            // InkOverlay needs to anchor + render strokes per-block). Keyed
+            // on chapterSlug so the map is fresh on chapter change.
+            val blockTopsInRoot = remember(chapterSlug) { mutableStateMapOf<Int, Float>() }
+            var overlayTopInRoot by remember(chapterSlug) { mutableStateOf(0f) }
+
             // The block index of a page's first block is just the sum of block counts
             // in all prior pages — paginate() preserves order and never splits blocks.
             val firstBlockIndex = pages.take(pageIndex).sumOf { it.size }
             LaunchedEffect(firstBlockIndex) { onFirstBlockChange(firstBlockIndex) }
+
+            // What the ink overlay is allowed to touch on this page: the
+            // global block-index range and the subset of persisted strokes
+            // whose anchor block falls in it.
+            val pageBlockCount = pages.getOrNull(pageIndex)?.size ?: 0
+            val pageBlockRange = firstBlockIndex until (firstBlockIndex + pageBlockCount)
+            val pageStrokes = strokes.filter { it.blockIndex in pageBlockRange }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
@@ -602,19 +763,74 @@ private fun PagedContent(
                             pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
                                 val globalIdx = pageStart + i
                                 val blockAnnotations = annotationsForBlock(annotations, block, globalIdx)
-                                RenderBlock(
-                                    block = block,
-                                    fontScale = fontScale,
-                                    lineSpacing = lineSpacing,
-                                    textAlign = textAlign,
-                                    annotations = blockAnnotations,
-                                    revealed = revealed[globalIdx] == true,
-                                    onReveal = { revealed[globalIdx] = true },
-                                    onOpenAnnotation = onOpenAnnotation,
-                                )
+                                // Wrapping Box reports each block's top-Y in
+                                // root coords so InkOverlay can convert to its
+                                // own local space (via the diff with its own
+                                // positionInRoot). Adds no visual layout — Box
+                                // sizes to child. See docs comment on
+                                // blockTopsInRoot above.
+                                Box(
+                                    modifier = Modifier.onGloballyPositioned { coords ->
+                                        blockTopsInRoot[globalIdx] = coords.positionInRoot().y
+                                    },
+                                ) {
+                                    RenderBlock(
+                                        block = block,
+                                        fontScale = fontScale,
+                                        lineSpacing = lineSpacing,
+                                        textAlign = textAlign,
+                                        annotations = blockAnnotations,
+                                        revealed = revealed[globalIdx] == true,
+                                        onReveal = { revealed[globalIdx] = true },
+                                        onOpenAnnotation = onOpenAnnotation,
+                                    )
+                                }
                             }
                         }
                     }
+
+                    // Freehand-ink layer sits on top of the text, transparent
+                    // until a stroke exists. Consumes stylus input (and finger
+                    // if the dev toggle is on) so the parent's page-turn
+                    // gesture skips those events via change.isConsumed.
+                    // Reverted from OnyxInkOverlay pending a proper Onyx slice.
+                    // Onyx gave zero-latency draw but broke tap-select, erase,
+                    // and periodically fired page-turn on stroke end + left
+                    // phantom EPD-drawn strokes. Swap back to OnyxInkOverlay
+                    // when we can iterate on those with logcat + a test rig.
+                    InkOverlay(
+                        pageStrokes = pageStrokes,
+                        blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
+                        pageBlockRange = pageBlockRange,
+                        allowFingerDraw = fingerDraws,
+                        onStrokeAdded = { raw ->
+                            // Enrich with the text the stroke actually sits
+                            // over, so Ask/Add-note from a stroke-tap gets
+                            // the specific text the user marked instead of
+                            // the whole paragraph. Locked at draw time so a
+                            // later font-size change doesn't drift it.
+                            val anchor = blocks.getOrNull(raw.blockIndex)
+                            val enriched = if (anchor != null) {
+                                val text = extractStrokeText(
+                                    raw, anchor, widthPx, measurer, density, fontScale, lineSpacing,
+                                )
+                                if (!text.isNullOrBlank()) raw.copy(annotatedText = text) else raw
+                            } else raw
+                            // Save first so the stroke renders while the
+                            // gesture chip is up. If the user later cancels
+                            // or asks the AI, the caller removes it then.
+                            onStrokeAdded(enriched)
+                            if (isEnclosingStroke(enriched) &&
+                                !enriched.annotatedText.isNullOrBlank()) {
+                                onStrokeGesture(enriched)
+                            }
+                        },
+                        onStrokeErased = onStrokeErased,
+                        onStrokeTapped = onStrokeTapped,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            overlayTopInRoot = coords.positionInRoot().y
+                        },
+                    )
 
                     // Bookmark used to live here as an overlay in the top-right corner,
                     // but at 96dp it was eating page-turn taps/swipes. Moved to the
@@ -707,6 +923,7 @@ private fun FormatMenu(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    horizontalPadding: Float,
     isBookmarked: Boolean,
     canBookmark: Boolean,
     onOpenContents: () -> Unit,
@@ -716,6 +933,7 @@ private fun FormatMenu(
     onFontLarger: () -> Unit,
     onLineSpacingChange: (Float) -> Unit,
     onTextAlignChange: (TextAlignPref) -> Unit,
+    onHorizontalPaddingChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val canShrink = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) > 0
@@ -812,6 +1030,19 @@ private fun FormatMenu(
                     label = pref.label,
                     selected = textAlign == pref,
                     onClick = { onTextAlignChange(pref) },
+                )
+            }
+        }
+
+        // Margin — symmetric side padding. "Wide" doubles as marginalia
+        // space for pen notes; "Narrow" maximizes text density. Reflows the
+        // whole chapter on change (paginator reads content width).
+        MenuRow(label = "Margin") {
+            ReaderPrefs.HORIZONTAL_PADDINGS.forEachIndexed { i, v ->
+                SelectableChip(
+                    label = ReaderPrefs.HORIZONTAL_PADDING_LABELS[i],
+                    selected = kotlin.math.abs(horizontalPadding - v) < 0.5f,
+                    onClick = { onHorizontalPaddingChange(v) },
                 )
             }
         }
@@ -1142,51 +1373,6 @@ private fun BorderedBlock(label: String, fontScale: Float, content: @Composable 
     Spacer(Modifier.height(4.dp))
 }
 
-@Composable
-private fun BookmarkCorner(
-    isBookmarked: Boolean,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    onToggle: () -> Unit,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    // 96dp tap zone — "whole top-right corner". At 300 DPI on the Boox this is
-    // about a fingertip's worth. We're only losing the top-right of the
-    // right-third tap-to-turn area; users have swipe as the primary
-    // page-turn gesture anyway.
-    Box(
-        modifier = modifier
-            .size(96.dp)
-            .clickable(
-                enabled = enabled,
-                interactionSource = interaction,
-                indication = null,
-            ) { onToggle() },
-        contentAlignment = Alignment.TopEnd,
-    ) {
-        if (isBookmarked) {
-            Canvas(
-                modifier = Modifier
-                    .padding(end = 12.dp, top = 0.dp)
-                    .size(width = 24.dp, height = 32.dp),
-            ) {
-                val w = size.width
-                val h = size.height
-                val notch = h * 0.28f
-                val path = Path().apply {
-                    moveTo(0f, 0f)
-                    lineTo(w, 0f)
-                    lineTo(w, h)
-                    lineTo(w / 2, h - notch)
-                    lineTo(0f, h)
-                    close()
-                }
-                drawPath(path, color = InkColor)
-            }
-        }
-    }
-}
-
 private fun splitExerciseBody(body: String): Pair<String, String> {
     val lines = body.lines()
     val answerIdx = lines.indexOfFirst { it.trim().lowercase().startsWith("answer:") }
@@ -1342,6 +1528,133 @@ private fun annotationsForBlock(
         val needle = firstLineOf(a.quote.trim())
         needle.isNotBlank() && plain.contains(needle)
     }
+}
+
+/**
+ * Heuristic: was this stroke drawn as an enclosure (roughly closed curve
+ * around some text)? Used to route fresh strokes to the auto-popup path
+ * instead of leaving them as silent marginalia. Three checks:
+ *   1) enough sampled points to constitute a curve (not a jitter),
+ *   2) a substantial bbox (rules out tiny loops from scribbling),
+ *   3) start and end points close together relative to bbox size.
+ * Non-enclosing strokes (underlines, checkmarks, free scribbles) stay as
+ * marginalia — caller only auto-opens the chip when this returns true.
+ */
+private fun isEnclosingStroke(stroke: InkStroke): Boolean {
+    val points = stroke.points
+    if (points.size < 8) return false
+    var minX = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    for (p in points) {
+        if (p.x < minX) minX = p.x
+        if (p.x > maxX) maxX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.y > maxY) maxY = p.y
+    }
+    val w = maxX - minX
+    val h = maxY - minY
+    val area = w * h
+    if (area < ENCLOSURE_MIN_AREA_PX) return false
+    val diag = kotlin.math.sqrt((w * w + h * h).toDouble()).toFloat()
+    val first = points.first()
+    val last = points.last()
+    val gap = kotlin.math.sqrt(
+        (((first.x - last.x) * (first.x - last.x)) +
+         ((first.y - last.y) * (first.y - last.y))).toDouble(),
+    ).toFloat()
+    return gap < diag * ENCLOSURE_MAX_GAP_RATIO
+}
+
+private const val ENCLOSURE_MIN_AREA_PX = 400f
+private const val ENCLOSURE_MAX_GAP_RATIO = 0.25f
+
+/**
+ * Given a freshly-drawn [stroke] anchored to [block], measure the block's
+ * text layout with the current reader styles and return the substring of
+ * the block's plain text that the stroke sits over.
+ *
+ * How: build a paragraph-style TextLayout with the same width/font/spacing
+ * the renderer uses, then for each character offset check whether that
+ * character's bbox overlaps the stroke's bbox (with a half-line vertical
+ * slop so an underline drawn just below the baseline still catches the
+ * chars above it). Concatenate the hit range → underlying text.
+ *
+ * Returns null for non-text blocks (figures/exercises/fences) or when the
+ * stroke lives outside the text (margin scribble). Non-null result is
+ * stored in Stroke.annotatedText so a later font-scale change doesn't
+ * shift what "the marked text" refers to.
+ */
+private fun extractStrokeText(
+    stroke: InkStroke,
+    block: Block,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    density: Density,
+    fontScale: Float,
+    lineSpacing: Float,
+): String? {
+    val plain = when (block) {
+        is Block.Paragraph -> block.inlines.plainText()
+        is Block.BulletItem -> block.inlines.plainText()
+        is Block.OrderedItem -> block.inlines.plainText()
+        is Block.Heading -> block.inlines.plainText()
+        is Block.CustomFence -> when (block.kind) {
+            "recap", "exercise" -> block.body.trim()
+            else -> return null
+        }
+    }
+    if (plain.isBlank() || stroke.points.isEmpty() || widthPx <= 0) return null
+
+    // Style approximates what ParagraphBlock uses. Slight metric drift is
+    // OK — we're locating chars, not pixel-aligning glyphs.
+    val style = with(density) {
+        TextStyle(
+            fontFamily = FontFamily.Serif,
+            fontSize = 18.sp * fontScale,
+            lineHeight = 30.sp * fontScale * lineSpacing,
+            hyphens = Hyphens.Auto,
+        )
+    }
+    val layout = measurer.measure(
+        text = AnnotatedString(plain),
+        style = style,
+        constraints = Constraints(maxWidth = widthPx),
+    )
+
+    var minX = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    stroke.points.forEach { p ->
+        if (p.x < minX) minX = p.x
+        if (p.x > maxX) maxX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.y > maxY) maxY = p.y
+    }
+
+    val lineHeightPx = if (layout.lineCount > 0) {
+        layout.getLineBottom(0) - layout.getLineTop(0)
+    } else 0f
+    // Half-line vertical slop lets an underline drawn just below the
+    // baseline still associate with the chars above it (common pattern).
+    val vSlop = lineHeightPx * 0.5f
+
+    var firstHit = -1
+    var lastHit = -1
+    for (offset in plain.indices) {
+        val box = layout.getBoundingBox(offset)
+        val yOverlap = box.bottom >= minY - vSlop && box.top <= maxY + vSlop
+        val xOverlap = box.right >= minX && box.left <= maxX
+        if (yOverlap && xOverlap) {
+            if (firstHit < 0) firstHit = offset
+            lastHit = offset
+        }
+    }
+    if (firstHit < 0) return null
+    val end = (lastHit + 1).coerceAtMost(plain.length)
+    return plain.substring(firstHit, end).trim().ifBlank { null }
 }
 
 /**

@@ -64,6 +64,13 @@ data class Stroke(
     /** Free-text brush hint for future styling ("pen", "pencil", "marker"). Default "pen". */
     val brush: String = "pen",
     val created: String,
+    // Text under the stroke, extracted at draw time by walking the block's
+    // character layout and collecting chars whose bbox overlaps the stroke
+    // bbox. Nullable because (a) old strokes on disk predate this field, and
+    // (b) a stroke that lives entirely in the margin has no underlying text.
+    // Locked at draw time so a later font-scale change doesn't drift the
+    // meaning of "what I drew over".
+    @SerialName("annotated_text") val annotatedText: String? = null,
 )
 
 @Serializable
