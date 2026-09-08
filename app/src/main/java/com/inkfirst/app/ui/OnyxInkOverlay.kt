@@ -176,8 +176,19 @@ fun OnyxInkOverlay(
                         }
                     }
 
-                    val helper = TouchHelper.create(this, callback)
+                    // Feature mode = pen-only, app-rendered. Hypothesis: this
+                    // routes only stylus events through the raw-drawing hook,
+                    // leaving finger touches on the normal Android dispatch
+                    // path so Compose can see them (tap-on-stroke chip,
+                    // finger page-turn). If this doesn't do it, try the other
+                    // FEATURE_ constants — see javap in the aar for the set.
+                    val helper = TouchHelper.create(
+                        this,
+                        TouchHelper.FEATURE_APP_PEN_TOUCH_RENDER,
+                        callback,
+                    )
                     touchHelperRef.value = helper
+                    Log.d(TAG, "TouchHelper.create returned=$helper mode=FEATURE_APP_PEN_TOUCH_RENDER")
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(h: SurfaceHolder) {
                             try {
