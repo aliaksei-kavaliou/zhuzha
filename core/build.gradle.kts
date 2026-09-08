@@ -23,6 +23,10 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
+    // Gradle 8→9 requires the JUnit Platform launcher to be declared
+    // explicitly instead of being auto-added to the test runtime classpath.
+    // See https://docs.gradle.org/8.10.2/userguide/upgrading_version_8.html#test_framework_implementation_dependencies
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.test {
