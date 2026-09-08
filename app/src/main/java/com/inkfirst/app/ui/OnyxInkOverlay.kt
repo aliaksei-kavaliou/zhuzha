@@ -5,10 +5,11 @@ import android.graphics.Rect as AndroidRect
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -16,14 +17,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
 import com.inkfirst.core.InkPoint
 import com.inkfirst.core.Stroke
@@ -36,42 +37,53 @@ import java.time.LocalDate
 /**
  * Onyx-SDK-backed ink overlay for Boox devices. Wraps a native SurfaceView
  * with [TouchHelper], which renders stylus strokes DIRECTLY to the EPD
- * framebuffer — bypassing Compose recomposition entirely and eliminating
- * the "input → compose → canvas → EPD" latency chain that made
- * [InkOverlay] feel slow next to native Boox notebook apps.
+ * framebuffer at native latency (no Compose recomposition round-trip).
  *
- * Layer stack (bottom → top):
- *   1. Compose [Canvas] renders persisted strokes for the current page
- *      (updated at recomposition rate — fine, they aren't being drawn live).
- *   2. Onyx [SurfaceView] with [setZOrderOnTop] = true. TouchHelper draws
- *      live stylus strokes here at native latency.
- *   3. Transparent [Box] on top with [pointerInteropFilter] to catch
- *      FINGER events (tap-on-stroke → chip). Stylus events pass through to
- *      the SurfaceView underneath, where TouchHelper claims them.
+ * Layer stack (bottom → top in Compose sibling order):
+ *   1. SurfaceView + TouchHelper. `setZOrderOnTop(true)` puts it on top
+ *      of every Compose sibling VISUALLY regardless of declaration order,
+ *      so Onyx-EPD strokes are always visible above the Compose Canvas
+ *      below. Onyx reads stylus input via a low-level EPD driver hook that
+ *      is INDEPENDENT of Android view touch dispatch — so we can safely
+ *      claim/consume stylus events at the Compose level without breaking
+ *      the draw path.
+ *   2. Compose Canvas rendering persisted strokes for the current page.
+ *      Drawn UNDER the SurfaceView by z-order.
  *
- * On non-Boox devices the SDK init in [SurfaceHolder.Callback.surfaceCreated]
- * throws — caught and logged; overlay silently no-ops (drawing won't work
- * but the reader stays usable). For emulator testing, fall back to
- * [InkOverlay] behind a build flag if that becomes a problem.
+ * A single [pointerInput] on the outer Box handles:
+ *   - Stylus events → CONSUME them so the reader's page-turn gesture on
+ *     the parent Box doesn't fire on stroke end (regression seen in the
+ *     first Onyx attempt). Onyx SDK still receives the stylus via its
+ *     EPD hook — Compose consumption doesn't reach that path.
+ *   - Finger DOWN that hits an existing stroke → fire onStrokeTapped and
+ *     consume the stream (opens the tap-chip; parent page-turn skipped).
+ *   - Finger DOWN that misses → do NOT consume, letting the parent's
+ *     page-turn gesture handle it normally.
  *
- * Persistence & anchoring semantics match [InkOverlay]: the caller passes
- * [pageStrokes] (persisted strokes for the current page) and [blockTopY]
- * (block-top → overlay-local Y), we anchor a new stroke to the block
- * containing its start Y, and fire [onStrokeAdded] on the main thread.
+ * Erase (barrel-button) currently DOES NOT fire — Onyx's onRawErasing
+ * callbacks weren't triggering on the Boox Go 7 pen we tested. Erase
+ * remains available via the tap-chip's "Delete" button. Fixing the
+ * barrel-button path is queued as a follow-up on task 10.
+ *
+ * Phantom strokes (EPD-drawn stroke staying visible while the Compose
+ * Canvas below also draws the newly-persisted stroke) are a known issue.
+ * The proper fix is the bitmap+blit pattern from [onyx-pen-sdk] memory;
+ * not yet implemented.
+ *
+ * On non-Boox devices [TouchHelper] init throws — caught and logged.
+ * The overlay is then non-functional but the app doesn't crash.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun OnyxInkOverlay(
     pageStrokes: List<Stroke>,
     blockTopY: (globalIdx: Int) -> Float?,
     pageBlockRange: IntRange,
     onStrokeAdded: (Stroke) -> Unit,
-    onStrokeErased: (Stroke) -> Unit,
+    onStrokeErased: (Stroke?) -> Unit,
     onStrokeTapped: (Stroke) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val addedRef = rememberUpdatedState(onStrokeAdded)
-    val erasedRef = rememberUpdatedState(onStrokeErased)
     val tappedRef = rememberUpdatedState(onStrokeTapped)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
@@ -81,8 +93,123 @@ fun OnyxInkOverlay(
     val touchHelperRef = remember { mutableStateOf<TouchHelper?>(null) }
     val startTouchRef = remember { mutableStateOf<TouchPoint?>(null) }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // Layer 1: persisted strokes.
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    when (down.type) {
+                        PointerType.Stylus, PointerType.Eraser -> {
+                            // Consume the stream so parent page-turn stays
+                            // silent. Onyx's driver-level input path is
+                            // independent of Compose pointer input.
+                            down.consume()
+                            while (true) {
+                                val ev = awaitPointerEvent()
+                                val ch = ev.changes.firstOrNull() ?: break
+                                ch.consume()
+                                if (!ch.pressed) break
+                            }
+                        }
+                        PointerType.Touch, PointerType.Mouse -> {
+                            val at = down.position
+                            val hit = hitTestForErase(
+                                strokesRef.value, at.x, at.y, blockTopYRef.value,
+                            )
+                            if (hit != null) {
+                                down.consume()
+                                tappedRef.value(hit)
+                                while (true) {
+                                    val ev = awaitPointerEvent()
+                                    val ch = ev.changes.firstOrNull() ?: break
+                                    ch.consume()
+                                    if (!ch.pressed) break
+                                }
+                            }
+                            // else: don't consume → parent handles page-turn
+                        }
+                        else -> { /* Unknown type — ignore */ }
+                    }
+                }
+            },
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                SurfaceView(ctx).apply {
+                    setZOrderOnTop(true)
+                    holder.setFormat(PixelFormat.TRANSPARENT)
+
+                    val callback = object : RawInputCallback() {
+                        override fun onBeginRawDrawing(shortcut: Boolean, point: TouchPoint) {
+                            startTouchRef.value = point
+                        }
+                        override fun onEndRawDrawing(outOfLimit: Boolean, point: TouchPoint) {}
+                        override fun onRawDrawingTouchPointMoveReceived(point: TouchPoint) {}
+                        override fun onRawDrawingTouchPointListReceived(list: TouchPointList) {
+                            val pts = list.points ?: return
+                            if (pts.size < 2) return
+                            val start = startTouchRef.value ?: pts.first()
+                            val getTop = blockTopYRef.value
+                            val range = rangeRef.value
+                            val anchorIdx = findAnchorBlockOnyx(range, getTop, start.y) ?: return
+                            val anchorY = getTop(anchorIdx) ?: 0f
+                            val stroke = Stroke(
+                                blockIndex = anchorIdx,
+                                points = pts.map {
+                                    InkPoint(x = it.x, y = it.y - anchorY, pressure = it.pressure)
+                                },
+                                brush = "pen",
+                                created = LocalDate.now().toString(),
+                            )
+                            mainHandler.post { addedRef.value(stroke) }
+                        }
+                        override fun onBeginRawErasing(shortcut: Boolean, point: TouchPoint) {
+                            Log.d(TAG, "onBeginRawErasing shortcut=$shortcut")
+                        }
+                        override fun onEndRawErasing(outOfLimit: Boolean, point: TouchPoint) {
+                            Log.d(TAG, "onEndRawErasing outOfLimit=$outOfLimit")
+                        }
+                        override fun onRawErasingTouchPointMoveReceived(point: TouchPoint) {}
+                        override fun onRawErasingTouchPointListReceived(list: TouchPointList) {
+                            Log.d(TAG, "onRawErasingTouchPointListReceived pts=${list.points?.size}")
+                        }
+                    }
+
+                    val helper = TouchHelper.create(this, callback)
+                    touchHelperRef.value = helper
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(h: SurfaceHolder) {
+                            try {
+                                val bounds = AndroidRect(0, 0, width, height)
+                                helper.setStrokeWidth(3f)
+                                    .setLimitRect(bounds, emptyList())
+                                    .openRawDrawing()
+                                helper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
+                                helper.setRawDrawingEnabled(true)
+                                Log.d(TAG, "TouchHelper opened ${width}x$height")
+                            } catch (t: Throwable) {
+                                Log.w(TAG, "TouchHelper init failed", t)
+                            }
+                        }
+                        override fun surfaceChanged(
+                            h: SurfaceHolder, format: Int, w: Int, ht: Int,
+                        ) {
+                            try {
+                                val bounds = AndroidRect(0, 0, w, ht)
+                                helper.setLimitRect(bounds, emptyList())
+                                helper.setRawDrawingEnabled(true)
+                            } catch (_: Throwable) {}
+                        }
+                        override fun surfaceDestroyed(h: SurfaceHolder) {
+                            try { helper.setRawDrawingEnabled(false) } catch (_: Throwable) {}
+                        }
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             pageStrokes.forEach { s ->
                 val top = blockTopY(s.blockIndex) ?: return@forEach
@@ -104,124 +231,6 @@ fun OnyxInkOverlay(
                 )
             }
         }
-
-        // Layer 2: Onyx SurfaceView for stylus. TouchHelper attaches at
-        // surfaceCreated (view has real dimensions by then).
-        AndroidView(
-            factory = { ctx ->
-                SurfaceView(ctx).apply {
-                    setZOrderOnTop(true)
-                    holder.setFormat(PixelFormat.TRANSPARENT)
-
-                    val callback = object : RawInputCallback() {
-                        override fun onBeginRawDrawing(shortcut: Boolean, point: TouchPoint) {
-                            startTouchRef.value = point
-                        }
-                        override fun onEndRawDrawing(outOfLimit: Boolean, point: TouchPoint) {
-                            // final points arrive in TouchPointListReceived
-                        }
-                        override fun onRawDrawingTouchPointMoveReceived(point: TouchPoint) {
-                            // High-frequency per-point ping; Onyx has already
-                            // rendered directly to EPD. No-op.
-                        }
-                        override fun onRawDrawingTouchPointListReceived(list: TouchPointList) {
-                            val pts = list.points ?: return
-                            if (pts.size < 2) return
-                            val start = startTouchRef.value ?: pts.first()
-                            val getTop = blockTopYRef.value
-                            val range = rangeRef.value
-                            val anchorIdx = findAnchorBlockOnyx(range, getTop, start.y) ?: return
-                            val anchorY = getTop(anchorIdx) ?: 0f
-                            val stroke = Stroke(
-                                blockIndex = anchorIdx,
-                                points = pts.map {
-                                    InkPoint(
-                                        x = it.x,
-                                        y = it.y - anchorY,
-                                        pressure = it.pressure,
-                                    )
-                                },
-                                brush = "pen",
-                                created = LocalDate.now().toString(),
-                            )
-                            // Callback fires off the render thread — marshal
-                            // to main so the caller can mutate Compose state.
-                            mainHandler.post { addedRef.value(stroke) }
-                        }
-                        override fun onBeginRawErasing(shortcut: Boolean, point: TouchPoint) {}
-                        override fun onEndRawErasing(outOfLimit: Boolean, point: TouchPoint) {}
-                        override fun onRawErasingTouchPointMoveReceived(point: TouchPoint) {}
-                        override fun onRawErasingTouchPointListReceived(list: TouchPointList) {
-                            val at = list.points?.lastOrNull() ?: return
-                            mainHandler.post {
-                                val hit = hitTestForErase(
-                                    strokesRef.value, at.x, at.y, blockTopYRef.value,
-                                )
-                                if (hit != null) erasedRef.value(hit)
-                            }
-                        }
-                    }
-
-                    val helper = TouchHelper.create(this, callback)
-                    touchHelperRef.value = helper
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(h: SurfaceHolder) {
-                            try {
-                                val bounds = AndroidRect(0, 0, width, height)
-                                helper.setStrokeWidth(3f)
-                                    .setLimitRect(bounds, emptyList())
-                                    .openRawDrawing()
-                                helper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
-                                helper.setRawDrawingEnabled(true)
-                            } catch (t: Throwable) {
-                                Log.w(TAG, "TouchHelper init failed (non-Boox device?)", t)
-                            }
-                        }
-                        override fun surfaceChanged(
-                            h: SurfaceHolder, format: Int, w: Int, ht: Int,
-                        ) {
-                            try {
-                                val bounds = AndroidRect(0, 0, w, ht)
-                                helper.setLimitRect(bounds, emptyList())
-                                helper.setRawDrawingEnabled(true)
-                            } catch (_: Throwable) { /* swallow — logged at create */ }
-                        }
-                        override fun surfaceDestroyed(h: SurfaceHolder) {
-                            try { helper.setRawDrawingEnabled(false) } catch (_: Throwable) {}
-                        }
-                    })
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        // Layer 3: finger tap-on-stroke handler. Stylus events return
-        // false → fall through to SurfaceView underneath, where Onyx claims
-        // them. Finger events with a hit → consume + fire onStrokeTapped.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInteropFilter { event ->
-                    val tool = event.getToolType(0)
-                    if (tool == MotionEvent.TOOL_TYPE_STYLUS ||
-                        tool == MotionEvent.TOOL_TYPE_ERASER
-                    ) {
-                        return@pointerInteropFilter false
-                    }
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            val hit = hitTestForErase(
-                                strokesRef.value, event.x, event.y, blockTopYRef.value,
-                            )
-                            if (hit != null) {
-                                tappedRef.value(hit)
-                                true
-                            } else false
-                        }
-                        else -> false
-                    }
-                },
-        )
     }
 
     DisposableEffect(Unit) {
@@ -230,6 +239,11 @@ fun OnyxInkOverlay(
             touchHelperRef.value = null
         }
     }
+    // onStrokeErased is not wired: barrel-button events weren't reaching the
+    // Onyx erase callbacks in the first attempt. Erase stays available via
+    // the chip's Delete button; we'll revisit once we have the raw MotionEvent
+    // path snooped for barrel-button state.
+    @Suppress("UNUSED_EXPRESSION") onStrokeErased
 }
 
 private const val TAG = "OnyxInkOverlay"
@@ -269,4 +283,3 @@ private fun hitTestForErase(
         }
     }
 }
-
