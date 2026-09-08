@@ -340,10 +340,19 @@ fun ReaderScreen(
                         strokes = updated
                         store.saveStrokes(courseSlug, chapterSlug, updated)
                     },
-                    onStrokeErased = { gone ->
-                        val updated = strokes - gone
-                        strokes = updated
-                        store.saveStrokes(courseSlug, chapterSlug, updated)
+                    onStrokeErased = { hit ->
+                        // Pen barrel-button while any chip is up = dismiss
+                        // the chip regardless of whether the tap landed on
+                        // a stroke — the previous version required a hit,
+                        // so barrel-tap-in-empty-space did nothing.
+                        if (pendingGestureStroke != null || viewingStroke != null) {
+                            pendingGestureStroke = null
+                            viewingStroke = null
+                        } else if (hit != null) {
+                            val updated = strokes - hit
+                            strokes = updated
+                            store.saveStrokes(courseSlug, chapterSlug, updated)
+                        }
                     },
                     onStrokeTapped = { s -> viewingStroke = s },
                     onStrokeGesture = { g -> pendingGestureStroke = g },
@@ -388,9 +397,12 @@ fun ReaderScreen(
         // "Delete" for the drawing itself. Context text = plain text of the
         // stroke's anchor block, so Ask/Add-note behave the same way they
         // would if the user had highlighted that block by hand.
-        // Fresh-enclosure gesture chip — auto-opens on a closed stroke that
-        // covers text. Semantics differ from viewingStroke: Ask removes the
-        // stroke on chat close, Add note keeps it, Cancel removes it.
+        // Fresh-enclosure gesture chip. Same 4 buttons as the tap chip so
+        // muscle memory transfers. One semantic difference: Ask here also
+        // sets chatOriginStroke, so closing the chat removes the stroke —
+        // the enclosure was a selection cue, not a persistent mark. Cancel
+        // just hides the chip; the stroke stays as marginalia (Delete is
+        // the explicit "remove" action).
         pendingGestureStroke?.let { stroke ->
             val text = stroke.annotatedText.orEmpty()
             Row(
@@ -419,6 +431,9 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     pendingGestureStroke = null
                 }) {
+                    Text("Delete", color = PaperColor)
+                }
+                TextButton(onClick = { pendingGestureStroke = null }) {
                     Text("Cancel", color = PaperColor)
                 }
             }
@@ -611,7 +626,7 @@ private fun PagedContent(
     strokes: List<InkStroke>,
     fingerDraws: Boolean,
     onStrokeAdded: (InkStroke) -> Unit,
-    onStrokeErased: (InkStroke) -> Unit,
+    onStrokeErased: (InkStroke?) -> Unit,
     onStrokeTapped: (InkStroke) -> Unit,
     onStrokeGesture: (InkStroke) -> Unit,
     onAnchorChange: (Int) -> Unit,
@@ -793,11 +808,12 @@ private fun PagedContent(
                     // until a stroke exists. Consumes stylus input (and finger
                     // if the dev toggle is on) so the parent's page-turn
                     // gesture skips those events via change.isConsumed.
-                    // Reverted from OnyxInkOverlay pending a proper Onyx slice.
-                    // Onyx gave zero-latency draw but broke tap-select, erase,
-                    // and periodically fired page-turn on stroke end + left
-                    // phantom EPD-drawn strokes. Swap back to OnyxInkOverlay
-                    // when we can iterate on those with logcat + a test rig.
+                    // Reverted to InkOverlay after 2nd Onyx attempt: Onyx's
+                    // raw-input mode captures ALL touches on the SurfaceView
+                    // area at a level below Compose, so the finger tap-on-
+                    // stroke / chip / erase-button flow can't observe events.
+                    // Also hit a limit-rect coord-system quirk. Fixing needs
+                    // dedicated device iteration — see task 10.
                     InkOverlay(
                         pageStrokes = pageStrokes,
                         blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
@@ -1639,27 +1655,47 @@ private fun extractStrokeText(
         if (p.y > maxY) maxY = p.y
     }
 
-    val lineHeightPx = if (layout.lineCount > 0) {
-        layout.getLineBottom(0) - layout.getLineTop(0)
-    } else 0f
-    // Half-line vertical slop lets an underline drawn just below the
-    // baseline still associate with the chars above it (common pattern).
-    val vSlop = lineHeightPx * 0.5f
+    // For each line, include it only if its Y range overlaps the stroke's
+    // Y range by at least 30% of the smaller of the two. A pure slop check
+    // (previous version) grabbed adjacent lines any time the stroke got
+    // within a fraction of a line-height of the boundary — a single-line
+    // circle around "It is simply a" pulled chunks from the line above and
+    // below into the returned text. This ratio test keeps a thin underline
+    // (small stroke fully inside a line → ratio ≈ 1) while cutting off
+    // neighbours (touch of 1px vs 30px line → ratio ≈ 3%).
+    val strokeHeight = maxY - minY
 
-    var firstHit = -1
-    var lastHit = -1
-    for (offset in plain.indices) {
-        val box = layout.getBoundingBox(offset)
-        val yOverlap = box.bottom >= minY - vSlop && box.top <= maxY + vSlop
-        val xOverlap = box.right >= minX && box.left <= maxX
-        if (yOverlap && xOverlap) {
-            if (firstHit < 0) firstHit = offset
-            lastHit = offset
+    val segments = mutableListOf<String>()
+    for (line in 0 until layout.lineCount) {
+        val lineTop = layout.getLineTop(line)
+        val lineBottom = layout.getLineBottom(line)
+        val overlap = kotlin.math.max(
+            0f,
+            kotlin.math.min(lineBottom, maxY) - kotlin.math.max(lineTop, minY),
+        )
+        val lineHeight = lineBottom - lineTop
+        val minDim = kotlin.math.min(strokeHeight, lineHeight)
+        if (minDim <= 0f || overlap < minDim * 0.3f) continue
+
+        val lineStart = layout.getLineStart(line)
+        val lineEnd = layout.getLineEnd(line)
+        var firstHit = -1
+        var lastHit = -1
+        for (offset in lineStart until lineEnd) {
+            val box = layout.getBoundingBox(offset)
+            if (box.right >= minX && box.left <= maxX) {
+                if (firstHit < 0) firstHit = offset
+                lastHit = offset
+            }
+        }
+        if (firstHit >= 0) {
+            val endExcl = (lastHit + 1).coerceAtMost(plain.length)
+            val seg = plain.substring(firstHit, endExcl).trim()
+            if (seg.isNotEmpty()) segments += seg
         }
     }
-    if (firstHit < 0) return null
-    val end = (lastHit + 1).coerceAtMost(plain.length)
-    return plain.substring(firstHit, end).trim().ifBlank { null }
+    if (segments.isEmpty()) return null
+    return segments.joinToString(" ").ifBlank { null }
 }
 
 /**

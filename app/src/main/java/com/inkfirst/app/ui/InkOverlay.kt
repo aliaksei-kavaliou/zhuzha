@@ -60,7 +60,13 @@ fun InkOverlay(
     pageBlockRange: IntRange,
     allowFingerDraw: Boolean,
     onStrokeAdded: (Stroke) -> Unit,
-    onStrokeErased: (Stroke) -> Unit,
+    /**
+     * Fires on every barrel-button-tap end, whether or not it landed on a
+     * stroke. Argument is the hit stroke, or null if the tap missed. The
+     * caller decides: usually "remove hit stroke" when idle, or "dismiss
+     * the open chip" when a chip is showing.
+     */
+    onStrokeErased: (Stroke?) -> Unit,
     onStrokeTapped: (Stroke) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -139,8 +145,10 @@ fun InkOverlay(
                         val at = Offset(event.x, event.y)
                         val movedLikeATap = maxDelta < TAP_SLOP_PX
                         if (isErasing) {
+                            // Fire even on miss so the caller can dismiss
+                            // an open chip via barrel-button-tap-anywhere.
                             val hit = hitTestStroke(pageStrokes, at, blockTopY)
-                            if (hit != null) onStrokeErased(hit)
+                            onStrokeErased(hit)
                         } else if (movedLikeATap) {
                             // Tap on (or very near) a stroke → chip. Works
                             // for finger too since we claimed the down above.
