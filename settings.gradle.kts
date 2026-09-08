@@ -17,6 +17,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Boox / Onyx pen SDK (com.onyx.android.sdk:onyxsdk-pen). HTTPS
+        // works so no isAllowInsecureProtocol needed.
+        maven("https://repo.boox.com/repository/maven-public/")
     }
 }
 
