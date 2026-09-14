@@ -1,10 +1,12 @@
 package com.inkfirst.app.ui
 
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.Rect as AndroidRect
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.Canvas
@@ -23,7 +25,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
 import com.inkfirst.core.InkPoint
@@ -73,6 +78,7 @@ import java.time.LocalDate
  * On non-Boox devices [TouchHelper] init throws — caught and logged.
  * The overlay is then non-functional but the app doesn't crash.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun OnyxInkOverlay(
     pageStrokes: List<Stroke>,
@@ -102,10 +108,35 @@ fun OnyxInkOverlay(
     // Seeded to "long ago" rather than 0 so the grace-period arithmetic is
     // meaningful before the first touch.
     val fingerUpAtRef = remember { mutableStateOf(0L) }
+    /** Whether the pen is currently in contact, per the SDK's own signals. */
+    val penActiveRef = remember { mutableStateOf(false) }
+    /** Tool type of the most recent MotionEvent — the authoritative pen/finger signal. */
+    val lastToolRef = remember { mutableStateOf(MotionEvent.TOOL_TYPE_UNKNOWN) }
+    val penContactRef = remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
+            // Read the tool type straight off the MotionEvent, the way
+            // InkOverlay already does for barrel-button and eraser-tip
+            // detection. Compose's PointerType reports this firmware's pen as
+            // Touch, and the SDK's callbacks carry no tool type at all — but
+            // the MotionEvent does, and it is authoritative. This replaces a
+            // timing heuristic that guessed "a stroke arriving near a touch is
+            // that touch", which misfired both ways.
+            //
+            // Returns false: this only observes, it never consumes.
+            .pointerInteropFilter { event ->
+                val tool = event.getToolType(0)
+                lastToolRef.value = tool
+                if (tool == MotionEvent.TOOL_TYPE_STYLUS ||
+                    tool == MotionEvent.TOOL_TYPE_ERASER
+                ) {
+                    penContactRef.value = event.actionMasked != MotionEvent.ACTION_UP &&
+                        event.actionMasked != MotionEvent.ACTION_CANCEL
+                }
+                false
+            }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -124,16 +155,43 @@ fun OnyxInkOverlay(
                             // deliberate line reported 2 — because the longer
                             // the contact, the more moves we ate.
                             down.consume()
-                            while (true) {
-                                val ev = awaitPointerEvent()
-                                val ch = ev.changes.firstOrNull() ?: break
-                                if (!ch.pressed) break
+                            // Bounded, and it only consumes the RELEASE.
+                            //
+                            // Consuming the moves starves the SDK (that was
+                            // the one-point-per-stroke bug), but the release
+                            // has to be consumed or the parent reads the pen
+                            // stroke as a tap and turns the page.
+                            //
+                            // The timeout is the important part: Onyx takes
+                            // the pen at driver level, so Compose is not
+                            // guaranteed to ever see the release. Without a
+                            // bound this loop hung forever and awaitEachGesture
+                            // never restarted — which is why tap-on-stroke
+                            // worked on a fresh page and then died the moment
+                            // anything was drawn.
+                            withTimeoutOrNull(PEN_CONTACT_TIMEOUT_MS) {
+                                while (true) {
+                                    val ev = awaitPointerEvent()
+                                    val ch = ev.changes.firstOrNull() ?: break
+                                    if (!ch.pressed) {
+                                        ch.consume()
+                                        break
+                                    }
+                                }
                             }
                         }
                         PointerType.Touch, PointerType.Mouse -> {
-                            // Mark the glass as finger-occupied for as long as
-                            // this contact lasts. emitStroke() reads this to
-                            // throw away the "stroke" the finger generates.
+                            // This firmware reports the pen as Touch here, so
+                            // Compose's type is not trustworthy — consult the
+                            // MotionEvent tool type instead. A pen contact must
+                            // not be treated as a tap, and must not suppress
+                            // its own stroke.
+                            val tool = lastToolRef.value
+                            if (tool == MotionEvent.TOOL_TYPE_STYLUS ||
+                                tool == MotionEvent.TOOL_TYPE_ERASER
+                            ) {
+                                return@awaitEachGesture
+                            }
                             fingerDownRef.value = true
                             fingerUpAtRef.value = System.currentTimeMillis()
                             val at = down.position
@@ -194,11 +252,20 @@ fun OnyxInkOverlay(
                     // value captured in surfaceCreated came back as
                     // (670,1054) for a view that sits near (38,200), because
                     // the surface is created before the final layout pass.
-                    fun originOnScreen(): Pair<Float, Float> {
-                        val loc = IntArray(2)
-                        surface.getLocationOnScreen(loc)
-                        return loc[0].toFloat() to loc[1].toFloat()
-                    }
+                    // Onyx reports raw points in VIEW-LOCAL coordinates, the
+                    // same space Compose uses — proved by a pen contact and
+                    // the Compose touch it generates reporting identical
+                    // numbers, (1087,174), 2ms apart. An earlier reading of
+                    // the log had this backwards and subtracted the view
+                    // origin, which pushed every stored stroke (38,256) away
+                    // from where a finger taps: strokes rendered displaced,
+                    // hit-testing never matched, and one stroke logged a
+                    // negative y of -205. No conversion is needed.
+                    //
+                    // Note this is the opposite of setLimitRect, which also
+                    // wants view-local — the two are consistent; it was only
+                    // the "points are screen space" reading that was wrong.
+                    fun originOnScreen(): Pair<Float, Float> = 0f to 0f
 
                     // Samples collected during one pen-down, in screen space.
                     val sampleBuf = mutableListOf<TouchPoint>()
@@ -213,7 +280,11 @@ fun OnyxInkOverlay(
                         val lastUp = fingerUpAtRef.value
                         val sinceFingerUp =
                             if (lastUp == 0L) Long.MAX_VALUE else System.currentTimeMillis() - lastUp
-                        if (fingerDownRef.value || sinceFingerUp < FINGER_STROKE_GRACE_MS) {
+                        val toolIsPen = lastToolRef.value == MotionEvent.TOOL_TYPE_STYLUS ||
+                            lastToolRef.value == MotionEvent.TOOL_TYPE_ERASER
+                        if (!toolIsPen &&
+                            (fingerDownRef.value || sinceFingerUp < FINGER_STROKE_GRACE_MS)
+                        ) {
                             Log.d(
                                 TAG,
                                 "emit($source) n=${pts.size} dropped — finger contact " +
@@ -259,13 +330,8 @@ fun OnyxInkOverlay(
 
                     val callback = object : RawInputCallback() {
                         override fun onBeginRawDrawing(shortcut: Boolean, point: TouchPoint) {
-                            val (ox, oy) = originOnScreen()
-                            originRef.value = ox to oy
-                            Log.d(
-                                TAG,
-                                "onBeginRawDrawing screen=(${point.x},${point.y}) " +
-                                    "origin=($ox,$oy) local=(${point.x - ox},${point.y - oy})",
-                            )
+                            originRef.value = originOnScreen()
+                            Log.d(TAG, "onBeginRawDrawing local=(${point.x},${point.y})")
                             startTouchRef.value = point
                             emittedRef.value = false
                             sampleBuf.clear()
@@ -305,6 +371,22 @@ fun OnyxInkOverlay(
                                 emittedRef.value = true
                                 emitStroke(pts, "list")
                             }
+                        }
+
+                        // Never overridden until now. onPenUpRefresh is the
+                        // pen-lift signal Compose never delivers — it hands
+                        // back the rect the pen just dirtied, which is both
+                        // the release we need and the hook for clearing the
+                        // EPD ghost. onPenActive fires when the pen comes
+                        // into range, before any contact.
+                        override fun onPenActive(point: TouchPoint) {
+                            penActiveRef.value = true
+                            Log.d(TAG, "onPenActive at=(${point.x},${point.y})")
+                        }
+
+                        override fun onPenUpRefresh(refreshRect: RectF) {
+                            penActiveRef.value = false
+                            Log.d(TAG, "onPenUpRefresh rect=$refreshRect")
                         }
 
                         override fun onBeginRawErasing(shortcut: Boolean, point: TouchPoint) {
@@ -490,6 +572,23 @@ private const val ONYX_CREATE_FLAG = true
  * finger — and anything arriving while a finger is on the glass is not ink.
  */
 private const val FINGER_STROKE_GRACE_MS = 800L
+
+/**
+ * Ceiling on how long one pen contact is followed before the gesture detector
+ * is freed.
+ *
+ * Deliberately short. Onyx takes the pen at driver level and Compose never
+ * observes the lift, so waiting for it achieves nothing — the only reason to
+ * wait was to consume the release, and a release that never arrives cannot be
+ * consumed. It also cannot make the parent fire a page-turn, because the
+ * parent needs that same release to decide a tap happened.
+ *
+ * So this is just a short window in which a release WOULD be consumed if one
+ * did arrive (a finger the digitiser reports as a stylus, say), after which
+ * the detector frees up and finger taps work again. At six seconds the pen
+ * blocked every tap for six seconds after each stroke.
+ */
+private const val PEN_CONTACT_TIMEOUT_MS = 350L
 
 private fun findAnchorBlockOnyx(
     range: IntRange,
