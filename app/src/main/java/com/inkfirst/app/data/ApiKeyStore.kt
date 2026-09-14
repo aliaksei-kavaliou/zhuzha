@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.inkfirst.core.DEFAULT_GEMINI_IMAGE_MODEL
 import com.inkfirst.core.DEFAULT_GEMINI_MODEL
 
 /**
@@ -42,6 +43,20 @@ class ApiKeyStore(context: Context) {
         prefs.edit().putString(KEY_MODEL, value.trim().ifEmpty { DEFAULT_GEMINI_MODEL }).apply()
     }
 
+    /**
+     * Model used to draw chapter figures. Separate from [getModelName]
+     * because it must be an image-capable model — the text model can't draw
+     * and an image model writes poor prose.
+     */
+    fun getImageModelName(): String =
+        prefs.getString(KEY_IMAGE_MODEL, null)?.ifBlank { null } ?: DEFAULT_GEMINI_IMAGE_MODEL
+
+    fun setImageModelName(value: String) {
+        prefs.edit()
+            .putString(KEY_IMAGE_MODEL, value.trim().ifEmpty { DEFAULT_GEMINI_IMAGE_MODEL })
+            .apply()
+    }
+
     /** Default language pre-filled on the New Course form. Not encrypted-secret but shares the same prefs file. */
     fun getPreferredLanguage(): String =
         prefs.getString(KEY_LANGUAGE, null)?.ifBlank { null } ?: DEFAULT_LANGUAGE
@@ -54,6 +69,7 @@ class ApiKeyStore(context: Context) {
         const val PREFS_NAME = "inkfirst_secrets"
         const val KEY_API = "gemini_api_key"
         const val KEY_MODEL = "gemini_model"
+        const val KEY_IMAGE_MODEL = "gemini_image_model"
         const val KEY_LANGUAGE = "preferred_language"
         const val DEFAULT_LANGUAGE = "English"
     }

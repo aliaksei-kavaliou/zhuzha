@@ -29,7 +29,8 @@ Name origin: "Ink First" = e-ink-first design + a nod to Head First. GitHub name
 2. **Local-first, plain files.** Courses live on disk as inspectable files: generated chapters as Markdown/HTML, outline + progress as JSON, ink strokes (later) in a simple custom JSON format. SQLite only for indexing/metadata if needed. Rationale: user's study material must be greppable, backupable, and readable in 10 years even if the app dies.
 3. **Generation logic in its own Gradle module** (`:core` or similar), separate from UI. Not because a backend is planned (it isn't), but so the door stays open and the code stays testable.
 4. **Stack: Kotlin + Jetpack Compose.** Native Android. No KMP, no Flutter (Flutter fights e-ink rendering).
-5. **Chapter generation is async**: request → outline/chapter generated → rendered → then read (possibly offline). Fits e-ink usage patterns; no need for streaming UI.
+5. **Figures are illustrations, not diagrams.** Phase 3 was originally specced as generated *diagrams*; that was reframed on 2026-09-10. The pictures exist to make a study page feel alive (the Head First trick), not to be reference material — so they're loose greyscale sketches from an image-capable Gemini model ("Nano Banana"), drawn per figure slot, with the house style in one constant in `:core`. A semantic diagram DSL rendered natively was designed and rejected: accurate, boring, and not what the pictures are for. See docs/design.md §7.
+6. **Chapter generation is async**: request → outline/chapter generated → rendered → then read (possibly offline). Fits e-ink usage patterns; no need for streaming UI.
 
 ## Critical context: the user is NEW to Kotlin
 
@@ -50,7 +51,7 @@ Aliaksei's main language is PHP; Python is a language he likes but rarely uses; 
 6. **Progress tracking**: chapter done/in-progress, simple course dashboard.
 7. Typed notes per chapter.
 
-**Explicitly NOT in MVP**: handwriting/stylus (phase 2, via Onyx pen SDK), AI-generated diagrams (phase 3, hard problem — pedagogically crucial long-term but blocked on image-gen quality for e-ink), other platforms (iPad was discussed and deliberately deferred; not a goal), accounts/sync/backend (never, unless this becomes a product).
+**Explicitly NOT in MVP**: handwriting/stylus (phase 2, via Onyx pen SDK), other platforms (iPad was discussed and deliberately deferred; not a goal), accounts/sync/backend (never, unless this becomes a product).
 
 ## Working agreements
 

@@ -40,7 +40,7 @@ internal fun buildChapterPrompt(
     appendLine("- Use custom fenced blocks where they fit:")
     appendLine("  - ```exercise … ``` for practice; put the answer inside on a line starting with \"answer: \".")
     appendLine("  - ```recap … ``` for end-of-section wrap-ups that restate the key idea differently.")
-    appendLine("  - ```figure alt=\"…\" ``` for figure slots — alt text only (images come later).")
+    appendLine("  - ```figure alt=\"…\" ``` for figure slots. The alt text is the drawing brief: an artist reads it and nothing else, so describe a concrete SCENE, not a diagram. \"A very tired robot trying to sort a mountain of socks\" works; \"a diagram of the classification process\" does not. One vivid subject. Words in the picture are allowed but must be few and large — a short speech bubble (a character reacting is very welcome) or a single big label. Never ask for small print, a paragraph, many labels, or numbers presenting data; if your idea only works with dense text, pick a different idea. and it should raise a smile as well as make the point. Two or three figures per chapter is plenty.")
     appendLine("- Where a metaphor or term from an earlier chapter helps, reuse it explicitly.")
     appendLine("- Do NOT restate the outline or objectives — just write the chapter.")
     appendLine("- Punctuation: put a space on each side of every em-dash. Write \"word — word\", not \"word—word\" or \"word---word\". This reads more comfortably on narrow e-ink pages.")

@@ -42,6 +42,7 @@ fun SettingsScreen(
 
     var apiKeyDraft by remember { mutableStateOf("") }
     var modelDraft by remember { mutableStateOf(store.getModelName()) }
+    var imageModelDraft by remember { mutableStateOf(store.getImageModelName()) }
     var languageDraft by remember { mutableStateOf(store.getPreferredLanguage()) }
     var fingerDraws by remember { mutableStateOf(readerPrefs.getFingerDraws()) }
     var showKey by remember { mutableStateOf(false) }
@@ -96,6 +97,19 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
+        OutlinedTextField(
+            value = imageModelDraft,
+            onValueChange = { imageModelDraft = it },
+            label = { Text("Figure model") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "Draws chapter figures. Must be an image-capable model — " +
+                "roughly 3 cents a picture on the default.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         LanguagePicker(
             label = "Preferred language",
             value = languageDraft,
@@ -145,6 +159,7 @@ fun SettingsScreen(
                         store.setApiKey(apiKeyDraft)
                     }
                     store.setModelName(modelDraft)
+                    store.setImageModelName(imageModelDraft)
                     store.setPreferredLanguage(languageDraft)
                     storedKey = store.getApiKey()
                     showKey = false

@@ -286,6 +286,26 @@ class CourseStore(private val root: File) {
         }
     }
 
+    /**
+     * Writes a generated figure to figures/<fileName>. The name is chosen by
+     * [ChapterIllustrator] and written into the chapter's fence as `src=`, so
+     * a picture is always reachable from the chapter text that references it.
+     */
+    fun saveFigure(courseSlug: String, fileName: String, bytes: ByteArray) {
+        val dir = File(root, "$courseSlug/figures").apply { mkdirs() }
+        File(dir, fileName).writeBytes(bytes)
+    }
+
+    /**
+     * Resolves a figure `src=` to a file on disk, or null if it was never
+     * generated (or was deleted by hand — the reader falls back to alt text).
+     * Guards against a `src` containing path separators.
+     */
+    fun figureFile(courseSlug: String, fileName: String): File? {
+        if (fileName.isBlank() || fileName.contains('/') || fileName.contains('\\')) return null
+        return File(root, "$courseSlug/figures/$fileName").takeIf { it.isFile && it.length() > 0L }
+    }
+
     /** Chapter slugs that currently have at least one ink stroke on file. */
     fun chaptersWithInk(courseSlug: String): Set<String> {
         val dir = File(root, "$courseSlug/ink")

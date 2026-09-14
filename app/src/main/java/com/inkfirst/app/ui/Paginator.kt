@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.core.Block
+import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.Inline
 
 /**
@@ -21,6 +22,12 @@ import com.inkfirst.core.Inline
  *
  * [fontScale] multiplies every text style (fontSize + lineHeight) uniformly.
  * The renderer must use the same scale for the layout to match this pack.
+ *
+ * [hasFigureImage] answers "did this figure's `src` actually get generated?".
+ * An illustrated figure is measured as a fixed-ratio picture; one still
+ * waiting for its picture is measured as the alt-text box the reader draws
+ * instead. The renderer must answer the same question the same way or pages
+ * will overflow.
  */
 fun paginate(
     blocks: List<Block>,
@@ -30,6 +37,7 @@ fun paginate(
     measurer: TextMeasurer,
     fontScale: Float = 1.0f,
     lineSpacing: Float = 1.0f,
+    hasFigureImage: (String) -> Boolean = { false },
 ): List<List<Block>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
 
@@ -45,7 +53,7 @@ fun paginate(
 
     for (i in blocks.indices) {
         val block = blocks[i]
-        val h = estimateHeight(block, contentWidthPx, density, measurer, fontScale, lineSpacing)
+        val h = estimateHeight(block, contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage)
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
         // heading is about to land and the block after it wouldn't fit on the
@@ -53,7 +61,7 @@ fun paginate(
         // actually fits together on an empty page (otherwise we'd loop).
         val requiredHeight = if (block is Block.Heading && i + 1 < blocks.size) {
             val nextH = estimateHeight(
-                blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing,
+                blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage,
             )
             if (h + nextH <= budget) h + nextH else h
         } else {
@@ -103,6 +111,7 @@ private fun estimateHeight(
     measurer: TextMeasurer,
     fontScale: Float,
     lineSpacing: Float,
+    hasFigureImage: (String) -> Boolean,
 ): Int = with(density) {
     when (block) {
         is Block.Heading -> {
@@ -154,6 +163,15 @@ private fun estimateHeight(
                 )
                 return@with result.size.height + 8.dp.toPx().toInt()
             }
+            // An illustrated figure is a picture, not a bordered text box:
+            // full content width at the fixed figure ratio, plus the vertical
+            // breathing room FigureBlock puts around it. No text to measure.
+            val figureSrc = block.params["src"]
+            if (block.kind == "figure" && figureSrc != null && hasFigureImage(figureSrc)) {
+                val imageHeight = (widthPx / FIGURE_ASPECT).toInt()
+                return@with imageHeight + 32.dp.toPx().toInt()
+            }
+
             val innerWidth = widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }

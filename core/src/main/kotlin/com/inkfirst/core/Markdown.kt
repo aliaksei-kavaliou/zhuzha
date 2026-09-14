@@ -110,7 +110,7 @@ fun parseMarkdown(input: String): List<Block> {
 
 private val ORDERED_LIST = Regex("""^(\d+)\.\s+(.*)$""")
 
-private fun parseFenceInfo(info: String): Pair<String, Map<String, String>> {
+internal fun parseFenceInfo(info: String): Pair<String, Map<String, String>> {
     if (info.isEmpty()) return "" to emptyMap()
     val sp = info.indexOfAny(charArrayOf(' ', '\t'))
     if (sp == -1) return info to emptyMap()

@@ -36,6 +36,14 @@ private class RecordingGeminiClient(
     override suspend fun generateText(
         model: String, systemInstruction: String, userPrompt: String, apiKey: String,
     ): String = error("outline path should never call generateText")
+
+    override suspend fun generateImage(
+        model: String,
+        prompt: String,
+        aspectRatio: String,
+        apiKey: String,
+    ): GeneratedImage = error("outline path should never call generateImage")
+
 }
 
 class OutlineGeneratorTest {

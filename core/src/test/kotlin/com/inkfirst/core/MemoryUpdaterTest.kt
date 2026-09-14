@@ -24,6 +24,14 @@ private class RecordingMemoryClient(private val response: String = "summary para
         lastUserPrompt = userPrompt
         return response
     }
+
+    override suspend fun generateImage(
+        model: String,
+        prompt: String,
+        aspectRatio: String,
+        apiKey: String,
+    ): GeneratedImage = error("memory path should never call generateImage")
+
 }
 
 class MemoryUpdaterTest {

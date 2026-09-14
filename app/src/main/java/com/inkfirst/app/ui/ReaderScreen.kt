@@ -1,6 +1,8 @@
 package com.inkfirst.app.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -42,6 +45,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.focusable
@@ -52,6 +59,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.ClipboardManager
@@ -84,16 +92,20 @@ import com.inkfirst.app.data.TextAlignPref
 import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Block
+import com.inkfirst.core.ChapterIllustrator
 import com.inkfirst.core.ChapterGenerator
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Annotation
 import com.inkfirst.core.Course
+import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.Inline
+import com.inkfirst.core.GeminiClient
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.MemoryUpdater
 import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.Stroke as InkStroke
 import com.inkfirst.core.courseDaySchedule
+import com.inkfirst.core.findFigureSlots
 import com.inkfirst.core.parseMarkdown
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -110,6 +122,8 @@ private val BorderColor = Color(0xFF888888)
 private sealed interface CompileState {
     data object Idle : CompileState
     data object Running : CompileState
+    /** Words are written and saved; pictures are still being drawn. */
+    data class Illustrating(val done: Int, val total: Int) : CompileState
     data class Failed(val message: String) : CompileState
 }
 
@@ -193,6 +207,21 @@ fun ReaderScreen(
 
     val chapter = course?.chapters?.firstOrNull { it.slug == chapterSlug }
     val chapterAnnotations = course?.annotations?.filter { it.chapterSlug == chapterSlug }.orEmpty()
+    // Figure slots still waiting for a picture. Drives the menu's "Draw
+    // figures" row — the retrofit path for chapters written before figures
+    // existed, and the retry path when one came back empty.
+    val pendingFigures = remember(markdown) {
+        markdown?.let { md -> findFigureSlots(md).count { it.isPending } } ?: 0
+    }
+    // Progress (or the failure) of a manual illustrate pass, shown in the
+    // menu row itself. With the chapter already on screen there is no
+    // compile prompt to report into, and drawing takes long enough that
+    // silence reads as "nothing happened".
+    val figureStatus = when (val state = compileState) {
+        is CompileState.Illustrating -> "Drawing… ${state.done}/${state.total}"
+        is CompileState.Failed -> state.message
+        else -> null
+    }
     val blocks = remember(markdown, chapter, course) {
         val parsed = markdown?.let { parseMarkdown(it) } ?: emptyList()
         if (chapter == null || parsed.isEmpty()) parsed
@@ -568,6 +597,25 @@ fun ReaderScreen(
                     showFormatMenu = false
                     chatSelection = ""  // open with no selection = general Q&A
                 },
+                pendingFigures = pendingFigures,
+                figureStatus = figureStatus,
+                busyDrawing = compileState is CompileState.Illustrating,
+                onIllustrate = {
+                    // Menu deliberately stays open — it is where progress shows.
+                    val c = course ?: return@FormatMenu
+                    val ch = chapter ?: return@FormatMenu
+                    val md = markdown ?: return@FormatMenu
+                    illustrateExistingChapter(
+                        course = c,
+                        chapter = ch,
+                        markdown = md,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { newMarkdown -> markdown = newMarkdown },
+                    )
+                },
                 onToggleBookmark = {
                     showFormatMenu = false
                     val c = course ?: return@FormatMenu
@@ -643,6 +691,24 @@ private fun PagedContent(
 
     val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
 
+    // Decoded figures, kept for as long as the chapter is open. Without a
+    // cache every page turn re-decodes the pictures on the new page, which
+    // is real work on the Boox. Keyed on the chapter so leaving it frees the
+    // bitmaps. Not observable state on purpose: entries are filled during
+    // composition and never change for a given src.
+    val figureBitmaps = remember(course?.slug, chapterSlug) { mutableMapOf<String, ImageBitmap?>() }
+    val loadFigure: (String) -> ImageBitmap? = { src ->
+        figureBitmaps.getOrPut(src) {
+            val slug = course?.slug
+            val file = if (slug == null) null else store.figureFile(slug, src)
+            file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+        }
+    }
+    // Cheap existence check for the paginator — a stat, not a decode.
+    val hasFigureImage: (String) -> Boolean = { src ->
+        course?.slug?.let { store.figureFile(it, src) != null } == true
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val widthPx = with(density) { maxWidth.toPx().toInt() }
@@ -657,6 +723,7 @@ private fun PagedContent(
                     measurer = measurer,
                     fontScale = fontScale,
                     lineSpacing = lineSpacing,
+                    hasFigureImage = hasFigureImage,
                 )
             }
             val pageIndex = remember(pages, anchorBlockIndex) {
@@ -798,6 +865,7 @@ private fun PagedContent(
                                         revealed = revealed[globalIdx] == true,
                                         onReveal = { revealed[globalIdx] = true },
                                         onOpenAnnotation = onOpenAnnotation,
+                                        loadFigure = loadFigure,
                                     )
                                 }
                             }
@@ -944,6 +1012,10 @@ private fun FormatMenu(
     canBookmark: Boolean,
     onOpenContents: () -> Unit,
     onAskAboutChapter: () -> Unit,
+    pendingFigures: Int,
+    figureStatus: String?,
+    busyDrawing: Boolean,
+    onIllustrate: () -> Unit,
     onToggleBookmark: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
@@ -994,6 +1066,26 @@ private fun FormatMenu(
                     fontWeight = FontWeight.Bold,
                     color = InkColor,
                 )
+            }
+        }
+
+        // Draw the chapter's outstanding figures. Hidden once every slot
+        // has a picture, so a fully illustrated chapter shows no dead row.
+        if (pendingFigures > 0 || figureStatus != null) {
+            MenuRow(label = "Figures") {
+                Box(
+                    modifier = Modifier
+                        .clickable(enabled = !busyDrawing && pendingFigures > 0) { onIllustrate() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = figureStatus
+                            ?: ("Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (busyDrawing) MutedColor else InkColor,
+                    )
+                }
             }
         }
 
@@ -1121,6 +1213,7 @@ private fun RenderBlock(
     revealed: Boolean,
     onReveal: () -> Unit,
     onOpenAnnotation: (Annotation) -> Unit,
+    loadFigure: (String) -> ImageBitmap?,
 ) {
     when (block) {
         is Block.Heading -> HeadingBlock(block, fontScale)
@@ -1133,7 +1226,7 @@ private fun RenderBlock(
         is Block.CustomFence -> when (block.kind) {
             "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal)
             "recap" -> RecapBlock(block, fontScale, lineSpacing)
-            "figure" -> FigureBlock(block, fontScale, lineSpacing)
+            "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
             "meta" -> MetaBlock(block, fontScale)
             else -> UnknownFenceBlock(block, fontScale)
         }
@@ -1322,9 +1415,46 @@ private fun RecapBlock(f: Block.CustomFence, fontScale: Float, lineSpacing: Floa
     }
 }
 
+/**
+ * A figure slot. Once ChapterIllustrator has drawn it, the picture stands on
+ * its own in the text flow — no border, no "FIGURE" label, no caption. Book
+ * illustrations aren't boxed, and the alt text is a drawing brief ("a very
+ * tired robot sorting socks"), which reads oddly as a caption; it stays as
+ * the content description instead.
+ *
+ * Until then it falls back to the bordered alt-text box, which is what every
+ * figure looked like before pictures existed.
+ */
 @Composable
-private fun FigureBlock(f: Block.CustomFence, fontScale: Float, lineSpacing: Float) {
+private fun FigureBlock(
+    f: Block.CustomFence,
+    fontScale: Float,
+    lineSpacing: Float,
+    loadFigure: (String) -> ImageBitmap?,
+) {
     val alt = f.params["alt"] ?: f.body.trim().ifBlank { "(figure)" }
+    val picture = f.params["src"]?.let(loadFigure)
+
+    if (picture != null) {
+        Image(
+            bitmap = picture,
+            contentDescription = alt,
+            contentScale = ContentScale.Fit,
+            // Force greyscale. Unlike our UI chrome — which stays pure black
+            // and white to dodge dither patterns — a sketch is *meant* to
+            // dither, but a stray colour cast from the model would muddy it.
+            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+            // padding BEFORE aspectRatio: the ratio then governs the picture
+            // itself and the 16dp is breathing room around it, so total height
+            // is (width / ratio) + 32dp — exactly what the paginator reserves.
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+                .aspectRatio(FIGURE_ASPECT),
+        )
+        return
+    }
+
     BorderedBlock(label = "FIGURE", fontScale = fontScale) {
         Text(
             text = alt,
@@ -1731,26 +1861,47 @@ private fun CompilePrompt(
             .pointerInput(onOpenPrevChapter, onOpenNextChapter) {
                 val hDrag = 60.dp.toPx()
                 val vDrag = 80.dp.toPx()
+                val dragStartPx = 10.dp.toPx()
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val downPos = down.position
                     var dx = 0f
                     var dy = 0f
+                    var isDrag = false
                     while (true) {
                         val ev = awaitPointerEvent()
                         val ch = ev.changes.firstOrNull() ?: break
                         if (!ch.pressed) {
-                            if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
-                                if (dx <= -hDrag) onOpenNextChapter?.invoke()
-                                else if (dx >= hDrag) onOpenPrevChapter?.invoke()
+                            // A child (Compile / Back / Try again) already took
+                            // this tap — don't navigate out from under it.
+                            if (ch.isConsumed) break
+                            if (isDrag) {
+                                if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
+                                    if (dx <= -hDrag) onOpenNextChapter?.invoke()
+                                    else if (dx >= hDrag) onOpenPrevChapter?.invoke()
+                                } else {
+                                    if (dy <= -vDrag) onOpenNextChapter?.invoke()
+                                    else if (dy >= vDrag) onOpenPrevChapter?.invoke()
+                                }
                             } else {
-                                if (dy <= -vDrag) onOpenNextChapter?.invoke()
-                                else if (dy >= vDrag) onOpenPrevChapter?.invoke()
+                                // Same tap zones as the paginated reader. Without
+                                // these, a not-yet-compiled chapter is a dead end:
+                                // tapping does nothing and the only visible exit
+                                // is Back, which leaves the book entirely.
+                                val third = size.width / 3f
+                                when {
+                                    downPos.x < third -> onOpenPrevChapter?.invoke()
+                                    downPos.x > 2 * third -> onOpenNextChapter?.invoke()
+                                }
                             }
                             break
                         }
                         val p = ch.positionChange()
                         dx += p.x
                         dy += p.y
+                        if (!isDrag && (kotlin.math.abs(dx) > dragStartPx || kotlin.math.abs(dy) > dragStartPx)) {
+                            isDrag = true
+                        }
                     }
                 }
             },
@@ -1839,6 +1990,21 @@ private fun CompilePrompt(
                 )
             }
         }
+        is CompileState.Illustrating -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                    color = InkColor,
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = "Drawing figures… ${compileState.done}/${compileState.total}",
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 15.sp,
+                    color = InkColor,
+                )
+            }
+        }
         is CompileState.Failed -> {
             Text(
                 text = compileState.message,
@@ -1863,7 +2029,107 @@ private fun CompilePrompt(
             }
         }
     }
+
+    // Discoverability: the reader teaches "tap the edges to turn", and this
+    // screen honours that, but with no page footer there was nothing saying so.
+    if (onOpenPrevChapter != null || onOpenNextChapter != null) {
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = buildString {
+                if (onOpenPrevChapter != null) append("← tap for previous chapter")
+                if (onOpenPrevChapter != null && onOpenNextChapter != null) append("   ·   ")
+                if (onOpenNextChapter != null) append("next chapter →")
+            },
+            fontFamily = FontFamily.Serif,
+            fontSize = 12.sp,
+            color = MutedColor,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            textAlign = TextAlign.Center,
+        )
+    }
     }  // close Column
+}
+
+/**
+ * Draws the pending figures of one chapter and persists both the pictures
+ * and the `src=` params that point at them. Returns the chapter Markdown to
+ * display — rewritten if anything was drawn, untouched otherwise.
+ *
+ * Never throws for a generation failure: figures are decoration, and a
+ * figure that didn't come back simply keeps showing its alt text.
+ */
+private suspend fun illustrateChapter(
+    client: GeminiClient,
+    imageModel: String,
+    course: Course,
+    chapter: PersistedChapter,
+    markdown: String,
+    apiKey: String,
+    store: com.inkfirst.core.CourseStore,
+    onState: (CompileState) -> Unit,
+): String = try {
+    val result = ChapterIllustrator(client, imageModel).illustrate(
+        course = course,
+        chapter = chapter,
+        markdown = markdown,
+        apiKey = apiKey,
+        onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
+        saveImage = { fileName, bytes -> store.saveFigure(course.slug, fileName, bytes) },
+    )
+    if (result.generated > 0) {
+        store.saveChapter(course.slug, chapter.slug, result.markdown)
+    }
+    result.markdown
+} catch (e: kotlinx.coroutines.CancellationException) {
+    throw e
+} catch (e: Exception) {
+    System.err.println("chapter illustration failed: ${e::class.simpleName}: ${e.message}")
+    markdown
+}
+
+/**
+ * Draws figures for a chapter whose prose already exists — the retrofit path
+ * for courses written before figures were a thing, and the retry path when
+ * one picture failed. Idempotent: only slots without a `src=` cost anything.
+ */
+private fun illustrateExistingChapter(
+    course: Course,
+    chapter: PersistedChapter,
+    markdown: String,
+    scope: kotlinx.coroutines.CoroutineScope,
+    store: com.inkfirst.core.CourseStore,
+    apiKeyStore: ApiKeyStore,
+    onState: (CompileState) -> Unit,
+    onDone: (String) -> Unit,
+) {
+    val apiKey = apiKeyStore.getApiKey().orEmpty()
+    if (apiKey.isBlank()) {
+        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        return
+    }
+    scope.launch {
+        try {
+            KtorGeminiClient().use { client ->
+                val illustrated = illustrateChapter(
+                    client = client,
+                    imageModel = apiKeyStore.getImageModelName(),
+                    course = course,
+                    chapter = chapter,
+                    markdown = markdown,
+                    apiKey = apiKey,
+                    store = store,
+                    onState = onState,
+                )
+                onState(CompileState.Idle)
+                onDone(illustrated)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("illustrate failed: ${e::class.simpleName}: ${e.message}")
+            onState(CompileState.Failed(geminiErrorLabel(e)))
+        }
+    }
 }
 
 private fun compileChapter(
@@ -1896,8 +2162,21 @@ private fun compileChapter(
                 } catch (e: Exception) {
                     System.err.println("memory update failed for chapter $chapterN: ${e.message}")
                 }
+                // Pictures last, and best-effort: the chapter is already
+                // saved and readable, so a failed or slow illustration pass
+                // can never cost the user their generated text.
+                val illustrated = illustrateChapter(
+                    client = client,
+                    imageModel = apiKeyStore.getImageModelName(),
+                    course = course,
+                    chapter = chapter,
+                    markdown = markdown,
+                    apiKey = apiKey,
+                    store = store,
+                    onState = onState,
+                )
                 onState(CompileState.Idle)
-                onDone(updated, markdown)
+                onDone(updated, illustrated)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // User navigated away or the screen recomposed; don't paint this

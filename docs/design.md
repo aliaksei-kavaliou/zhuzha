@@ -17,8 +17,10 @@ Everything a course is lives under one folder. Plain, inspectable, greppable, sy
 ├── notes/
 │   ├── 01-intro.notes.md    # typed notes per chapter
 │   └── 01-intro.qa.md       # saved selection-anchored Q&A per chapter
-└── ink/                 # phase 2: stroke data, one file per chapter
-    └── 01-intro.ink.json
+├── ink/                 # phase 2: stroke data, one file per chapter
+│   └── 01-intro.ink.json
+└── figures/             # phase 3: generated chapter illustrations
+    └── 01-intro-1.png   # <chapter-slug>-<nth figure in that chapter>
 ```
 
 ### course.json (sketch)
@@ -55,7 +57,9 @@ Structured Markdown with a small set of fenced custom blocks the renderer unders
 
 - ` ```exercise ` … ` ``` ` — interleaved exercise; renderer shows it as a boxed activity with a "reveal answer" page-flip (answer stored in the block, hidden by default).
 - ` ```recap ` — end-of-section redundancy blocks (the Head First-style "repeat it differently" trick).
-- ` ```figure ` — placeholder now (renders the alt-text prominently); becomes real generated diagrams in phase 3. Generating with figure *slots* from day one means phase 3 doesn't require re-generating courses.
+- ` ```figure ` — a generated illustration. The `alt="…"` param is written by the chapter model and doubles as the *drawing brief*; once drawn, a `src="…"` param naming a file in `figures/` is written back into the same fence. A slot with no `src` yet renders the alt text in a bordered box, which is what every figure looked like before phase 3.
+
+  Filling a slot rewrites exactly one line of the chapter file and leaves every other byte alone, so block count and block indices don't move and existing annotations and ink strokes stay anchored. That's also what makes an already-written course illustratable without regenerating a word of its prose — generating with figure *slots* from day one paid off exactly as intended.
 
 Everything else is vanilla Markdown. Rationale: chapters stay readable as plain text in any editor, and the custom-block vocabulary can grow without format migration.
 
@@ -110,10 +114,29 @@ Decision deferred until the spike; whichever is chosen, the reader consumes the 
 
 - **Phase 1 (MVP)**: everything in CLAUDE.md's MVP list. Success = one full course read on the Boox.
 - **Phase 2**: stylus notebook (Onyx pen SDK, raw ink, per-chapter canvas), note ↔ chapter linking, notes context available to chat ("track selection in chapter and notes window").
-- **Phase 3**: generated figures filling the `figure` slots (image model output post-processed to high-contrast e-ink-friendly line art), spaced-repetition hooks from exercises.
+- **Phase 3**: generated figures filling the `figure` slots — *done for standalone sketches* (see §7). Still open: spaced-repetition hooks from exercises.
 - **Someday/maybe (explicit non-goals for now)**: other platforms (iPad), EPUB export, sharing courses, any backend.
 
-## 7. Open questions (revisit while building)
+## 7. Figure illustration (phase 3)
+
+Built 2026-09-10. The original plan here said "image model output post-processed to high-contrast e-ink-friendly line art", framed around *diagrams*. That framing was wrong and the decision was revisited deliberately.
+
+**What the figures are for.** Not reference material — mood. Head First's pictures are what stop a study page reading as a wall of text: a silly visual metaphor, a character mid-reaction. Correct-but-boring boxes-and-arrows lose to charming-and-approximate for that job. A semantic diagram DSL rendered natively in Compose was designed and rejected on exactly this ground: it would have produced accurate schematics nobody enjoys looking at.
+
+**How it works.**
+
+- `ChapterIllustrator` (`:core`) walks a chapter's pending figure slots and calls an image-capable Gemini model ("Nano Banana", `gemini-3.1-flash-lite-image` by default, overridable in Settings) once per slot. Roughly 3 cents a picture; a 12-chapter course lands near $1.50.
+- Requests go through the same `generateContent` endpoint as every text call — `KtorGeminiClient.generateImage` differs only in asking for the `IMAGE` response modality and reading `inlineData` instead of `text`. Aspect ratio and size go in `generationConfig.imageConfig` as plain strings (`"4:3"`, `"1K"`). **Not** the sibling `generationConfig.responseFormat.image`: that field exists and looks equivalent, but it wants protobuf enum names (`ASPECT_RATIO_FOUR_BY_THREE`, `IMAGE_SIZE_ONE_K`) and 400s on the human-readable forms. A 400 on the image config retries once without it, so a version skew costs the aspect ratio rather than the picture.
+- `SKETCH_HOUSE_STYLE` in `FigurePrompt.kt` is appended verbatim to every request. It is the single thing standing between a coherent-looking book and a pile of generic AI art, so it lives in one constant and is tuned in one place. It asks for loose greyscale pen sketches, forbids fine detail (a 7" panel throws small marks away) and forbids lettering of any kind (an image model's rendering of words can't be trusted in something someone is learning from).
+- Everything is best-effort and idempotent. Pictures are drawn *after* the prose is saved, so a failure can never cost the user their chapter; slots that already have a `src` are skipped, so a retry only fills what's missing. The reader's ≡ menu grows a "Draw N figures" row whenever a chapter has outstanding slots.
+
+**Verified on the emulator 2026-09-10** against the live API: prose → figure slot → generated sketch → `src=` written back → picture on the page, plus the alt-text fallback for an unfilled slot and the menu's retry path. The one output defect found was a light grey background wash showing as a visible rectangle on the white page — fixed by tightening the background rule in the house style, which is exactly the kind of thing that constant exists to absorb.
+
+**Constraints that shaped it.** Figures are requested and displayed at a fixed 4:3 (`FIGURE_ASPECT`), which is what lets the paginator reserve a figure's height without opening the file. Rendering forces saturation to zero — the panel is greyscale, and unlike the UI chrome (pure black and white, to dodge dither patterns) a sketch is *meant* to dither, but a colour cast would muddy it.
+
+**Deliberately not done yet.** A recurring cast of characters across a course — the image models support it via reference-image consistency, and it's a large part of why Head First feels alive, but it needs reference generation, storage and per-call plumbing. Standalone pictures first. Also unbuilt: `type=` on the fence to dispatch different figure kinds (a structural renderer could still slot in beside the sketch path later), and any in-image text such as speech bubbles.
+
+## 8. Open questions (revisit while building)
 
 - Exercise answers: reveal-in-place vs. end-of-chapter answer pages?
 - Should daily pacing split chapters into "sessions" (reading positions with time estimates), or is chapter granularity enough for v1? (Lean: chapter granularity is enough.)

@@ -37,6 +37,14 @@ private class RecordingChapterClient(
         lastApiKey = apiKey
         return response
     }
+
+    override suspend fun generateImage(
+        model: String,
+        prompt: String,
+        aspectRatio: String,
+        apiKey: String,
+    ): GeneratedImage = error("chapter path should never call generateImage")
+
 }
 
 class ChapterGeneratorTest {
