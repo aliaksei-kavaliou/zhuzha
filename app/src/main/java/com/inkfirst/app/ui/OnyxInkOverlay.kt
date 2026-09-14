@@ -92,6 +92,10 @@ fun OnyxInkOverlay(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val touchHelperRef = remember { mutableStateOf<TouchHelper?>(null) }
     val startTouchRef = remember { mutableStateOf<TouchPoint?>(null) }
+    // Screen position of the drawing surface, refreshed at each stroke start.
+    val originRef = remember { mutableStateOf(0f to 0f) }
+    /** Guards against the list and move callbacks both emitting one stroke. */
+    val emittedRef = remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -101,14 +105,22 @@ fun OnyxInkOverlay(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     when (down.type) {
                         PointerType.Stylus, PointerType.Eraser -> {
-                            // Consume the stream so parent page-turn stays
-                            // silent. Onyx's driver-level input path is
-                            // independent of Compose pointer input.
+                            // Consume the DOWN only, so the parent's page-turn
+                            // gesture ignores this contact — but let every
+                            // MOVE through untouched.
+                            //
+                            // Swallowing the moves is what limited a stroke to
+                            // its begin and end sample: FEATURE_APP_PEN_TOUCH_RENDER
+                            // still routes pen motion through normal Android
+                            // dispatch, and consuming it here starved the SDK's
+                            // move callback. Symptom was backwards-looking — a
+                            // quick flick reported 20+ points while a slow,
+                            // deliberate line reported 2 — because the longer
+                            // the contact, the more moves we ate.
                             down.consume()
                             while (true) {
                                 val ev = awaitPointerEvent()
                                 val ch = ev.changes.firstOrNull() ?: break
-                                ch.consume()
                                 if (!ch.pressed) break
                             }
                         }
@@ -140,30 +152,112 @@ fun OnyxInkOverlay(
                     setZOrderOnTop(true)
                     holder.setFormat(PixelFormat.TRANSPARENT)
 
+                    val surface = this
+                    // Onyx reports raw points in SCREEN coordinates, while
+                    // everything on our side — block tops, stored stroke
+                    // points, the Compose Canvas that redraws them — is in
+                    // overlay-local space. Read the offset at the START of
+                    // each stroke rather than once at surface creation: the
+                    // value captured in surfaceCreated came back as
+                    // (670,1054) for a view that sits near (38,200), because
+                    // the surface is created before the final layout pass.
+                    fun originOnScreen(): Pair<Float, Float> {
+                        val loc = IntArray(2)
+                        surface.getLocationOnScreen(loc)
+                        return loc[0].toFloat() to loc[1].toFloat()
+                    }
+
+                    // Samples collected during one pen-down, in screen space.
+                    val sampleBuf = mutableListOf<TouchPoint>()
+
+                    fun emitStroke(pts: List<TouchPoint>, source: String) {
+                        if (pts.isEmpty()) return
+                        val (ox, oy) = originRef.value
+                        val start = pts.first()
+                        val startLocalY = start.y - oy
+                        val getTop = blockTopYRef.value
+                        val anchorIdx = findAnchorBlockOnyx(rangeRef.value, getTop, startLocalY)
+                        val xs = pts.map { it.x }
+                        val ys = pts.map { it.y }
+                        Log.d(
+                            TAG,
+                            "emit($source) n=${pts.size} localY=$startLocalY anchor=$anchorIdx " +
+                                "extent=${(xs.max() - xs.min()).toInt()}x${(ys.max() - ys.min()).toInt()}px",
+                        )
+                        if (anchorIdx == null) {
+                            Log.w(TAG, "emit($source): no anchor for localY=$startLocalY — dropped")
+                            return
+                        }
+                        val anchorY = getTop(anchorIdx) ?: 0f
+                        // A single sample is a dot, not a failure — and a
+                        // degenerate one-point path draws nothing, so give it
+                        // a second point to round-cap against.
+                        val source2 = if (pts.size == 1) pts + pts else pts
+                        val stroke = Stroke(
+                            blockIndex = anchorIdx,
+                            points = source2.map {
+                                InkPoint(
+                                    x = it.x - ox,
+                                    y = (it.y - oy) - anchorY,
+                                    pressure = it.pressure,
+                                )
+                            },
+                            brush = "pen",
+                            created = LocalDate.now().toString(),
+                        )
+                        mainHandler.post { addedRef.value(stroke) }
+                    }
+
                     val callback = object : RawInputCallback() {
                         override fun onBeginRawDrawing(shortcut: Boolean, point: TouchPoint) {
-                            startTouchRef.value = point
-                        }
-                        override fun onEndRawDrawing(outOfLimit: Boolean, point: TouchPoint) {}
-                        override fun onRawDrawingTouchPointMoveReceived(point: TouchPoint) {}
-                        override fun onRawDrawingTouchPointListReceived(list: TouchPointList) {
-                            val pts = list.points ?: return
-                            if (pts.size < 2) return
-                            val start = startTouchRef.value ?: pts.first()
-                            val getTop = blockTopYRef.value
-                            val range = rangeRef.value
-                            val anchorIdx = findAnchorBlockOnyx(range, getTop, start.y) ?: return
-                            val anchorY = getTop(anchorIdx) ?: 0f
-                            val stroke = Stroke(
-                                blockIndex = anchorIdx,
-                                points = pts.map {
-                                    InkPoint(x = it.x, y = it.y - anchorY, pressure = it.pressure)
-                                },
-                                brush = "pen",
-                                created = LocalDate.now().toString(),
+                            val (ox, oy) = originOnScreen()
+                            originRef.value = ox to oy
+                            Log.d(
+                                TAG,
+                                "onBeginRawDrawing screen=(${point.x},${point.y}) " +
+                                    "origin=($ox,$oy) local=(${point.x - ox},${point.y - oy})",
                             )
-                            mainHandler.post { addedRef.value(stroke) }
+                            startTouchRef.value = point
+                            emittedRef.value = false
+                            sampleBuf.clear()
+                            sampleBuf += point
                         }
+
+                        override fun onEndRawDrawing(outOfLimit: Boolean, point: TouchPoint) {
+                            sampleBuf += point
+                            Log.d(
+                                TAG,
+                                "onEndRawDrawing outOfLimit=$outOfLimit samples=${sampleBuf.size}",
+                            )
+                            // The list callback is the documented way to get a
+                            // finished stroke, but on this firmware it only
+                            // ever delivered one point — every line came out a
+                            // dot. The per-sample move callback is where the
+                            // stroke actually lives, so accumulate there and
+                            // emit here. The list callback still runs and wins
+                            // if it turns out to carry more.
+                            // The list callback already fired for this
+                            // stroke on this firmware; emitting again saved
+                            // every stroke twice.
+                            if (!emittedRef.value) emitStroke(sampleBuf.toList(), "moves")
+                            emittedRef.value = false
+                            sampleBuf.clear()
+                        }
+
+                        override fun onRawDrawingTouchPointMoveReceived(point: TouchPoint) {
+                            sampleBuf += point
+                        }
+                        override fun onRawDrawingTouchPointListReceived(list: TouchPointList) {
+                            val pts = list.points
+                            Log.d(TAG, "pointList n=${pts?.size ?: 0}")
+                            // Only worth using when it actually beats what the
+                            // move callback collected.
+                            if (pts != null && pts.size > 2) {
+                                emittedRef.value = true
+                                emitStroke(pts, "list")
+                            }
+                        }
+
                         override fun onBeginRawErasing(shortcut: Boolean, point: TouchPoint) {
                             Log.d(TAG, "onBeginRawErasing shortcut=$shortcut")
                         }
@@ -189,16 +283,47 @@ fun OnyxInkOverlay(
                     )
                     touchHelperRef.value = helper
                     Log.d(TAG, "TouchHelper.create returned=$helper mode=FEATURE_APP_PEN_TOUCH_RENDER")
+                    // The drawable region has to be given in SCREEN
+                    // coordinates. It was being given view-local (0,0,w,h),
+                    // which put the live area in the wrong place — the pen
+                    // only drew where the two regions happened to overlap.
+                    //
+                    // Deferred with post{}: getLocationOnScreen called from
+                    // surfaceCreated returned (670,1054) for a view that sits
+                    // near (38,200), because the surface exists before the
+                    // final layout pass has positioned it.
+                    fun applyLimitRect(reason: String) {
+                        surface.post {
+                            try {
+                                // VIEW-LOCAL, not screen. Onyx offsets the
+                                // rect by the view's own position internally,
+                                // so passing screen coordinates double-counts
+                                // it: the correct-looking Rect(38,256..) put
+                                // the live region in the bottom-right corner.
+                                // The offset is still read and logged, because
+                                // the raw POINTS do arrive in screen space and
+                                // have to be converted the other way.
+                                val loc = IntArray(2)
+                                surface.getLocationOnScreen(loc)
+                                val bounds = AndroidRect(0, 0, surface.width, surface.height)
+                                helper.setLimitRect(bounds, emptyList())
+                                Log.d(TAG, "  (view origin on screen = ${loc[0]},${loc[1]})")
+                                helper.setRawDrawingEnabled(true)
+                                Log.d(TAG, "limitRect($reason) viewLocal=$bounds")
+                            } catch (t: Throwable) {
+                                Log.w(TAG, "limitRect($reason) failed", t)
+                            }
+                        }
+                    }
+
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(h: SurfaceHolder) {
                             try {
-                                val bounds = AndroidRect(0, 0, width, height)
-                                helper.setStrokeWidth(3f)
-                                    .setLimitRect(bounds, emptyList())
-                                    .openRawDrawing()
+                                helper.setStrokeWidth(3f).openRawDrawing()
                                 helper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
                                 helper.setRawDrawingEnabled(true)
                                 Log.d(TAG, "TouchHelper opened ${width}x$height")
+                                applyLimitRect("created")
                             } catch (t: Throwable) {
                                 Log.w(TAG, "TouchHelper init failed", t)
                             }
@@ -206,16 +331,18 @@ fun OnyxInkOverlay(
                         override fun surfaceChanged(
                             h: SurfaceHolder, format: Int, w: Int, ht: Int,
                         ) {
-                            try {
-                                val bounds = AndroidRect(0, 0, w, ht)
-                                helper.setLimitRect(bounds, emptyList())
-                                helper.setRawDrawingEnabled(true)
-                            } catch (_: Throwable) {}
+                            applyLimitRect("changed")
                         }
                         override fun surfaceDestroyed(h: SurfaceHolder) {
                             try { helper.setRawDrawingEnabled(false) } catch (_: Throwable) {}
                         }
                     })
+
+                    // A font-size or margin change re-lays out the reader and
+                    // moves this surface; the drawable region has to follow it.
+                    addOnLayoutChangeListener { _, l, t, _, _, oldL, oldT, _, _ ->
+                        if (l != oldL || t != oldT) applyLimitRect("layout")
+                    }
                 }
             },
             modifier = Modifier.fillMaxSize(),

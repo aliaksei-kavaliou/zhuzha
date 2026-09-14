@@ -120,19 +120,29 @@ import java.time.LocalDate
 // gets dithered (visible dot pattern). Our warm off-white paper looked nice on
 // screens but rendered as noise on the Boox. Pure black on pure white is the
 // canonical e-ink palette.
+/**
+ * Which pen path the reader draws with.
+ *
+ * true  — Onyx's TouchHelper, which paints straight to the EPD controller.
+ *         Near-zero latency, and the reason to keep trying: "lag is boring".
+ * false — the plain MotionEvent + Compose Canvas path. Higher latency, but
+ *         every gesture around the stroke (tap-on-stroke chip, barrel erase,
+ *         enclosure popup) is known to work.
+ *
+ * This is a device-only question — the emulator has no stylus and no EPD —
+ * so it is a constant to flip and reinstall, not a user setting.
+ */
+private const val USE_ONYX_PEN = true
+
 private val InkColor = Color(0xFF000000)
 private val PaperColor = Color(0xFFFFFFFF)
 private val MutedColor = Color(0xFF555555)
 private val BorderColor = Color(0xFF888888)
 
-/**
- * Background behind inline `code`. Was 8% black, which the panel rendered as
- * a faint dither that came and went between refreshes — the tint was there in
- * the framebuffer but not reliably on the glass, so a code word would simply
- * lose its highlight. Opaque light grey instead: one flat tone the e-ink
- * controller can commit to, on every refresh.
- */
-private val CodeTintColor = Color(0xFFE4E4E4)
+// Inline `code` is marked by the monospace face alone — no background. A tint
+// behind the words was tried in both a dithered and a flat form and read as
+// ugly either way on the panel; against a serif body, the switch to mono is
+// already an unmistakable signal, and it keeps the page pure black on white.
 
 private sealed interface CompileState {
     data object Idle : CompileState
@@ -1011,12 +1021,14 @@ private fun PagedContent(
                     // stroke / chip / erase-button flow can't observe events.
                     // Also hit a limit-rect coord-system quirk. Fixing needs
                     // dedicated device iteration — see task 10.
-                    InkOverlay(
-                        pageStrokes = pageStrokes,
-                        blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
-                        pageBlockRange = pageBlockRange,
-                        allowFingerDraw = fingerDraws,
-                        onStrokeAdded = { raw ->
+                    // Attempt 3 at the Onyx path. Both earlier tries failed
+                    // the same way — raw-drawing mode captures every touch on
+                    // the SurfaceView below Compose, so finger tap-on-stroke,
+                    // the chip and barrel-erase never saw an event — and the
+                    // v3 seed sets FEATURE_APP_PEN_TOUCH_RENDER to try to let
+                    // finger events through. Flip USE_ONYX_PEN back to false
+                    // to return to the MotionEvent path, which works but lags.
+                    val onStrokeAddedEnriched: (InkStroke) -> Unit = { raw ->
                             // Enrich with the text the stroke actually sits
                             // over, so Ask/Add-note from a stroke-tap gets
                             // the specific text the user marked instead of
@@ -1037,13 +1049,32 @@ private fun PagedContent(
                                 !enriched.annotatedText.isNullOrBlank()) {
                                 onStrokeGesture(enriched)
                             }
-                        },
-                        onStrokeErased = onStrokeErased,
-                        onStrokeTapped = onStrokeTapped,
-                        modifier = Modifier.onGloballyPositioned { coords ->
-                            overlayTopInRoot = coords.positionInRoot().y
-                        },
-                    )
+                    }
+                    val overlayModifier = Modifier.onGloballyPositioned { coords ->
+                        overlayTopInRoot = coords.positionInRoot().y
+                    }
+                    if (USE_ONYX_PEN) {
+                        OnyxInkOverlay(
+                            pageStrokes = pageStrokes,
+                            blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
+                            pageBlockRange = pageBlockRange,
+                            onStrokeAdded = onStrokeAddedEnriched,
+                            onStrokeErased = onStrokeErased,
+                            onStrokeTapped = onStrokeTapped,
+                            modifier = overlayModifier,
+                        )
+                    } else {
+                        InkOverlay(
+                            pageStrokes = pageStrokes,
+                            blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
+                            pageBlockRange = pageBlockRange,
+                            allowFingerDraw = fingerDraws,
+                            onStrokeAdded = onStrokeAddedEnriched,
+                            onStrokeErased = onStrokeErased,
+                            onStrokeTapped = onStrokeTapped,
+                            modifier = overlayModifier,
+                        )
+                    }
 
                     // Bookmark used to live here as an overlay in the top-right corner,
                     // but at 96dp it was eating page-turn taps/swipes. Moved to the
@@ -1943,7 +1974,7 @@ private fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotat
             is Inline.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(i.text) }
             is Inline.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(i.text) }
             is Inline.Code -> withStyle(
-                SpanStyle(fontFamily = FontFamily.Monospace, background = CodeTintColor),
+                SpanStyle(fontFamily = FontFamily.Monospace),
             ) { append(i.text) }
         }
     }
@@ -1982,7 +2013,7 @@ private fun renderInlinesWithUnderlines(
                 }
                 is Inline.Code -> {
                     withStyle(
-                        SpanStyle(fontFamily = FontFamily.Monospace, background = CodeTintColor),
+                        SpanStyle(fontFamily = FontFamily.Monospace),
                     ) { append(i.text) }
                     plain.append(i.text)
                 }
