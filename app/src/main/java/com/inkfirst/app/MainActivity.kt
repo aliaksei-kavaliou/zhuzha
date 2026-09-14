@@ -110,7 +110,18 @@ private fun InkFirstApp() {
             CourseDetailScreen(
                 slug = slug,
                 currentChapterSlug = currentChapter,
-                onBack = { nav.popBackStack() },
+                // "≡ Library" means Library, so name the destination instead
+                // of popping. Auto-resume cold-starts into [Library, Reader]
+                // with no Contents between them, so Reader → Contents leaves
+                // [Library, Reader, Contents] — and a pop from there landed
+                // back in the chapter the user was trying to leave. Same
+                // failure the Reader header had before a0fe57f.
+                onBack = {
+                    nav.navigate(Routes.LIBRARY) {
+                        popUpTo(Routes.LIBRARY) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
                 onReadChapter = { chapterSlug, blockIndex ->
                     nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
                 },

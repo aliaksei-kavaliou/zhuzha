@@ -178,4 +178,21 @@ class MarkdownTest {
         assertEquals(2, counts["BulletItem"])
         assertEquals(3, counts["CustomFence"])
     }
+    @Test
+    fun `a dashed line is a thematic break, not a paragraph`() {
+        // The chapter model emits these as section separators several times
+        // per chapter; before Rule existed they rendered as a literal "---".
+        val blocks = parseMarkdown("Before.\n\n---\n\nAfter.")
+        assertEquals(3, blocks.size)
+        assertTrue(blocks[1] is Block.Rule)
+    }
+
+    @Test
+    fun `asterisk and underscore breaks parse too, but a bullet does not`() {
+        assertTrue(parseMarkdown("***").single() is Block.Rule)
+        assertTrue(parseMarkdown("___").single() is Block.Rule)
+        assertTrue(parseMarkdown("- a list item").single() is Block.BulletItem)
+        // Two dashes is not a break — CommonMark wants three.
+        assertTrue(parseMarkdown("--").single() is Block.Paragraph)
+    }
 }

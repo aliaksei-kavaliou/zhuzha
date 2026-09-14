@@ -92,7 +92,10 @@ import com.inkfirst.app.data.TextAlignPref
 import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Block
+import com.inkfirst.core.BADGE_KINDS
+import com.inkfirst.core.BookBadger
 import com.inkfirst.core.ChapterIllustrator
+import com.inkfirst.core.GeneratedImage
 import com.inkfirst.core.ChapterGenerator
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Annotation
@@ -217,6 +220,14 @@ fun ReaderScreen(
     // menu row itself. With the chapter already on screen there is no
     // compile prompt to report into, and drawing takes long enough that
     // silence reads as "nothing happened".
+    // Badges are course-level, so unlike figures this counts once for the
+    // whole book. badgeVersion exists to invalidate the decoded-badge cache
+    // and the page pack after a draw — a badge makes a block label taller,
+    // so pagination has to be recomputed, not just repainted.
+    var badgeVersion by remember { mutableStateOf(0) }
+    val pendingBadges = remember(course?.slug, badgeVersion) {
+        course?.slug?.let { BADGE_KINDS.size - store.badgeKinds(it).size } ?: 0
+    }
     val figureStatus = when (val state = compileState) {
         is CompileState.Illustrating -> "Drawing… ${state.done}/${state.total}"
         is CompileState.Failed -> state.message
@@ -357,6 +368,7 @@ fun ReaderScreen(
                     annotations = chapterAnnotations,
                     course = course,
                     chapterSlug = chapterSlug,
+                    badgeVersion = badgeVersion,
                     fontScale = fontScale,
                     lineSpacing = lineSpacing,
                     textAlign = textAlign,
@@ -600,6 +612,18 @@ fun ReaderScreen(
                 pendingFigures = pendingFigures,
                 figureStatus = figureStatus,
                 busyDrawing = compileState is CompileState.Illustrating,
+                pendingBadges = pendingBadges,
+                onDrawBadges = {
+                    val c = course ?: return@FormatMenu
+                    drawCourseBadges(
+                        course = c,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { badgeVersion++ },
+                    )
+                },
                 onIllustrate = {
                     // Menu deliberately stays open — it is where progress shows.
                     val c = course ?: return@FormatMenu
@@ -665,6 +689,8 @@ private fun PagedContent(
     annotations: List<Annotation>,
     course: Course?,
     chapterSlug: String,
+    /** Bumped when badges are drawn, to rebuild the badge cache and the page pack. */
+    badgeVersion: Int,
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
@@ -688,6 +714,16 @@ private fun PagedContent(
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val store = rememberCourseStore()
+    val prefsContext = LocalContext.current
+    val readerPrefs = remember { ReaderPrefs(prefsContext) }
+
+    // The tap hint retires itself once the gesture is learned. Counted here
+    // rather than inside goNext/goPrev because pageIndex moves for taps,
+    // swipes and the Boox side buttons alike, and all three are page turns.
+    var showTapHint by remember {
+        mutableStateOf(readerPrefs.getPageTurns() < ReaderPrefs.HINT_RETIRES_AFTER)
+    }
+    var lastCountedPage by remember { mutableStateOf(-1) }
 
     val chapterN = course?.chapters?.firstOrNull { it.slug == chapterSlug }?.n
 
@@ -709,12 +745,28 @@ private fun PagedContent(
         course?.slug?.let { store.figureFile(it, src) != null } == true
     }
 
+    // Badges are course-level, not chapter-level: the same two pictures are
+    // reused by every exercise and recap in the whole book, so the cache is
+    // keyed on the course and survives chapter changes. Keyed by block kind
+    // because nothing in the Markdown names the file.
+    val badgeBitmaps = remember(course?.slug, badgeVersion) { mutableMapOf<String, ImageBitmap?>() }
+    val loadBadge: (String) -> ImageBitmap? = { kind ->
+        badgeBitmaps.getOrPut(kind) {
+            val slug = course?.slug
+            val file = if (slug == null) null else store.badgeFile(slug, kind)
+            file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+        }
+    }
+    val hasBadge: (String) -> Boolean = { kind ->
+        course?.slug?.let { store.badgeFile(it, kind) != null } == true
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val widthPx = with(density) { maxWidth.toPx().toInt() }
             val availableHeightPx = with(density) { (maxHeight - 40.dp).toPx().toInt() }
 
-            val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing) {
+            val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing, badgeVersion) {
                 paginate(
                     blocks = blocks,
                     contentWidthPx = widthPx,
@@ -724,10 +776,22 @@ private fun PagedContent(
                     fontScale = fontScale,
                     lineSpacing = lineSpacing,
                     hasFigureImage = hasFigureImage,
+                    hasBadge = hasBadge,
                 )
             }
             val pageIndex = remember(pages, anchorBlockIndex) {
                 findPageContainingBlock(pages, blocks, anchorBlockIndex).coerceAtLeast(0)
+            }
+            LaunchedEffect(pageIndex) {
+                // Opening a chapter lands on a page without turning to it, so
+                // the first observed index is seeded rather than counted.
+                if (lastCountedPage >= 0 && lastCountedPage != pageIndex) {
+                    readerPrefs.notePageTurn()
+                    if (readerPrefs.getPageTurns() >= ReaderPrefs.HINT_RETIRES_AFTER) {
+                        showTapHint = false
+                    }
+                }
+                lastCountedPage = pageIndex
             }
             val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
 
@@ -866,6 +930,7 @@ private fun PagedContent(
                                         onReveal = { revealed[globalIdx] = true },
                                         onOpenAnnotation = onOpenAnnotation,
                                         loadFigure = loadFigure,
+                                        loadBadge = loadBadge,
                                     )
                                 }
                             }
@@ -930,11 +995,16 @@ private fun PagedContent(
                         style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                         modifier = Modifier.weight(1f),
                     )
-                    Text(
-                        text = "tap ← / center / → ",
-                        style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
-                        textAlign = TextAlign.End,
-                    )
+                    // Instructional chrome, so it is temporary by design: once
+                    // the tap zones are learned the hint is just noise on every
+                    // page of the book. Retires itself after a dozen turns.
+                    if (showTapHint) {
+                        Text(
+                            text = "tap ← / center / → ",
+                            style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                            textAlign = TextAlign.End,
+                        )
+                    }
                 }
             }
         }
@@ -952,7 +1022,14 @@ private fun ReaderHeader(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+        // The gap below is deliberately wide: a running head needs clear air
+        // under it or it reads as part of the first block on the page. 20dp
+        // was not enough — when a bordered RECAP box leads the page its top
+        // border is a hard horizontal line, and the header still read as
+        // attached to it. Costs a line of body text per page and is worth it.
+        // The content box below measures whatever is left, so pagination
+        // follows this automatically.
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
     ) {
         // Explicit-destination nav rather than popBackStack — the auto-resume
         // cold-start pushes Reader directly on top of Library with no
@@ -1013,9 +1090,11 @@ private fun FormatMenu(
     onOpenContents: () -> Unit,
     onAskAboutChapter: () -> Unit,
     pendingFigures: Int,
+    pendingBadges: Int,
     figureStatus: String?,
     busyDrawing: Boolean,
     onIllustrate: () -> Unit,
+    onDrawBadges: () -> Unit,
     onToggleBookmark: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
@@ -1081,6 +1160,26 @@ private fun FormatMenu(
                     Text(
                         text = figureStatus
                             ?: ("Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (busyDrawing) MutedColor else InkColor,
+                    )
+                }
+            }
+        }
+
+        // Draw the book's mascot badges — the small marks on exercise and
+        // recap blocks. Two pictures for the whole course, so this row
+        // disappears for good once they exist.
+        if (pendingBadges > 0) {
+            MenuRow(label = "Badges") {
+                Box(
+                    modifier = Modifier
+                        .clickable(enabled = !busyDrawing) { onDrawBadges() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "Draw $pendingBadges book badge" + if (pendingBadges == 1) "" else "s",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (busyDrawing) MutedColor else InkColor,
@@ -1214,6 +1313,7 @@ private fun RenderBlock(
     onReveal: () -> Unit,
     onOpenAnnotation: (Annotation) -> Unit,
     loadFigure: (String) -> ImageBitmap?,
+    loadBadge: (String) -> ImageBitmap?,
 ) {
     when (block) {
         is Block.Heading -> HeadingBlock(block, fontScale)
@@ -1223,9 +1323,10 @@ private fun RenderBlock(
         )
         is Block.BulletItem -> ListItemBlock("• ", block.inlines, fontScale, lineSpacing)
         is Block.OrderedItem -> ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing)
+        is Block.Rule -> RuleBlock()
         is Block.CustomFence -> when (block.kind) {
-            "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal)
-            "recap" -> RecapBlock(block, fontScale, lineSpacing)
+            "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal, loadBadge)
+            "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge)
             "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
             "meta" -> MetaBlock(block, fontScale)
             else -> UnknownFenceBlock(block, fontScale)
@@ -1235,11 +1336,18 @@ private fun RenderBlock(
 
 @Composable
 private fun HeadingBlock(h: Block.Heading, fontScale: Float) {
+    // Space below a heading used to be 10dp for an h2 — 19px against a 56px
+    // body leading, so the gap under a heading was SMALLER than the gap
+    // between two ordinary lines, and the heading read as falling into the
+    // paragraph rather than introducing it. Below is now roughly half a line
+    // and above is nearly twice that, which is the relationship a heading
+    // needs: clearly attached to what follows, clearly separated from what
+    // came before. Keep the paginator's copy of these in step.
     val (baseSize, top, bottom) = when (h.level) {
-        1 -> Triple(30.sp, 24.dp, 12.dp)
-        2 -> Triple(24.sp, 20.dp, 10.dp)
-        3 -> Triple(20.sp, 16.dp, 8.dp)
-        else -> Triple(18.sp, 14.dp, 6.dp)
+        1 -> Triple(30.sp, 40.dp, 28.dp)
+        2 -> Triple(24.sp, 32.dp, 26.dp)
+        3 -> Triple(20.sp, 26.dp, 20.dp)
+        else -> Triple(18.sp, 22.dp, 16.dp)
     }
     val fontSize = baseSize * fontScale
     Spacer(Modifier.height(top))
@@ -1284,7 +1392,11 @@ private fun ParagraphBlock(
     }
     var textLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     val hitSlop = with(LocalDensity.current) { 8.dp.toPx() }
-    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+    // 12dp was 0.4 of a line: two paragraphs ran together into one slab and
+    // there was no way to see where one ended. 20dp reads as a break without
+    // resorting to a first-line indent, which would need special-casing for
+    // the paragraph after every figure and bordered box.
+    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
         Text(
             text = annotated,
             onTextLayout = { textLayout = it },
@@ -1349,7 +1461,12 @@ private fun ParagraphBlock(
 
 @Composable
 private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Float, lineSpacing: Float) {
-    Row(modifier = Modifier.padding(start = 8.dp, bottom = 6.dp)) {
+    // 8dp is less than one character width — the bullets shared a left edge
+    // with the body and the list didn't read as subordinate. One em at the
+    // body size is ~18dp. Items stay tighter to each other than paragraphs
+    // are, which is right within a list; the air around the list as a whole
+    // comes from the paragraphs on either side.
+    Row(modifier = Modifier.padding(start = 18.dp, bottom = 10.dp)) {
         Text(
             text = prefix,
             fontFamily = FontFamily.Serif,
@@ -1374,9 +1491,10 @@ private fun ExerciseBlock(
     lineSpacing: Float,
     revealed: Boolean,
     onReveal: () -> Unit,
+    loadBadge: (String) -> ImageBitmap?,
 ) {
     val (question, answer) = splitExerciseBody(f.body)
-    BorderedBlock(label = "TRY THIS", fontScale = fontScale) {
+    BorderedBlock(label = "TRY THIS", fontScale = fontScale, badge = loadBadge("exercise")) {
         Text(
             text = question,
             fontFamily = FontFamily.Serif,
@@ -1387,14 +1505,30 @@ private fun ExerciseBlock(
         Spacer(Modifier.height(8.dp))
         if (revealed || answer.isEmpty()) {
             if (answer.isNotEmpty()) {
-                Text(
-                    text = "Answer: $answer",
-                    fontFamily = FontFamily.Serif,
-                    fontSize = 16.sp * fontScale,
-                    lineHeight = 26.sp * fontScale * lineSpacing,
-                    fontStyle = FontStyle.Italic,
-                    color = InkColor,
-                )
+                // The mascot again, in its telling-you-a-secret pose. Top
+                // aligned rather than centred: the answer usually runs to
+                // several lines and a centred badge would float oddly.
+                Row {
+                    val answerBadge = loadBadge("answer")
+                    if (answerBadge != null) {
+                        Image(
+                            bitmap = answerBadge,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(end = 10.dp)
+                                .size(BADGE_SIZE * fontScale),
+                            colorFilter = badgeColorFilter(),
+                        )
+                    }
+                    Text(
+                        text = "Answer: $answer",
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 16.sp * fontScale,
+                        lineHeight = 26.sp * fontScale * lineSpacing,
+                        fontStyle = FontStyle.Italic,
+                        color = InkColor,
+                    )
+                }
             }
         } else {
             TextButton(onClick = onReveal) { Text("Show answer", color = InkColor) }
@@ -1403,8 +1537,13 @@ private fun ExerciseBlock(
 }
 
 @Composable
-private fun RecapBlock(f: Block.CustomFence, fontScale: Float, lineSpacing: Float) {
-    BorderedBlock(label = "RECAP", fontScale = fontScale) {
+private fun RecapBlock(
+    f: Block.CustomFence,
+    fontScale: Float,
+    lineSpacing: Float,
+    loadBadge: (String) -> ImageBitmap?,
+) {
+    BorderedBlock(label = "RECAP", fontScale = fontScale, badge = loadBadge("recap")) {
         Text(
             text = f.body.trim(),
             fontFamily = FontFamily.Serif,
@@ -1497,7 +1636,12 @@ private fun UnknownFenceBlock(f: Block.CustomFence, fontScale: Float) {
 }
 
 @Composable
-private fun BorderedBlock(label: String, fontScale: Float, content: @Composable () -> Unit) {
+private fun BorderedBlock(
+    label: String,
+    fontScale: Float,
+    badge: ImageBitmap? = null,
+    content: @Composable () -> Unit,
+) {
     Spacer(Modifier.height(4.dp))
     Column(
         modifier = Modifier
@@ -1506,17 +1650,92 @@ private fun BorderedBlock(label: String, fontScale: Float, content: @Composable 
             .border(1.dp, BorderColor, RoundedCornerShape(4.dp))
             .padding(12.dp),
     ) {
-        Text(
-            text = label,
-            fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.Bold,
-            fontSize = 11.sp * fontScale,
-            color = MutedColor,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 6.dp),
-        )
+        ) {
+            // The course mascot, drawn once and reused by every block of this
+            // kind in the book. Absent until BookBadger has run — and a course
+            // with no badges renders exactly as it did before they existed.
+            if (badge != null) {
+                Image(
+                    bitmap = badge,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(end = 10.dp)
+                        .size(BADGE_SIZE * fontScale),
+                    colorFilter = badgeColorFilter(),
+                )
+            }
+            Text(
+                text = label,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp * fontScale,
+                color = MutedColor,
+            )
+        }
         content()
     }
     Spacer(Modifier.height(4.dp))
+}
+
+/**
+ * Size of a badge beside a block label. Walked up from 34dp — the source is
+ * 1024px square, so at 34dp it was an eight-times downscale and the pose,
+ * which is the entire point of the drawing, was gone. Scales with the
+ * reader's font size so a page at A++ doesn't end up with a tiny mark
+ * against huge type.
+ */
+internal val BADGE_SIZE = 72.dp
+
+/**
+ * Greyscale plus a hard contrast push, applied to every badge.
+ *
+ * Two problems, one filter. The panel is grey, so a colour cast from the
+ * model has to go. And the model sometimes returns its doodle on textured or
+ * off-white "paper" — harmless in a full-width figure, but at badge size it
+ * reads as a grey square stamped on the page.
+ *
+ * The push is deliberately gentle. A hard one (2.6) was tried and wrecked the
+ * drawings: shrinking 1024px line art to badge size averages each stroke with
+ * the white around it, so the strokes themselves land in the light-grey range
+ * the filter was meant to erase, and the badge came out spindly and washed
+ * out. 1.5 clears anything above ~0.83 — which covers JPEG "paper" — while
+ * leaving a thinned stroke visible. The real fix for the ground is the prompt;
+ * this only catches what slips through.
+ */
+private fun badgeColorFilter(): ColorFilter {
+    val contrast = 1.5f
+    val offset = (0.5f - 0.5f * contrast) * 255f
+    val matrix = ColorMatrix().apply { setToSaturation(0f) }
+    matrix *= ColorMatrix(
+        floatArrayOf(
+            contrast, 0f, 0f, 0f, offset,
+            0f, contrast, 0f, 0f, offset,
+            0f, 0f, contrast, 0f, offset,
+            0f, 0f, 0f, 1f, 0f,
+        ),
+    )
+    return ColorFilter.colorMatrix(matrix)
+}
+
+/**
+ * A thematic break (`---`). Drawn as whitespace and nothing else.
+ *
+ * A visible line was tried first and looked like a stray underline. The
+ * reason is that in practice every one of these is immediately followed by a
+ * heading — the chapter model emits the pair as one gesture — so the line was
+ * drawing a separator directly above something that already separates. What
+ * the page actually wants there is a beat of silence.
+ *
+ * The block is kept rather than dropped at parse time on purpose: blocks are
+ * addressed by index, and annotations and ink strokes are anchored to those
+ * indices. Removing one would slide every anchor after it in the chapter.
+ */
+@Composable
+private fun RuleBlock() {
+    Spacer(Modifier.height(10.dp))
 }
 
 private fun splitExerciseBody(body: String): Pair<String, String> {
@@ -1755,6 +1974,7 @@ private fun extractStrokeText(
             "recap", "exercise" -> block.body.trim()
             else -> return null
         }
+        is Block.Rule -> return null
     }
     if (plain.isBlank() || stroke.points.isEmpty() || widthPx <= 0) return null
 
@@ -1911,7 +2131,14 @@ private fun CompilePrompt(
     // to generate; on success the Reader auto-flips to the paginated content.
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+        // The gap below is deliberately wide: a running head needs clear air
+        // under it or it reads as part of the first block on the page. 20dp
+        // was not enough — when a bordered RECAP box leads the page its top
+        // border is a hard horizontal line, and the header still read as
+        // attached to it. Costs a line of body text per page and is worth it.
+        // The content box below measures whatever is left, so pagination
+        // follows this automatically.
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
     ) {
         TextButton(onClick = onBack) { Text("← Back", color = InkColor) }
         Spacer(Modifier.weight(1f))
@@ -2132,6 +2359,57 @@ private fun illustrateExistingChapter(
     }
 }
 
+/**
+ * Draws the course's missing mascot badges. Course-level, not chapter-level:
+ * this runs at most once per course, and every chapter thereafter just reads
+ * the files. Same best-effort contract as figures — a badge that fails to
+ * draw is simply absent, and the block renders as it always did.
+ */
+private fun drawCourseBadges(
+    course: Course,
+    scope: kotlinx.coroutines.CoroutineScope,
+    store: com.inkfirst.core.CourseStore,
+    apiKeyStore: ApiKeyStore,
+    onState: (CompileState) -> Unit,
+    onDone: () -> Unit,
+) {
+    val apiKey = apiKeyStore.getApiKey().orEmpty()
+    if (apiKey.isBlank()) {
+        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        return
+    }
+    scope.launch {
+        try {
+            KtorGeminiClient().use { client ->
+                val result = BookBadger(client, apiKeyStore.getImageModelName()).drawMissing(
+                    course = course,
+                    apiKey = apiKey,
+                    existing = store.badgeKinds(course.slug),
+                    knownMascot = store.readMascot(course.slug),
+                    onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
+                    loadBadge = { kind ->
+                        store.badgeFile(course.slug, kind)?.let { f ->
+                            GeneratedImage(
+                                bytes = f.readBytes(),
+                                mimeType = if (f.extension == "jpg") "image/jpeg" else "image/png",
+                            )
+                        }
+                    },
+                    saveImage = { kind, ext, bytes -> store.saveBadge(course.slug, kind, ext, bytes) },
+                )
+                store.saveMascot(course.slug, result.mascot)
+                onState(CompileState.Idle)
+                onDone()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("badges failed: ${e::class.simpleName}: ${e.message}")
+            onState(CompileState.Failed(geminiErrorLabel(e)))
+        }
+    }
+}
+
 private fun compileChapter(
     course: Course,
     chapterN: Int,
@@ -2175,6 +2453,33 @@ private fun compileChapter(
                     store = store,
                     onState = onState,
                 )
+                // Badges too, if this course has none yet — it is a one-time
+                // cost on the first chapter, and then every exercise and
+                // recap in the book has its mark. Failures are swallowed
+                // inside BookBadger; a course with no badges just renders
+                // plain blocks.
+                try {
+                    BookBadger(client, apiKeyStore.getImageModelName()).drawMissing(
+                        course = course,
+                        apiKey = apiKey,
+                        existing = store.badgeKinds(course.slug),
+                        knownMascot = store.readMascot(course.slug),
+                        onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
+                        loadBadge = { kind ->
+                            store.badgeFile(course.slug, kind)?.let { f ->
+                                GeneratedImage(
+                                    bytes = f.readBytes(),
+                                    mimeType = if (f.extension == "jpg") "image/jpeg" else "image/png",
+                                )
+                            }
+                        },
+                        saveImage = { kind, ext, bytes -> store.saveBadge(course.slug, kind, ext, bytes) },
+                    ).also { store.saveMascot(course.slug, it.mascot) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    System.err.println("badge pass failed: ${e::class.simpleName}: ${e.message}")
+                }
                 onState(CompileState.Idle)
                 onDone(updated, illustrated)
             }

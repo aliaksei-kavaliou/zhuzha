@@ -43,6 +43,7 @@ private class RecordingChapterClient(
         prompt: String,
         aspectRatio: String,
         apiKey: String,
+        referenceImage: GeneratedImage?,
     ): GeneratedImage = error("chapter path should never call generateImage")
 
 }

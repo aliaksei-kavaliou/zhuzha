@@ -42,6 +42,7 @@ private class RecordingGeminiClient(
         prompt: String,
         aspectRatio: String,
         apiKey: String,
+        referenceImage: GeneratedImage?,
     ): GeneratedImage = error("outline path should never call generateImage")
 
 }

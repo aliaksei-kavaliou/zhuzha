@@ -12,6 +12,13 @@ sealed interface Block {
     data class Paragraph(val inlines: List<Inline>) : Block
     data class BulletItem(val inlines: List<Inline>) : Block
     data class OrderedItem(val n: Int, val inlines: List<Inline>) : Block
+    /**
+     * A thematic break — a line of `---`, `***` or `___`. The chapter model
+     * emits these as section separators several times per chapter; before
+     * this existed they fell through to [Paragraph] and rendered as a literal
+     * "---" on the page.
+     */
+    data object Rule : Block
     /** `kind` matches the fence info word — "exercise", "recap", "figure", or anything the model emits. */
     data class CustomFence(val kind: String, val params: Map<String, String>, val body: String) : Block
 }
@@ -89,6 +96,14 @@ fun parseMarkdown(input: String): List<Block> {
                 blocks += Block.Heading(level, parseInlines(trimmed.drop(level).trim()))
             }
 
+            // Must precede the bullet branch only in spirit — "---" has no
+            // space after the dash so it never matches "- " — but keeping it
+            // above keeps the reading order obvious.
+            THEMATIC_BREAK.matches(trimmed) -> {
+                flushParagraph()
+                blocks += Block.Rule
+            }
+
             trimmed.startsWith("- ") || trimmed.startsWith("* ") -> {
                 flushParagraph()
                 blocks += Block.BulletItem(parseInlines(trimmed.drop(2)))
@@ -109,6 +124,8 @@ fun parseMarkdown(input: String): List<Block> {
 }
 
 private val ORDERED_LIST = Regex("""^(\d+)\.\s+(.*)$""")
+
+private val THEMATIC_BREAK = Regex("""^(-{3,}|\*{3,}|_{3,})$""")
 
 internal fun parseFenceInfo(info: String): Pair<String, Map<String, String>> {
     if (info.isEmpty()) return "" to emptyMap()

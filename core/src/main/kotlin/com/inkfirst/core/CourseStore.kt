@@ -306,6 +306,61 @@ class CourseStore(private val root: File) {
         return File(root, "$courseSlug/figures/$fileName").takeIf { it.isFile && it.length() > 0L }
     }
 
+    /**
+     * Badge kinds become file names, so they are held to plain letters — a
+     * kind is a fence keyword from the chapter model, and nothing stops that
+     * model from emitting one with a slash in it.
+     */
+    private val safeKind = Regex("""^[a-z0-9_-]{1,40}$""")
+
+    /**
+     * Writes a course badge to badges/<kind>.<ext>. Unlike a figure, a badge
+     * is addressed by the block kind it decorates rather than by a name in
+     * the chapter text — nothing in the Markdown points at it, so the kind
+     * has to be the file name.
+     */
+    fun saveBadge(courseSlug: String, kind: String, extension: String, bytes: ByteArray) {
+        if (!kind.matches(safeKind)) return
+        val dir = File(root, "$courseSlug/badges").apply { mkdirs() }
+        // Drop any earlier drawing of this kind first: the extension follows
+        // whatever the model returned, so a redraw can land on a different
+        // one and leave two files claiming the same badge.
+        dir.listFiles().orEmpty()
+            .filter { it.isFile && it.nameWithoutExtension == kind }
+            .forEach { it.delete() }
+        File(dir, "$kind.${extension.ifBlank { "png" }}").writeBytes(bytes)
+    }
+
+    /** The badge drawn for [kind], or null if this course has none. */
+    fun badgeFile(courseSlug: String, kind: String): File? {
+        if (!kind.matches(safeKind)) return null
+        val dir = File(root, "$courseSlug/badges")
+        if (!dir.isDirectory) return null
+        return dir.listFiles().orEmpty()
+            .firstOrNull { it.isFile && it.nameWithoutExtension == kind && it.length() > 0L }
+    }
+
+    /** Block kinds that already have a badge on disk. */
+    fun badgeKinds(courseSlug: String): Set<String> =
+        BADGE_KINDS.filter { badgeFile(courseSlug, it) != null }.toSet()
+
+    /**
+     * The one-line description of the course mascot, written next to the
+     * badges it describes. Kept as a plain file rather than a course.json
+     * field: it is generated data that belongs with the pictures, and this
+     * way an old course.json needs no migration.
+     */
+    fun readMascot(courseSlug: String): String {
+        val f = File(root, "$courseSlug/badges/mascot.txt")
+        return if (f.isFile) f.readText().trim() else ""
+    }
+
+    fun saveMascot(courseSlug: String, description: String) {
+        if (description.isBlank()) return
+        val dir = File(root, "$courseSlug/badges").apply { mkdirs() }
+        File(dir, "mascot.txt").writeText(description.trim())
+    }
+
     /** Chapter slugs that currently have at least one ink stroke on file. */
     fun chaptersWithInk(courseSlug: String): Set<String> {
         val dir = File(root, "$courseSlug/ink")

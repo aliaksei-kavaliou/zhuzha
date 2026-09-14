@@ -30,6 +30,7 @@ private class RecordingMemoryClient(private val response: String = "summary para
         prompt: String,
         aspectRatio: String,
         apiKey: String,
+        referenceImage: GeneratedImage?,
     ): GeneratedImage = error("memory path should never call generateImage")
 
 }

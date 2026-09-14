@@ -49,7 +49,28 @@ class ReaderPrefs(context: Context) {
         prefs.edit().putFloat(KEY_HPAD, padding).apply()
     }
 
+    /**
+     * How many pages the reader has turned, ever. Only used to retire the
+     * "tap ← / center / →" hint once the gesture is learned — it is
+     * instructional chrome, and chrome that never stops instructing is just
+     * noise on a book page. Counts across courses on purpose: the gesture is
+     * the same everywhere, so learning it once is enough.
+     */
+    fun getPageTurns(): Int = prefs.getInt(KEY_PAGE_TURNS, 0)
+
+    fun notePageTurn() {
+        val seen = getPageTurns()
+        // Stop writing once the hint is retired — no reason to touch disk on
+        // every page turn for the rest of the book's life.
+        if (seen <= HINT_RETIRES_AFTER) {
+            prefs.edit().putInt(KEY_PAGE_TURNS, seen + 1).apply()
+        }
+    }
+
     companion object {
+        /** Page turns after which the tap hint stops being drawn. */
+        const val HINT_RETIRES_AFTER = 12
+
         const val DEFAULT_FONT_SCALE = 1.0f
         const val DEFAULT_LINE_SPACING = 1.0f
         const val DEFAULT_HORIZONTAL_PADDING = 20f
@@ -69,6 +90,7 @@ class ReaderPrefs(context: Context) {
         private const val KEY_TEXT_ALIGN = "text_align"
         private const val KEY_FINGER_DRAWS = "finger_draws"
         private const val KEY_HPAD = "horizontal_padding"
+        private const val KEY_PAGE_TURNS = "page_turns"
     }
 }
 

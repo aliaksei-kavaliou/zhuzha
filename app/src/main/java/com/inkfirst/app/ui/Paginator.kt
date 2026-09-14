@@ -23,6 +23,10 @@ import com.inkfirst.core.Inline
  * [fontScale] multiplies every text style (fontSize + lineHeight) uniformly.
  * The renderer must use the same scale for the layout to match this pack.
  *
+ * [hasBadge] answers "does this course have a mascot badge for this block
+ * kind?" — a badge makes an exercise/recap label row taller than the label
+ * text alone, and the renderer must agree or the page overflows.
+ *
  * [hasFigureImage] answers "did this figure's `src` actually get generated?".
  * An illustrated figure is measured as a fixed-ratio picture; one still
  * waiting for its picture is measured as the alt-text box the reader draws
@@ -38,6 +42,7 @@ fun paginate(
     fontScale: Float = 1.0f,
     lineSpacing: Float = 1.0f,
     hasFigureImage: (String) -> Boolean = { false },
+    hasBadge: (String) -> Boolean = { false },
 ): List<List<Block>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
 
@@ -53,7 +58,9 @@ fun paginate(
 
     for (i in blocks.indices) {
         val block = blocks[i]
-        val h = estimateHeight(block, contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage)
+        val h = estimateHeight(
+            block, contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage, hasBadge,
+        )
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
         // heading is about to land and the block after it wouldn't fit on the
@@ -61,7 +68,8 @@ fun paginate(
         // actually fits together on an empty page (otherwise we'd loop).
         val requiredHeight = if (block is Block.Heading && i + 1 < blocks.size) {
             val nextH = estimateHeight(
-                blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage,
+                blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing,
+                hasFigureImage, hasBadge,
             )
             if (h + nextH <= budget) h + nextH else h
         } else {
@@ -112,14 +120,17 @@ private fun estimateHeight(
     fontScale: Float,
     lineSpacing: Float,
     hasFigureImage: (String) -> Boolean,
+    hasBadge: (String) -> Boolean = { false },
 ): Int = with(density) {
     when (block) {
         is Block.Heading -> {
+            // Must match HeadingBlock exactly — these are the renderer's own
+            // spacers, and a mismatch shows up as a clipped last line.
             val (baseSize, topPad, botPad) = when (block.level) {
-                1 -> Triple(30.sp, 24.dp, 12.dp)
-                2 -> Triple(24.sp, 20.dp, 10.dp)
-                3 -> Triple(20.sp, 16.dp, 8.dp)
-                else -> Triple(18.sp, 14.dp, 6.dp)
+                1 -> Triple(30.sp, 40.dp, 28.dp)
+                2 -> Triple(24.sp, 32.dp, 26.dp)
+                3 -> Triple(20.sp, 26.dp, 20.dp)
+                else -> Triple(18.sp, 22.dp, 16.dp)
             }
             val fontSize = baseSize * fontScale
             val result = measurer.measure(
@@ -145,8 +156,11 @@ private fun estimateHeight(
                 ),
                 constraints = Constraints(maxWidth = widthPx),
             )
-            result.size.height + 12.dp.toPx().toInt()
+            // Matches ParagraphBlock's bottom padding.
+            result.size.height + 20.dp.toPx().toInt()
         }
+        // A short centred hairline plus the air around it. Fixed cost.
+        is Block.Rule -> 1.dp.toPx().toInt() + 28.dp.toPx().toInt()
         is Block.BulletItem -> measureListItem(block.inlines, "• ", widthPx, density, measurer, fontScale, lineSpacing)
         is Block.OrderedItem -> measureListItem(block.inlines, "${block.n}. ", widthPx, density, measurer, fontScale, lineSpacing)
         is Block.CustomFence -> {
@@ -194,8 +208,18 @@ private fun estimateHeight(
                 style = bodyStyle,
                 constraints = Constraints(maxWidth = innerWidth),
             )
-            val label = (11.sp.toPx() * fontScale).toInt() + 6.dp.toPx().toInt()
-            val exerciseExtra = if (block.kind == "exercise") 48.dp.toPx().toInt() else 0
+            // The label row is as tall as the taller of its two children —
+            // the label text, or the mascot badge sitting beside it.
+            val labelTextHeight = (11.sp.toPx() * fontScale).toInt()
+            val badgeHeight = if (hasBadge(block.kind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+            val label = maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt()
+            // The reveal button, plus room for the answer badge that appears
+            // beside the answer text once it is shown. Reserved whether or
+            // not the reader has revealed it — revealing must not reflow the
+            // page under their thumb.
+            val answerBadge = if (hasBadge("answer")) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+            val exerciseExtra =
+                if (block.kind == "exercise") 48.dp.toPx().toInt() + answerBadge else 0
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
             val outerSpacers = 8.dp.toPx().toInt()
             val wrapperVPad = 16.dp.toPx().toInt()
@@ -222,9 +246,9 @@ private fun measureListItem(
             lineHeight = 30.sp * fontScale * lineSpacing,
             fontFamily = FontFamily.Serif,
         ),
-        constraints = Constraints(maxWidth = widthPx - 8.dp.toPx().toInt()),
+        constraints = Constraints(maxWidth = widthPx - 18.dp.toPx().toInt()),
     )
-    result.size.height + 6.dp.toPx().toInt()
+    result.size.height + 10.dp.toPx().toInt()
 }
 
 private fun List<Inline>.plainText(): String = joinToString("") { i ->

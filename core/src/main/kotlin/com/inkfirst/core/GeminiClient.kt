@@ -29,8 +29,16 @@ const val DEFAULT_GEMINI_MODEL: String = "gemini-3.7-flash"
  */
 const val DEFAULT_GEMINI_IMAGE_MODEL: String = "gemini-3.1-flash-lite-image"
 
-/** A picture returned by an image-capable model. [bytes] are already base64-decoded. */
-class GeneratedImage(val bytes: ByteArray, val mimeType: String) {
+/**
+ * A picture returned by an image-capable model. [bytes] are already
+ * base64-decoded.
+ *
+ * [text] is the model's accompanying text part, if it sent one. Image
+ * responses interleave text and picture, so a prompt can ask for both in a
+ * single call — that is how a badge set gets a written description of the
+ * mascot without paying for a second request.
+ */
+class GeneratedImage(val bytes: ByteArray, val mimeType: String, val text: String? = null) {
     /** File extension implied by [mimeType] — "png" unless the model says otherwise. */
     val extension: String
         get() = when {
@@ -67,12 +75,17 @@ interface GeminiClient {
      * model (see [DEFAULT_GEMINI_IMAGE_MODEL]); ordinary text models will fail.
      * There is no system instruction: image models take the whole brief in the
      * user turn, so the house style is baked into [prompt] by the caller.
+     *
+     * [referenceImage] is sent alongside the prompt as an example to follow —
+     * "draw this character again, new pose". It is how a course's badges stay
+     * one recognisable mascot instead of two unrelated doodles.
      */
     suspend fun generateImage(
         model: String,
         prompt: String,
         aspectRatio: String,
         apiKey: String,
+        referenceImage: GeneratedImage? = null,
     ): GeneratedImage
 }
 
@@ -147,6 +160,7 @@ class KtorGeminiClient(
         prompt: String,
         aspectRatio: String,
         apiKey: String,
+        referenceImage: GeneratedImage?,
     ): GeneratedImage {
         // imageConfig pins the aspect ratio, which is what lets the paginator
         // reserve a figure's height without opening the file. It's also the
@@ -154,17 +168,17 @@ class KtorGeminiClient(
         // without it rather than losing the picture entirely — the model then
         // picks its own shape and ContentScale.Fit letterboxes it in the slot.
         val parsed = try {
-            postImage(model, prompt, apiKey, aspectRatio)
+            postImage(model, prompt, apiKey, aspectRatio, referenceImage)
         } catch (e: GeminiHttpException) {
             if (e.status != 400) throw e
             System.err.println("image imageConfig rejected, retrying without it: ${e.message}")
-            postImage(model, prompt, apiKey, aspectRatio = null)
+            postImage(model, prompt, apiKey, aspectRatio = null, referenceImage = referenceImage)
         }
 
         // An image response interleaves parts: the model often emits a short
         // text preamble alongside the picture. Take the first inline payload.
-        val inline = parsed.candidates
-            .firstOrNull()?.content?.parts.orEmpty()
+        val parts = parsed.candidates.firstOrNull()?.content?.parts.orEmpty()
+        val inline = parts
             .firstNotNullOfOrNull { it.inlineData }
             ?: throw GeminiHttpException(
                 "Gemini returned no image (finishReason=" +
@@ -178,7 +192,11 @@ class KtorGeminiClient(
         }
         if (bytes.isEmpty()) throw GeminiHttpException("Gemini returned a zero-byte image")
 
-        return GeneratedImage(bytes = bytes, mimeType = inline.mimeType)
+        return GeneratedImage(
+            bytes = bytes,
+            mimeType = inline.mimeType,
+            text = parts.mapNotNull { it.text }.joinToString("\n").trim().ifBlank { null },
+        )
     }
 
     private suspend fun postImage(
@@ -186,10 +204,12 @@ class KtorGeminiClient(
         prompt: String,
         apiKey: String,
         aspectRatio: String?,
+        referenceImage: GeneratedImage? = null,
     ): GenerateContentResponse = postGenerate(
         model = model,
         systemInstruction = null,
         userPrompt = prompt,
+        inlineImage = referenceImage,
         generationConfig = GenerationConfig(
             responseModalities = listOf("TEXT", "IMAGE"),
             imageConfig = aspectRatio?.let {
@@ -212,6 +232,7 @@ class KtorGeminiClient(
         return text
     }
 
+    @OptIn(ExperimentalEncodingApi::class)
     private suspend fun postGenerate(
         model: String,
         systemInstruction: String?,
@@ -219,13 +240,32 @@ class KtorGeminiClient(
         generationConfig: GenerationConfig,
         apiKey: String,
         apiVersion: String = "v1beta",
+        inlineImage: GeneratedImage? = null,
     ): GenerateContentResponse {
         val url = "$baseUrl/$apiVersion/models/$model:generateContent"
         val request = GenerateContentRequest(
             systemInstruction = systemInstruction?.let {
                 SystemInstruction(parts = listOf(Part(text = it)))
             },
-            contents = listOf(Content(role = "user", parts = listOf(Part(text = userPrompt)))),
+            // Reference image first, then the instruction: the model reads the
+            // parts in order, so the picture is already "in view" when the text
+            // tells it what to do with it.
+            contents = listOf(
+                Content(
+                    role = "user",
+                    parts = listOfNotNull(
+                        inlineImage?.let {
+                            Part(
+                                inlineData = InlineData(
+                                    mimeType = it.mimeType,
+                                    data = Base64.encode(it.bytes),
+                                ),
+                            )
+                        },
+                        Part(text = userPrompt),
+                    ),
+                ),
+            ),
             generationConfig = generationConfig,
         )
 

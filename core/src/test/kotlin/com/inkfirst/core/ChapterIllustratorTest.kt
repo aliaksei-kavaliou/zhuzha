@@ -39,6 +39,7 @@ private class FakeImageClient(
         prompt: String,
         aspectRatio: String,
         apiKey: String,
+        referenceImage: GeneratedImage?,
     ): GeneratedImage {
         prompts += prompt
         lastModel = model
