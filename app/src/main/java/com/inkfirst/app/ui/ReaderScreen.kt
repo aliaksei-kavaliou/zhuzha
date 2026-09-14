@@ -93,6 +93,8 @@ import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Block
 import com.inkfirst.core.BADGE_KINDS
+import com.inkfirst.core.badgeKindFor
+import com.inkfirst.core.badgeKindsIn
 import com.inkfirst.core.BookBadger
 import com.inkfirst.core.ChapterIllustrator
 import com.inkfirst.core.GeneratedImage
@@ -225,8 +227,15 @@ fun ReaderScreen(
     // and the page pack after a draw — a badge makes a block label taller,
     // so pagination has to be recomputed, not just repainted.
     var badgeVersion by remember { mutableStateOf(0) }
-    val pendingBadges = remember(course?.slug, badgeVersion) {
-        course?.slug?.let { BADGE_KINDS.size - store.badgeKinds(it).size } ?: 0
+    // What this chapter actually needs — a chapter with code blocks earns a
+    // code badge the first time it is opened, so the set grows with the book
+    // instead of being fixed up front.
+    val neededBadges = remember(markdown) {
+        markdown?.let { badgeKindsIn(it) }.orEmpty().ifEmpty { BADGE_KINDS }
+    }
+    val pendingBadges = remember(course?.slug, badgeVersion, neededBadges) {
+        val have = course?.slug?.let { store.badgeKinds(it) }.orEmpty()
+        neededBadges.count { it !in have }
     }
     val figureStatus = when (val state = compileState) {
         is CompileState.Illustrating -> "Drawing… ${state.done}/${state.total}"
@@ -617,6 +626,7 @@ fun ReaderScreen(
                     val c = course ?: return@FormatMenu
                     drawCourseBadges(
                         course = c,
+                        kinds = neededBadges,
                         scope = scope,
                         store = store,
                         apiKeyStore = apiKeyStore,
@@ -909,16 +919,29 @@ private fun PagedContent(
                             pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
                                 val globalIdx = pageStart + i
                                 val blockAnnotations = annotationsForBlock(annotations, block, globalIdx)
-                                // Wrapping Box reports each block's top-Y in
-                                // root coords so InkOverlay can convert to its
-                                // own local space (via the diff with its own
-                                // positionInRoot). Adds no visual layout — Box
-                                // sizes to child. See docs comment on
+                                // Wrapper reports each block's top-Y in root
+                                // coords so InkOverlay can convert to its own
+                                // local space (via the diff with its own
+                                // positionInRoot). See docs comment on
                                 // blockTopsInRoot above.
-                                Box(
-                                    modifier = Modifier.onGloballyPositioned { coords ->
-                                        blockTopsInRoot[globalIdx] = coords.positionInRoot().y
-                                    },
+                                //
+                                // MUST be a Column, not a Box. Several block
+                                // composables emit more than one child —
+                                // HeadingBlock is Spacer/Text/Spacer, and
+                                // BorderedBlock is Spacer/Column/Spacer — and
+                                // a Box overlays its children instead of
+                                // stacking them, so every one of those spacers
+                                // was drawn on top of the content and added no
+                                // space at all. That is why a heading sat 10px
+                                // from its own paragraph while ordinary body
+                                // lines sat 31px apart: the heading's spacers
+                                // were silently doing nothing.
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onGloballyPositioned { coords ->
+                                            blockTopsInRoot[globalIdx] = coords.positionInRoot().y
+                                        },
                                 ) {
                                     RenderBlock(
                                         block = block,
@@ -1329,7 +1352,7 @@ private fun RenderBlock(
             "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge)
             "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
             "meta" -> MetaBlock(block, fontScale)
-            else -> UnknownFenceBlock(block, fontScale)
+            else -> UnknownFenceBlock(block, fontScale, loadBadge)
         }
     }
 }
@@ -1624,8 +1647,19 @@ private fun MetaBlock(f: Block.CustomFence, fontScale: Float) {
 }
 
 @Composable
-private fun UnknownFenceBlock(f: Block.CustomFence, fontScale: Float) {
-    BorderedBlock(label = f.kind.uppercase().ifBlank { "CODE" }, fontScale = fontScale) {
+private fun UnknownFenceBlock(
+    f: Block.CustomFence,
+    fontScale: Float,
+    loadBadge: (String) -> ImageBitmap?,
+) {
+    // A code fence carries its language as the kind (```python), so the badge
+    // is looked up by the normalised kind — every language shares one "code"
+    // mascot rather than each earning its own.
+    BorderedBlock(
+        label = f.kind.uppercase().ifBlank { "CODE" },
+        fontScale = fontScale,
+        badge = badgeKindFor(f.kind)?.let(loadBadge),
+    ) {
         Text(
             text = f.body,
             fontFamily = FontFamily.Monospace,
@@ -2367,6 +2401,7 @@ private fun illustrateExistingChapter(
  */
 private fun drawCourseBadges(
     course: Course,
+    kinds: List<String>,
     scope: kotlinx.coroutines.CoroutineScope,
     store: com.inkfirst.core.CourseStore,
     apiKeyStore: ApiKeyStore,
@@ -2384,6 +2419,7 @@ private fun drawCourseBadges(
                 val result = BookBadger(client, apiKeyStore.getImageModelName()).drawMissing(
                     course = course,
                     apiKey = apiKey,
+                    kinds = kinds,
                     existing = store.badgeKinds(course.slug),
                     knownMascot = store.readMascot(course.slug),
                     onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
@@ -2462,6 +2498,7 @@ private fun compileChapter(
                     BookBadger(client, apiKeyStore.getImageModelName()).drawMissing(
                         course = course,
                         apiKey = apiKey,
+                        kinds = badgeKindsIn(illustrated),
                         existing = store.badgeKinds(course.slug),
                         knownMascot = store.readMascot(course.slug),
                         onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },

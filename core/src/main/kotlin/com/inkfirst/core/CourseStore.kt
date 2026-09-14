@@ -340,9 +340,20 @@ class CourseStore(private val root: File) {
             .firstOrNull { it.isFile && it.nameWithoutExtension == kind && it.length() > 0L }
     }
 
-    /** Block kinds that already have a badge on disk. */
-    fun badgeKinds(courseSlug: String): Set<String> =
-        BADGE_KINDS.filter { badgeFile(courseSlug, it) != null }.toSet()
+    /**
+     * Block kinds that already have a badge on disk. Read from the directory
+     * rather than filtered against a fixed list, because the set a course
+     * needs is discovered from its chapters (see [badgeKindsIn]) and grows as
+     * the book turns out to use new kinds of block.
+     */
+    fun badgeKinds(courseSlug: String): Set<String> {
+        val dir = File(root, "$courseSlug/badges")
+        if (!dir.isDirectory) return emptySet()
+        return dir.listFiles().orEmpty()
+            .filter { it.isFile && it.length() > 0L && it.extension.lowercase() != "txt" }
+            .map { it.nameWithoutExtension }
+            .toSet()
+    }
 
     /**
      * The one-line description of the course mascot, written next to the

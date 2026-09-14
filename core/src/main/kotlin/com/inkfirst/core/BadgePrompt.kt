@@ -19,11 +19,74 @@ package com.inkfirst.core
 const val BADGE_ASPECT_RATIO: String = "1:1"
 
 /**
- * The attention-block fences that get a badge, in drawing order. The first
- * one drawn defines the mascot; the rest are drawn from it (see [BookBadger]),
- * so this order decides which block sets the family look.
+ * The badge set a course starts from, in drawing order. The first one drawn
+ * defines the mascot and the rest are drawn from it (see [BookBadger]), so
+ * this order decides which block sets the family look.
+ *
+ * It is only a starting point: [badgeKindsIn] discovers what a chapter
+ * actually contains, so a book that turns out to use code blocks grows a code
+ * badge the first time one is read.
  */
 val BADGE_KINDS: List<String> = listOf("exercise", "recap", "answer")
+
+/**
+ * Ceiling on how many badges one course can accumulate. The chapter model is
+ * free to invent fence kinds, and each new one costs a picture — without a
+ * cap, a model in a naming mood could quietly run up a bill. Six is more
+ * distinct block types than a readable chapter should have anyway.
+ */
+const val MAX_BADGE_KINDS: Int = 6
+
+/** Fences that are pictures or page furniture rather than a block with a voice. */
+private val UNBADGED_FENCES = setOf("figure", "meta")
+
+/**
+ * Info words that mean "this is a specimen of code". A code fence carries its
+ * *language* as the fence kind — ```python, ```bash — so without this every
+ * language in a book would be drawn its own mascot, which is both expensive
+ * and incoherent: they are all the same voice saying "here is some code".
+ */
+private val CODE_FENCE_WORDS = setOf(
+    "code", "python", "py", "kotlin", "kt", "java", "javascript", "js", "jsx",
+    "typescript", "ts", "tsx", "bash", "sh", "shell", "zsh", "console",
+    "terminal", "cmd", "powershell", "sql", "json", "yaml", "yml", "toml",
+    "ini", "xml", "html", "css", "scss", "c", "cpp", "c++", "csharp", "cs",
+    "go", "golang", "rust", "rs", "ruby", "rb", "php", "swift", "r", "scala",
+    "perl", "lua", "dart", "haskell", "elixir", "clojure", "matlab", "text",
+    "txt", "plaintext", "plain", "diff", "patch", "makefile", "dockerfile",
+)
+
+private val SAFE_KIND = Regex("""^[a-z0-9_-]{1,40}$""")
+
+/**
+ * The badge a fence of this kind should carry, or null if it should carry
+ * none. Normalising here is what keeps one book to a handful of marks.
+ */
+fun badgeKindFor(fenceKind: String): String? {
+    val kind = fenceKind.trim().lowercase()
+    if (kind in UNBADGED_FENCES) return null
+    if (kind.isBlank() || kind in CODE_FENCE_WORDS) return "code"
+    if (!kind.matches(SAFE_KIND)) return null
+    return kind
+}
+
+/**
+ * The badges a chapter needs, in the order they first appear. Discovery means
+ * the set grows with the book rather than being fixed in advance — a chapter
+ * that introduces a new kind of block earns it a mark the first time it is
+ * opened.
+ *
+ * "answer" rides along with "exercise" because it is revealed inside one
+ * rather than being a fence of its own.
+ */
+fun badgeKindsIn(markdown: String): List<String> {
+    val kinds = LinkedHashSet<String>()
+    parseMarkdown(markdown).forEach { block ->
+        if (block is Block.CustomFence) badgeKindFor(block.kind)?.let(kinds::add)
+    }
+    if ("exercise" in kinds) kinds += "answer"
+    return kinds.take(MAX_BADGE_KINDS)
+}
 
 /**
  * What each badge should depict. Deliberately a *role*, not a picture: the
@@ -37,7 +100,13 @@ internal fun badgeBrief(kind: String): String = when (kind) {
     "answer" -> "The mascot giving the game away — holding up a card, or leaning around a corner " +
         "with a hand cupped beside its mouth as if telling you a secret. It should read as " +
         "\"here is the answer\", and must be clearly a different pose from the working-it-out one."
-    else -> "The mascot reacting to the idea on the page."
+    "code" -> "The mascot typing — hunched over a small keyboard with both mitten hands on " +
+        "the keys, absorbed. It should read as \"here is the actual code\"."
+    // Any fence kind the chapter model invents. The word itself is the brief:
+    // these models read "gotcha" or "warning" as a pose perfectly well, and a
+    // hand-written brief per kind is impossible when the set is open-ended.
+    else -> "The mascot in a pose that communicates the idea of \"$kind\" — act the word out " +
+        "with body language and expression alone, and do not write it."
 }
 
 /**

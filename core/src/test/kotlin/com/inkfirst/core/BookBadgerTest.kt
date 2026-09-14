@@ -180,3 +180,65 @@ class BookBadgerTest {
         assertTrue(buildBadgePrompt(course, "recap").contains("cartoon mascot"))
     }
 }
+
+class BadgeKindTest {
+
+    @Test
+    fun `every code language collapses to one code badge`() {
+        listOf("python", "PY", "bash", "sql", "json", "kotlin", "").forEach {
+            assertEquals("code", badgeKindFor(it), "kind=$it")
+        }
+    }
+
+    @Test
+    fun `pictures and page furniture get no badge`() {
+        assertNull(badgeKindFor("figure"))
+        assertNull(badgeKindFor("meta"))
+        // A kind that couldn't be a file name is refused rather than sanitised.
+        assertNull(badgeKindFor("../etc/passwd"))
+    }
+
+    @Test
+    fun `a kind the model invents keeps its own badge`() {
+        assertEquals("gotcha", badgeKindFor("Gotcha"))
+        assertTrue(buildBadgePrompt(courseFixture, "gotcha").contains("\"gotcha\""))
+    }
+
+    @Test
+    fun `discovery finds what a chapter contains, in order, with answer riding along`() {
+        val md = """
+            # Setting Up
+
+            ```python
+            import torch
+            ```
+
+            ```exercise
+            What does it do?
+            answer: it imports.
+            ```
+
+            ```figure alt="a robot"```
+
+            ```recap
+            That's the idea.
+            ```
+        """.trimIndent()
+        // Discovery order, with "answer" appended — it is revealed inside an
+        // exercise rather than being a fence of its own, so it has no place
+        // of its own in the text to be found at.
+        assertEquals(listOf("code", "exercise", "recap", "answer"), badgeKindsIn(md))
+    }
+
+    @Test
+    fun `a chatty model cannot run up an unbounded bill`() {
+        val md = (1..12).joinToString("\n\n") { "```kind$it\nbody\n```" }
+        assertEquals(MAX_BADGE_KINDS, badgeKindsIn(md).size)
+    }
+
+    private val courseFixture = Course(
+        title = "T", slug = "t", topicPrompt = "x", priorKnowledge = "",
+        dailyMinutes = 20, style = "headfirst-inspired", model = "m",
+        created = "2026-09-14", chapters = emptyList(),
+    )
+}

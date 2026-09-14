@@ -28,7 +28,9 @@ class BookBadger(
 ) {
 
     /**
-     * Draws every badge in [BADGE_KINDS] that [existing] says is missing.
+     * Draws every badge in [kinds] that [existing] says is missing. [kinds]
+     * comes from [badgeKindsIn] for a real chapter, so the set follows what
+     * the book actually contains.
      *
      * [loadBadge] hands back a badge already on disk so a partly-drawn set
      * still has a reference to copy — without it, filling in one missing
@@ -39,6 +41,7 @@ class BookBadger(
     suspend fun drawMissing(
         course: Course,
         apiKey: String,
+        kinds: List<String> = BADGE_KINDS,
         existing: Set<String> = emptySet(),
         knownMascot: String = "",
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
@@ -47,11 +50,11 @@ class BookBadger(
     ): BadgeResult {
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
-        val missing = BADGE_KINDS.filter { it !in existing }
+        val missing = kinds.filter { it !in existing }
         if (missing.isEmpty()) return BadgeResult(generated = 0, failed = 0, mascot = knownMascot)
 
         // Whatever already exists is the reference for the rest of the set.
-        var reference = BADGE_KINDS.firstNotNullOfOrNull { kind ->
+        var reference = kinds.firstNotNullOfOrNull { kind ->
             if (kind in existing) loadBadge(kind) else null
         }
         var mascot = knownMascot

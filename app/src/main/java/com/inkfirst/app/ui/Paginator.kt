@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.core.Block
 import com.inkfirst.core.FIGURE_ASPECT
+import com.inkfirst.core.badgeKindFor
 import com.inkfirst.core.Inline
 
 /**
@@ -211,7 +212,9 @@ private fun estimateHeight(
             // The label row is as tall as the taller of its two children —
             // the label text, or the mascot badge sitting beside it.
             val labelTextHeight = (11.sp.toPx() * fontScale).toInt()
-            val badgeHeight = if (hasBadge(block.kind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+            val badgeKind = badgeKindFor(block.kind)
+            val badgeHeight =
+                if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
             val label = maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt()
             // The reveal button, plus room for the answer badge that appears
             // beside the answer text once it is shown. Reserved whether or
