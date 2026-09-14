@@ -307,6 +307,19 @@ class CourseStore(private val root: File) {
     }
 
     /**
+     * The chapter's opening picture, or null if it was never drawn. Stored
+     * beside the figures because it is one — it just has no fence in the
+     * Markdown pointing at it, so it is addressed by chapter slug instead.
+     */
+    fun coverFile(courseSlug: String, chapterSlug: String): File? {
+        val dir = File(root, "$courseSlug/figures")
+        if (!dir.isDirectory) return null
+        return dir.listFiles().orEmpty().firstOrNull {
+            it.isFile && it.length() > 0L && it.nameWithoutExtension == "$chapterSlug-cover"
+        }
+    }
+
+    /**
      * Badge kinds become file names, so they are held to plain letters — a
      * kind is a fence keyword from the chapter model, and nothing stops that
      * model from emitting one with a slash in it.

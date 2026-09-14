@@ -140,7 +140,13 @@ internal fun parseFenceInfo(info: String): Pair<String, Map<String, String>> {
     return kind to params
 }
 
-private fun parseInlines(text: String): List<Inline> {
+/**
+ * Inline markup within one run of text. Public because fenced-block bodies
+ * (exercise, recap) are held as raw strings rather than parsed blocks, and the
+ * reader has to parse those spans itself — an exercise says "call
+ * `torch.tensor()`" as readily as a paragraph does.
+ */
+fun parseInlines(text: String): List<Inline> {
     if (text.isEmpty()) return emptyList()
     val out = mutableListOf<Inline>()
     val buf = StringBuilder()

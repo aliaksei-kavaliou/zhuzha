@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.sp
 import com.inkfirst.core.Block
 import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.badgeKindFor
+import com.inkfirst.core.parseInlines
 import com.inkfirst.core.Inline
 
 /**
@@ -59,15 +60,21 @@ fun paginate(
 
     for (i in blocks.indices) {
         val block = blocks[i]
+        // A heading at the top of a page drops its space-above, so it has to
+        // be measured that way too. Conservative by construction: if a block
+        // measured mid-page then moves to the next one it only gets shorter.
         val h = estimateHeight(
             block, contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage, hasBadge,
+            atPageTop = pages.last().isEmpty(),
         )
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
         // heading is about to land and the block after it wouldn't fit on the
         // same page, push the heading to the next page too — as long as the pair
         // actually fits together on an empty page (otherwise we'd loop).
-        val requiredHeight = if (block is Block.Heading && i + 1 < blocks.size) {
+        val opensSomething = block is Block.Heading ||
+            (block is Block.CustomFence && block.kind == "meta")
+        val requiredHeight = if (opensSomething && i + 1 < blocks.size) {
             val nextH = estimateHeight(
                 blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing,
                 hasFigureImage, hasBadge,
@@ -122,6 +129,7 @@ private fun estimateHeight(
     lineSpacing: Float,
     hasFigureImage: (String) -> Boolean,
     hasBadge: (String) -> Boolean = { false },
+    atPageTop: Boolean = false,
 ): Int = with(density) {
     when (block) {
         is Block.Heading -> {
@@ -144,7 +152,7 @@ private fun estimateHeight(
                 ),
                 constraints = Constraints(maxWidth = widthPx),
             )
-            topPad.toPx().toInt() + result.size.height + botPad.toPx().toInt()
+            (if (atPageTop) 0 else topPad.toPx().toInt()) + result.size.height + botPad.toPx().toInt()
         }
         is Block.Paragraph -> {
             val result = measurer.measure(
@@ -176,7 +184,29 @@ private fun estimateHeight(
                     ),
                     constraints = Constraints(maxWidth = widthPx),
                 )
-                return@with result.size.height + 8.dp.toPx().toInt()
+                // A chapter whose Markdown had no heading carries its title
+                // here instead — measured at h1 size to match MetaBlock.
+                val standInTitle = block.params["title"]?.let { title ->
+                    val size = 30.sp * fontScale
+                    measurer.measure(
+                        text = AnnotatedString(title),
+                        style = TextStyle(
+                            fontSize = size,
+                            lineHeight = size * 1.2f,
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        constraints = Constraints(maxWidth = widthPx),
+                    ).size.height + 16.dp.toPx().toInt()
+                } ?: 0
+                // A cover turns the opener into a full title page; it is a
+                // fixed-ratio picture like any figure.
+                val cover = if (block.params["cover"] != null) {
+                    (widthPx / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt()
+                } else {
+                    0
+                }
+                return@with result.size.height + 8.dp.toPx().toInt() + standInTitle + cover
             }
             // An illustrated figure is a picture, not a bordered text box:
             // full content width at the fixed figure ratio, plus the vertical
@@ -205,7 +235,10 @@ private fun estimateHeight(
                 )
             }
             val body = measurer.measure(
-                text = AnnotatedString(bodyText),
+                // Measure what will actually be drawn: the renderer parses
+                // these bodies now, so the backtick and asterisk markers are
+                // gone by the time they reach the page.
+                text = AnnotatedString(parseInlines(bodyText).plainText()),
                 style = bodyStyle,
                 constraints = Constraints(maxWidth = innerWidth),
             )

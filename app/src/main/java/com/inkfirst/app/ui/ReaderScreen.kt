@@ -111,6 +111,7 @@ import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.Stroke as InkStroke
 import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.findFigureSlots
+import com.inkfirst.core.parseInlines
 import com.inkfirst.core.parseMarkdown
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -123,6 +124,15 @@ private val InkColor = Color(0xFF000000)
 private val PaperColor = Color(0xFFFFFFFF)
 private val MutedColor = Color(0xFF555555)
 private val BorderColor = Color(0xFF888888)
+
+/**
+ * Background behind inline `code`. Was 8% black, which the panel rendered as
+ * a faint dither that came and went between refreshes — the tint was there in
+ * the framebuffer but not reliably on the glass, so a code word would simply
+ * lose its highlight. Opaque light grey instead: one flat tone the e-ink
+ * controller can commit to, on every refresh.
+ */
+private val CodeTintColor = Color(0xFFE4E4E4)
 
 private sealed interface CompileState {
     data object Idle : CompileState
@@ -233,6 +243,9 @@ fun ReaderScreen(
     val neededBadges = remember(markdown) {
         markdown?.let { badgeKindsIn(it) }.orEmpty().ifEmpty { BADGE_KINDS }
     }
+    val hasCover = remember(course?.slug, chapterSlug, badgeVersion) {
+        course?.slug?.let { store.coverFile(it, chapterSlug) != null } == true
+    }
     val pendingBadges = remember(course?.slug, badgeVersion, neededBadges) {
         val have = course?.slug?.let { store.badgeKinds(it) }.orEmpty()
         neededBadges.count { it !in have }
@@ -256,11 +269,24 @@ fun ReaderScreen(
                 if (!dayLabel.isNullOrEmpty()) append(" · $dayLabel")
                 append(" · ${statusLabel(chapter.status)}")
             }
-            val meta = Block.CustomFence(
-                kind = "meta",
-                params = emptyMap(),
-                body = metaBody,
-            )
+            // The chapter model usually opens with "# Chapter N: Title", but
+            // not always — two of six chapters in the first real course came
+            // back with no heading at all, and the reader showed a chapter
+            // with no title. The title is known from the outline, so stop
+            // depending on the model remembering.
+            //
+            // It rides in the meta block rather than being prepended as its
+            // own Heading on purpose: annotations and ink are anchored by
+            // block index, and inserting a block would slide every anchor in
+            // exactly the chapters that lack a title.
+            val opensWithTitle = (parsed.firstOrNull() as? Block.Heading)?.level == 1
+            val metaParams = buildMap {
+                if (!opensWithTitle) put("title", chapter.title)
+                course?.slug?.let { slug ->
+                    store.coverFile(slug, chapter.slug)?.let { put("cover", it.name) }
+                }
+            }
+            val meta = Block.CustomFence(kind = "meta", params = metaParams, body = metaBody)
             listOf(meta) + parsed
         }
     }
@@ -622,6 +648,20 @@ fun ReaderScreen(
                 figureStatus = figureStatus,
                 busyDrawing = compileState is CompileState.Illustrating,
                 pendingBadges = pendingBadges,
+                hasCover = hasCover,
+                onDrawCover = {
+                    val c = course ?: return@FormatMenu
+                    val ch = chapter ?: return@FormatMenu
+                    drawChapterCover(
+                        course = c,
+                        chapter = ch,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { badgeVersion++ },
+                    )
+                },
                 onDrawBadges = {
                     val c = course ?: return@FormatMenu
                     drawCourseBadges(
@@ -945,6 +985,7 @@ private fun PagedContent(
                                 ) {
                                     RenderBlock(
                                         block = block,
+                                        atPageTop = i == 0,
                                         fontScale = fontScale,
                                         lineSpacing = lineSpacing,
                                         textAlign = textAlign,
@@ -1114,10 +1155,12 @@ private fun FormatMenu(
     onAskAboutChapter: () -> Unit,
     pendingFigures: Int,
     pendingBadges: Int,
+    hasCover: Boolean,
     figureStatus: String?,
     busyDrawing: Boolean,
     onIllustrate: () -> Unit,
     onDrawBadges: () -> Unit,
+    onDrawCover: () -> Unit,
     onToggleBookmark: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
@@ -1183,6 +1226,25 @@ private fun FormatMenu(
                     Text(
                         text = figureStatus
                             ?: ("Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (busyDrawing) MutedColor else InkColor,
+                    )
+                }
+            }
+        }
+
+        // The chapter's opening picture. One per chapter, so the row goes
+        // away for good once it exists.
+        if (!hasCover) {
+            MenuRow(label = "Chapter") {
+                Box(
+                    modifier = Modifier
+                        .clickable(enabled = !busyDrawing) { onDrawCover() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "Draw chapter picture",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (busyDrawing) MutedColor else InkColor,
@@ -1328,6 +1390,7 @@ private fun List<Float>.indexOfNearest(value: Float): Int {
 @Composable
 private fun RenderBlock(
     block: Block,
+    atPageTop: Boolean,
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
@@ -1339,7 +1402,7 @@ private fun RenderBlock(
     loadBadge: (String) -> ImageBitmap?,
 ) {
     when (block) {
-        is Block.Heading -> HeadingBlock(block, fontScale)
+        is Block.Heading -> HeadingBlock(block, fontScale, atPageTop)
         is Block.Paragraph -> ParagraphBlock(
             block.inlines, fontScale, lineSpacing, textAlign,
             annotations, onOpenAnnotation,
@@ -1351,14 +1414,14 @@ private fun RenderBlock(
             "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal, loadBadge)
             "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge)
             "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
-            "meta" -> MetaBlock(block, fontScale)
+            "meta" -> MetaBlock(block, fontScale, loadFigure)
             else -> UnknownFenceBlock(block, fontScale, loadBadge)
         }
     }
 }
 
 @Composable
-private fun HeadingBlock(h: Block.Heading, fontScale: Float) {
+private fun HeadingBlock(h: Block.Heading, fontScale: Float, atPageTop: Boolean = false) {
     // Space below a heading used to be 10dp for an h2 — 19px against a 56px
     // body leading, so the gap under a heading was SMALLER than the gap
     // between two ordinary lines, and the heading read as falling into the
@@ -1373,7 +1436,10 @@ private fun HeadingBlock(h: Block.Heading, fontScale: Float) {
         else -> Triple(18.sp, 22.dp, 16.dp)
     }
     val fontSize = baseSize * fontScale
-    Spacer(Modifier.height(top))
+    // Space above a heading separates it from what came before. At the top of
+    // a page there is nothing before it — the running head already supplies
+    // the air — and the spacer just pushes the page down.
+    if (!atPageTop) Spacer(Modifier.height(top))
     Text(
         text = renderInlines(h.inlines),
         fontFamily = FontFamily.Serif,
@@ -1519,7 +1585,10 @@ private fun ExerciseBlock(
     val (question, answer) = splitExerciseBody(f.body)
     BorderedBlock(label = "TRY THIS", fontScale = fontScale, badge = loadBadge("exercise")) {
         Text(
-            text = question,
+            // Parsed, not raw: an exercise says "call `torch.tensor()`" as
+            // often as a paragraph does, and rendering the body as a plain
+            // string dropped every inline style inside a bordered block.
+            text = renderInlines(parseInlines(question)),
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
             lineHeight = 28.sp * fontScale * lineSpacing,
@@ -1544,7 +1613,7 @@ private fun ExerciseBlock(
                         )
                     }
                     Text(
-                        text = "Answer: $answer",
+                        text = renderInlines(parseInlines("Answer: $answer")),
                         fontFamily = FontFamily.Serif,
                         fontSize = 16.sp * fontScale,
                         lineHeight = 26.sp * fontScale * lineSpacing,
@@ -1568,7 +1637,7 @@ private fun RecapBlock(
 ) {
     BorderedBlock(label = "RECAP", fontScale = fontScale, badge = loadBadge("recap")) {
         Text(
-            text = f.body.trim(),
+            text = renderInlines(parseInlines(f.body.trim())),
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
             lineHeight = 28.sp * fontScale * lineSpacing,
@@ -1632,7 +1701,11 @@ private fun FigureBlock(
 }
 
 @Composable
-private fun MetaBlock(f: Block.CustomFence, fontScale: Float) {
+private fun MetaBlock(
+    f: Block.CustomFence,
+    fontScale: Float,
+    loadFigure: (String) -> ImageBitmap?,
+) {
     // Small italic muted line at the top of the chapter — the transplanted
     // TOC subtitle. Not a bordered box; it should feel like a byline, not a
     // block.
@@ -1644,6 +1717,32 @@ private fun MetaBlock(f: Block.CustomFence, fontScale: Float) {
         color = MutedColor,
         modifier = Modifier.padding(bottom = 8.dp),
     )
+    // Stand-in title for a chapter whose Markdown never wrote one. Styled to
+    // match a real h1 so the two cases are indistinguishable on the page.
+    f.params["title"]?.let { title ->
+        Text(
+            text = title,
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 30.sp * fontScale,
+            lineHeight = 30.sp * fontScale * 1.2f,
+            color = InkColor,
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+    // The chapter's opening picture: the problem the chapter is about to
+    // solve, standing on the title page the way a chapter plate does in a
+    // printed book. Borderless and uncaptioned, like every other figure.
+    f.params["cover"]?.let(loadFigure)?.let { cover ->
+        Image(
+            bitmap = cover,
+            contentDescription = null,
+            modifier = Modifier.fillMaxWidth().aspectRatio(FIGURE_ASPECT),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+        )
+        Spacer(Modifier.height(16.dp))
+    }
 }
 
 @Composable
@@ -1844,7 +1943,7 @@ private fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotat
             is Inline.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(i.text) }
             is Inline.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(i.text) }
             is Inline.Code -> withStyle(
-                SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x14000000)),
+                SpanStyle(fontFamily = FontFamily.Monospace, background = CodeTintColor),
             ) { append(i.text) }
         }
     }
@@ -1883,7 +1982,7 @@ private fun renderInlinesWithUnderlines(
                 }
                 is Inline.Code -> {
                     withStyle(
-                        SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x14000000)),
+                        SpanStyle(fontFamily = FontFamily.Monospace, background = CodeTintColor),
                     ) { append(i.text) }
                     plain.append(i.text)
                 }
@@ -2106,12 +2205,38 @@ private fun CompilePrompt(
     onOpenPrevChapter: (() -> Unit)? = null,
     onOpenNextChapter: (() -> Unit)? = null,
 ) {
+    // The side buttons have to be handled here too, not just in the reader.
+    // On Boox they arrive as VolumeUp/VolumeDown, so a screen that does not
+    // consume them lets Android show the system volume popup — pressing a
+    // page-turn button on a not-yet-compiled chapter changed the volume.
+    // They are consumed unconditionally, including at the first and last
+    // chapter where there is nowhere to go: silently doing nothing is the
+    // correct answer for a page-turn key, and the volume popup is not.
+    val keyFocus = remember { FocusRequester() }
+    LaunchedEffect(chapter.slug) { keyFocus.requestFocus() }
+
     // Swipe support on the compile prompt: horizontal or vertical swipe still
     // lets you nav to adjacent chapters. Without this, hitting a pending
     // chapter via vertical-swipe-forward is a dead end until the user compiles.
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .focusRequester(keyFocus)
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.VolumeUp, Key.PageUp, Key.DirectionUp -> {
+                        onOpenPrevChapter?.invoke()
+                        true
+                    }
+                    Key.VolumeDown, Key.PageDown, Key.DirectionDown -> {
+                        onOpenNextChapter?.invoke()
+                        true
+                    }
+                    else -> false
+                }
+            }
             .pointerInput(onOpenPrevChapter, onOpenNextChapter) {
                 val hDrag = 60.dp.toPx()
                 val vDrag = 80.dp.toPx()
@@ -2441,6 +2566,48 @@ private fun drawCourseBadges(
             throw e
         } catch (e: Exception) {
             System.err.println("badges failed: ${e::class.simpleName}: ${e.message}")
+            onState(CompileState.Failed(geminiErrorLabel(e)))
+        }
+    }
+}
+
+/**
+ * Draws the chapter's opening picture. Separate from the figure pass because
+ * a cover has no fence in the Markdown — nothing to rewrite, nothing to make
+ * idempotent beyond "does the file exist".
+ */
+private fun drawChapterCover(
+    course: Course,
+    chapter: PersistedChapter,
+    scope: kotlinx.coroutines.CoroutineScope,
+    store: com.inkfirst.core.CourseStore,
+    apiKeyStore: ApiKeyStore,
+    onState: (CompileState) -> Unit,
+    onDone: () -> Unit,
+) {
+    val apiKey = apiKeyStore.getApiKey().orEmpty()
+    if (apiKey.isBlank()) {
+        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        return
+    }
+    scope.launch {
+        try {
+            onState(CompileState.Illustrating(0, 1))
+            KtorGeminiClient().use { client ->
+                ChapterIllustrator(client, apiKeyStore.getImageModelName()).drawCover(
+                    course = course,
+                    chapter = chapter,
+                    apiKey = apiKey,
+                    textModel = course.model,
+                    saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
+                )
+                onState(CompileState.Idle)
+                onDone()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("cover failed: ${e::class.simpleName}: ${e.message}")
             onState(CompileState.Failed(geminiErrorLabel(e)))
         }
     }

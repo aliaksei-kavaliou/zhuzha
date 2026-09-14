@@ -71,3 +71,56 @@ internal fun buildFigurePrompt(
  * Keep the two in sync.
  */
 const val FIGURE_ASPECT: Float = 4f / 3f
+
+/**
+ * Brief-writing prompt for a chapter's opening picture.
+ *
+ * The cover is asked for in two steps rather than one. A figure inside a
+ * chapter gets its brief from the chapter model, which has already decided
+ * what scene makes the point ("a tiny exhausted gnome on a mountain of paper
+ * bags"); a cover has no such brief, and handing an image model a title and a
+ * list of objectives gets a literal, lifeless illustration of the words. So
+ * the text model writes the brief first, then the image model draws it.
+ */
+internal fun buildCoverBriefPrompt(course: Course, chapter: PersistedChapter): String = buildString {
+    appendLine("A study book is opening a new chapter, and it needs one picture for the")
+    appendLine("chapter's title page.")
+    appendLine()
+    appendLine("BOOK: ${course.title}")
+    appendLine("CHAPTER ${chapter.n}: ${chapter.title}")
+    if (chapter.objectives.isNotEmpty()) {
+        appendLine("WHAT THE READER WILL LEARN:")
+        chapter.objectives.forEach { appendLine("  - $it") }
+    }
+    appendLine()
+    appendLine("Describe ONE concrete scene an artist should draw. The scene must capture")
+    appendLine("the PROBLEM this chapter solves — the difficulty or the question the reader")
+    appendLine("arrives with — not a summary of the answer, and not a diagram of the topic.")
+    appendLine("Use a physical, everyday metaphor with a character in it: something going")
+    appendLine("wrong, someone stuck, someone facing an absurd amount of work. It should")
+    appendLine("raise a smile.")
+    appendLine()
+    appendLine("Rules: one vivid subject, no diagrams, no charts, no screens full of text,")
+    appendLine("no labels or numbers. A short shouted speech bubble of four or five words")
+    appendLine("is welcome if it sharpens the joke.")
+    appendLine()
+    appendLine("Reply with the scene description only — one or two sentences, nothing else.")
+}
+
+/**
+ * The image brief for a chapter cover. Same house style as any other figure:
+ * a cover is a full-width picture on the page, not a badge, so the rules that
+ * matter are the figure ones.
+ */
+internal fun buildCoverPrompt(course: Course, chapter: PersistedChapter, brief: String): String =
+    buildFigurePrompt(
+        course = course,
+        chapterTitle = chapter.title,
+        brief = brief,
+        context = "",
+    )
+
+/** File name a chapter's cover is stored under. */
+fun chapterCoverName(chapterSlug: String, extension: String): String =
+    "$chapterSlug-cover.${extension.ifBlank { "png" }}"
+

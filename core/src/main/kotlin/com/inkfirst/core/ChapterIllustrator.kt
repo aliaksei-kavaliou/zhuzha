@@ -22,6 +22,52 @@ class ChapterIllustrator(
 ) {
 
     /**
+     * Draws the chapter's opening picture — the one on its title page,
+     * standing for the *problem* the chapter is about to solve.
+     *
+     * Two calls, not one: [textModel] writes the scene brief first, because
+     * handing an image model a title and a list of objectives produces a
+     * literal illustration of the words rather than a scene. Best-effort like
+     * everything else here — no cover just means no cover.
+     *
+     * Returns the file name written, or null if nothing was drawn.
+     */
+    suspend fun drawCover(
+        course: Course,
+        chapter: PersistedChapter,
+        apiKey: String,
+        textModel: String,
+        saveImage: (fileName: String, bytes: ByteArray) -> Unit,
+    ): String? {
+        require(apiKey.isNotBlank()) { "apiKey must not be blank" }
+        return try {
+            val brief = client.generateText(
+                model = textModel,
+                systemInstruction = "You write briefs for illustrators. You reply with the brief and nothing else.",
+                userPrompt = buildCoverBriefPrompt(course, chapter),
+                apiKey = apiKey,
+            ).trim().ifBlank { chapter.title }
+
+            val image = client.generateImage(
+                model = model,
+                prompt = buildCoverPrompt(course, chapter, brief),
+                aspectRatio = FIGURE_ASPECT_RATIO,
+                apiKey = apiKey,
+            )
+            val fileName = chapterCoverName(chapter.slug, image.extension)
+            saveImage(fileName, image.bytes)
+            fileName
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println(
+                "cover for ${chapter.slug} failed: ${e::class.simpleName}: ${e.message}",
+            )
+            null
+        }
+    }
+
+    /**
      * Generates a picture for every pending figure slot in [markdown].
      *
      * [saveImage] receives each finished picture (file name + bytes) as it
