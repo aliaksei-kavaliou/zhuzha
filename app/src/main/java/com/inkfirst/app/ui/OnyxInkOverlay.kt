@@ -85,6 +85,7 @@ fun OnyxInkOverlay(
 ) {
     val addedRef = rememberUpdatedState(onStrokeAdded)
     val tappedRef = rememberUpdatedState(onStrokeTapped)
+    val erasedRef = rememberUpdatedState(onStrokeErased)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
     val rangeRef = rememberUpdatedState(pageBlockRange)
@@ -96,6 +97,11 @@ fun OnyxInkOverlay(
     val originRef = remember { mutableStateOf(0f to 0f) }
     /** Guards against the list and move callbacks both emitting one stroke. */
     val emittedRef = remember { mutableStateOf(false) }
+    /** Whether a finger is on the glass right now, and when one last left it. */
+    val fingerDownRef = remember { mutableStateOf(false) }
+    // Seeded to "long ago" rather than 0 so the grace-period arithmetic is
+    // meaningful before the first touch.
+    val fingerUpAtRef = remember { mutableStateOf(0L) }
 
     Box(
         modifier = modifier
@@ -125,21 +131,48 @@ fun OnyxInkOverlay(
                             }
                         }
                         PointerType.Touch, PointerType.Mouse -> {
+                            // Mark the glass as finger-occupied for as long as
+                            // this contact lasts. emitStroke() reads this to
+                            // throw away the "stroke" the finger generates.
+                            fingerDownRef.value = true
+                            fingerUpAtRef.value = System.currentTimeMillis()
                             val at = down.position
                             val hit = hitTestForErase(
                                 strokesRef.value, at.x, at.y, blockTopYRef.value,
                             )
-                            if (hit != null) {
-                                down.consume()
-                                tappedRef.value(hit)
-                                while (true) {
-                                    val ev = awaitPointerEvent()
-                                    val ch = ev.changes.firstOrNull() ?: break
-                                    ch.consume()
-                                    if (!ch.pressed) break
+                            Log.d(
+                                TAG,
+                                "finger down at=(${at.x},${at.y}) strokes=${strokesRef.value.size} hit=${hit != null}",
+                            )
+                            // try/finally, not plain sequence: a tap that
+                            // turns the page recomposes this overlay and
+                            // CANCELS the gesture coroutine mid-way. Without
+                            // the finally the "finger is down" flag latched on
+                            // forever, and every pen stroke after the first
+                            // page turn was discarded as if a finger had made
+                            // it — the pen appeared to die after one tap.
+                            try {
+                                if (hit != null) {
+                                    down.consume()
+                                    tappedRef.value(hit)
+                                    while (true) {
+                                        val ev = awaitPointerEvent()
+                                        val ch = ev.changes.firstOrNull() ?: break
+                                        ch.consume()
+                                        if (!ch.pressed) break
+                                    }
                                 }
+                                // A miss deliberately does NOT hold the
+                                // gesture. Waiting here for the finger to lift
+                                // broke tap-to-turn-page — the parent's tap
+                                // detector never got its chance and only the
+                                // hardware buttons still paged. The stroke the
+                                // finger generates is caught by the grace
+                                // window below instead, which needs no hold.
+                            } finally {
+                                fingerDownRef.value = false
+                                fingerUpAtRef.value = System.currentTimeMillis()
                             }
-                            // else: don't consume → parent handles page-turn
                         }
                         else -> { /* Unknown type — ignore */ }
                     }
@@ -172,6 +205,22 @@ fun OnyxInkOverlay(
 
                     fun emitStroke(pts: List<TouchPoint>, source: String) {
                         if (pts.isEmpty()) return
+                        // Mode 4 hands us finger contacts as strokes too: every
+                        // page-turn tap drew a dot, then "hit" the dot it had
+                        // just made, which made tap, page-turn and erase all
+                        // look broken at once. Compose sees the finger, the SDK
+                        // doesn't distinguish it, so this is where they meet.
+                        val lastUp = fingerUpAtRef.value
+                        val sinceFingerUp =
+                            if (lastUp == 0L) Long.MAX_VALUE else System.currentTimeMillis() - lastUp
+                        if (fingerDownRef.value || sinceFingerUp < FINGER_STROKE_GRACE_MS) {
+                            Log.d(
+                                TAG,
+                                "emit($source) n=${pts.size} dropped — finger contact " +
+                                    "(down=${fingerDownRef.value} sinceUp=${sinceFingerUp}ms)",
+                            )
+                            return
+                        }
                         val (ox, oy) = originRef.value
                         val start = pts.first()
                         val startLocalY = start.y - oy
@@ -259,14 +308,34 @@ fun OnyxInkOverlay(
                         }
 
                         override fun onBeginRawErasing(shortcut: Boolean, point: TouchPoint) {
-                            Log.d(TAG, "onBeginRawErasing shortcut=$shortcut")
+                            // Erasing can be the first thing that happens, so
+                            // the origin may never have been read yet.
+                            originRef.value = originOnScreen()
+                            Log.d(TAG, "onBeginRawErasing shortcut=$shortcut origin=${originRef.value}")
                         }
                         override fun onEndRawErasing(outOfLimit: Boolean, point: TouchPoint) {
                             Log.d(TAG, "onEndRawErasing outOfLimit=$outOfLimit")
                         }
                         override fun onRawErasingTouchPointMoveReceived(point: TouchPoint) {}
                         override fun onRawErasingTouchPointListReceived(list: TouchPointList) {
-                            Log.d(TAG, "onRawErasingTouchPointListReceived pts=${list.points?.size}")
+                            val pts = list.points
+                            Log.d(TAG, "onRawErasing pts=${pts?.size}")
+                            if (pts.isNullOrEmpty()) return
+                            // Erase whatever the eraser passed over. Points
+                            // arrive in screen space like drawing ones, so
+                            // they need the same conversion before hit testing.
+                            val (ox, oy) = originRef.value
+                            val getTop = blockTopYRef.value
+                            val doomed = LinkedHashSet<Stroke>()
+                            pts.forEach { p ->
+                                hitTestForErase(
+                                    strokesRef.value, p.x - ox, p.y - oy, getTop,
+                                )?.let(doomed::add)
+                            }
+                            Log.d(TAG, "onRawErasing matched ${doomed.size} stroke(s)")
+                            if (doomed.isNotEmpty()) {
+                                mainHandler.post { doomed.forEach(erasedRef.value) }
+                            }
                         }
                     }
 
@@ -278,11 +347,15 @@ fun OnyxInkOverlay(
                     // FEATURE_ constants — see javap in the aar for the set.
                     val helper = TouchHelper.create(
                         this,
-                        TouchHelper.FEATURE_APP_PEN_TOUCH_RENDER,
+                        ONYX_FEATURE_MODE,
                         callback,
+                        ONYX_CREATE_FLAG,
                     )
                     touchHelperRef.value = helper
-                    Log.d(TAG, "TouchHelper.create returned=$helper mode=FEATURE_APP_PEN_TOUCH_RENDER")
+                    Log.d(
+                        TAG,
+                        "TouchHelper.create returned=$helper mode=$ONYX_FEATURE_MODE flag=$ONYX_CREATE_FLAG",
+                    )
                     // The drawable region has to be given in SCREEN
                     // coordinates. It was being given view-local (0,0,w,h),
                     // which put the live area in the wrong place — the pen
@@ -377,14 +450,46 @@ fun OnyxInkOverlay(
             touchHelperRef.value = null
         }
     }
-    // onStrokeErased is not wired: barrel-button events weren't reaching the
-    // Onyx erase callbacks in the first attempt. Erase stays available via
-    // the chip's Delete button; we'll revisit once we have the raw MotionEvent
-    // path snooped for barrel-button state.
-    @Suppress("UNUSED_EXPRESSION") onStrokeErased
 }
 
 private const val TAG = "OnyxInkOverlay"
+
+/**
+ * Which TouchHelper feature mode to open with, and the flag on the four-arg
+ * `create`. Both are here rather than inline because getting them right is
+ * pure trial on a device — the SDK ships no docs and the constant names
+ * mislead.
+ *
+ * The values, from javap on onyxsdk-pen 1.5.4:
+ *   FEATURE_APP_TOUCH_RENDER      = 1
+ *   FEATURE_SF_TOUCH_RENDER       = 2
+ *   FEATURE_ALL_TOUCH_RENDER      = 3
+ *   FEATURE_APP_PEN_TOUCH_RENDER  = 4
+ *
+ * Mode 4 is what finally let finger events reach Compose (modes tried in v1
+ * and v2 swallowed them below the view). But "PEN_TOUCH" turns out to mean
+ * pen AND touch: with it, every finger tap was captured as a stroke — the
+ * page-turn tap drew a dot, then "hit" the dot it had just made, which is why
+ * tap, page-turn and erase all appeared dead at once. The stroke count rising
+ * by one per finger tap in the log is the fingerprint of it.
+ *
+ * The four-arg create takes a flag the three-arg forms don't expose; false is
+ * the candidate for "pen input only".
+ */
+private const val ONYX_FEATURE_MODE = TouchHelper.FEATURE_APP_PEN_TOUCH_RENDER
+private const val ONYX_CREATE_FLAG = true
+
+/**
+ * How long after a finger touches down a stroke is still treated as that
+ * finger's. Measured from DOWN rather than UP because the miss case must not
+ * hold the gesture open (that broke tap-to-turn-page), so the release time is
+ * not observed. Long enough to cover a swipe, which is a finger contact that
+ * lasts well beyond a tap.
+ * Onyx reports pen and finger through the same raw callbacks with no tool
+ * type, so the only way to tell them apart is that Compose *does* see the
+ * finger — and anything arriving while a finger is on the glass is not ink.
+ */
+private const val FINGER_STROKE_GRACE_MS = 800L
 
 private fun findAnchorBlockOnyx(
     range: IntRange,
