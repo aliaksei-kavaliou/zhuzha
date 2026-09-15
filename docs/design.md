@@ -313,6 +313,75 @@ that matter, because none of them are documented by the vendor:
 Still open: erase by sweep (committed in `eb7ea05`, device-untested — see
 `docs/handoff-2026-09-15-onyx-erase.md`), EPD ghosting, and the defects listed in CLAUDE.md.
 
+## 13. Reader signals — adapting the next chapter (designed, not built)
+
+`memory.md` remembers what the book *taught*. This is the other half: what the *reading* looked
+like. Proposed 2026-09-15; nothing built yet.
+
+The premise: every time the reader selects a passage and asks about it, they have told us
+something — they stopped reading, and here is the sentence that stopped them. Today that signal
+is used once, to answer the question, and then discarded. Feeding it forward lets chapter N+1
+open with the recap the reader actually needs, which is the thing a tutor does and a chat window
+structurally cannot.
+
+### Store observations, not scores
+
+**Do not ask the model for a confidence number.** An LLM rating "how well did they understand
+this?" from one exchange is poorly calibrated, and a number invites false precision: `0.6` vs
+`0.7` means nothing but reads as if it does, and every downstream prompt will treat it as fact.
+
+Store what was asked instead. *"Asked twice what a gradient actually is, and whether it is the
+same thing as slope"* is more useful in a prompt than `gradients: 0.6`, and it fails honestly —
+a wrong observation can be read and seen to be wrong, where a wrong number just looks precise.
+
+### The signals already exist and are currently discarded
+
+All of these are captured today and thrown away. They are observations of behaviour rather than
+a guess about a person, which makes them better evidence as well as cheaper:
+
+- the **exact passage** selected — quote and block index are both stored already
+- **how many questions** a chapter drew, and where in the chapter they clustered
+- **recurrence** — the same concept asked about again in a later chapter. The strongest signal
+  available, and the one that most clearly means "the first explanation did not land"
+- **exercise reveals** — `revealed` is tracked; revealing without attempting is meaningful
+- **re-reads** — `last_block_index` moving backwards
+
+### Shape
+
+A `reader.md` beside `memory.md`, per course. Plain, human-readable, and **editable by the
+user** — which matters more here than anywhere else in the app: if the book is going to form
+opinions about someone's understanding, they need to be able to read them and cross one out.
+It also keeps the promise made in §1, that a course stays inspectable.
+
+Written by the same cheap follow-up call that already appends to `memory.md` at chapter end
+(`MemoryUpdater`), so this adds a section to an existing call rather than a new pipeline stage.
+
+```markdown
+## Chapter 5 — how the reading went
+- Asked twice about what a gradient *is*, both times on the "slope" paragraph.
+- Revealed the step-size exercise without attempting it.
+- Re-read the foggy-mountain section.
+- Did not ask anything about loss functions (introduced ch4, used freely here).
+```
+
+### Two boundaries
+
+1. **Bound the effect.** "Open with a short recap of X, which the reader asked about twice" is
+   useful. Letting the generator restructure a chapter around a perceived weakness gets
+   patronising quickly, and the reader has no way to say "I have understood that since".
+2. **Feed forward only.** Use it for the *next* chapter; never silently regenerate earlier
+   ones. A book that rewrites itself underneath the reader is disorienting, and those pages
+   carry their annotations and ink.
+
+### Open
+
+- Does a question about a passage mean confusion, or curiosity? Probably both, and the
+  distinction may not matter — either way it is a place worth revisiting.
+- Recurrence detection needs concept identity across chapters, which is the same problem
+  `memory.md` already solves informally. Reuse rather than invent.
+- Should the reader be *told* the next chapter was adapted? Leaning yes, in one line — silent
+  adaptation is where this starts to feel like surveillance rather than teaching.
+
 ## 12. Open questions (revisit while building)
 
 - Exercise answers: reveal-in-place vs. end-of-chapter answer pages?
