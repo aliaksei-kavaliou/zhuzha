@@ -427,14 +427,15 @@ fun ReaderScreen(
                         store.saveStrokes(courseSlug, chapterSlug, updated)
                     },
                     onStrokeErased = { hit ->
-                        // Pen barrel-button while any chip is up = dismiss
-                        // the chip regardless of whether the tap landed on
-                        // a stroke — the previous version required a hit,
-                        // so barrel-tap-in-empty-space did nothing.
-                        if (pendingGestureStroke != null || viewingStroke != null) {
-                            pendingGestureStroke = null
-                            viewingStroke = null
-                        } else if (hit != null) {
+                        // An eraser contact always dismisses any open chip
+                        // (so an eraser tap in empty space closes it) AND
+                        // removes the stroke it hit. These used to be
+                        // either/or, so erasing a stroke you had just tapped
+                        // — chip up — only closed the chip and the stroke
+                        // stayed, which read as "erase does nothing".
+                        pendingGestureStroke = null
+                        viewingStroke = null
+                        if (hit != null) {
                             val updated = strokes - hit
                             strokes = updated
                             store.saveStrokes(courseSlug, chapterSlug, updated)

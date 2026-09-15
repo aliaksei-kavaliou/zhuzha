@@ -33,10 +33,27 @@ class AskTextToolbar(
 
     private var copyCallback: (() -> Unit)? = null
 
+    /**
+     * The selection that was dismissed, held until a *different* one arrives.
+     *
+     * Hiding the toolbar isn't enough to make the chip go away: the selection
+     * itself is still live inside SelectionContainer, so Compose re-reports it
+     * and showMenu puts the chip straight back — Cancel appeared to do
+     * nothing. There is no public API to clear a SelectionContainer's
+     * selection from here, so the same rect is ignored until the user selects
+     * something else.
+     *
+     * Trade-off: re-selecting the exact same range, with a pixel-identical
+     * rect, and no other selection in between, won't re-open the chip. Selecting
+     * anything else first clears the block.
+     */
+    private var dismissedRect: Rect? = null
+
     override val status: TextToolbarStatus
         get() = if (selectionRect != null) TextToolbarStatus.Shown else TextToolbarStatus.Hidden
 
     override fun hide() {
+        dismissedRect = selectionRect
         selectionRect = null
         copyCallback = null
     }
@@ -48,6 +65,8 @@ class AskTextToolbar(
         onCutRequested: (() -> Unit)?,
         onSelectAllRequested: (() -> Unit)?,
     ) {
+        if (rect == dismissedRect) return
+        dismissedRect = null
         selectionRect = rect
         copyCallback = onCopyRequested
     }

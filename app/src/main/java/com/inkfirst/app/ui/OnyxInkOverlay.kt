@@ -5,6 +5,7 @@ import android.graphics.RectF
 import android.graphics.Rect as AndroidRect
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -70,10 +71,12 @@ import java.time.LocalDate
  *   - Finger DOWN that misses → do NOT consume, letting the parent's
  *     page-turn gesture handle it normally.
  *
- * Erase (barrel-button) currently DOES NOT fire — Onyx's onRawErasing
- * callbacks weren't triggering on the Boox Go 7 pen we tested. Erase
- * remains available via the tap-chip's "Delete" button. Fixing the
- * barrel-button path is queued as a follow-up on task 10.
+ * Erase does not come from the SDK: Onyx's onRawErasing callbacks have
+ * never fired on the Boox Go 7 pen we tested. Instead the interop filter
+ * below OWNS any contact whose MotionEvent says eraser tip or barrel
+ * button, collects its path, erases whatever it crossed on release, and
+ * asks for a panel unlock so the change (and the driver's own ink of the
+ * sweep) becomes visible. The tap-chip's "Delete" button still works too.
  *
  * Phantom strokes (EPD-drawn stroke staying visible while the Compose
  * Canvas below also draws the newly-persisted stroke) are a known issue.
@@ -131,10 +134,20 @@ fun OnyxInkOverlay(
     val penContactRef = remember { mutableStateOf(false) }
     val uiScope = rememberCoroutineScope()
     val unlockJobRef = remember { mutableStateOf<Job?>(null) }
-    /** True while the current contact is a barrel-button press or eraser tip. */
+    /**
+     * True from the DOWN of an eraser contact (eraser tip, or barrel button
+     * held) to its UP. Set and cleared only by the interop filter below,
+     * which has to OWN that contact to see its UP at all.
+     */
     val eraseModeRef = remember { mutableStateOf(false) }
     /** Points the eraser has passed over during the current contact. */
-    val eraseTrailRef = remember { mutableStateOf<List<Pair<Float, Float>>>(emptyList()) }
+    val eraseTrail = remember { mutableListOf<Pair<Float, Float>>() }
+    /**
+     * Uptime when the last eraser contact lifted. Lets the raw commit path
+     * recognise a barrel-button sweep whose SDK end callback lands a few ms
+     * after the MotionEvent UP already cleared [eraseModeRef].
+     */
+    val eraseEndedAtRef = remember { mutableStateOf(0L) }
     /** Set once the SurfaceView is built, so the interop filter can ask for an unlock. */
     val unlockRequestRef = remember { mutableStateOf<((String) -> Unit)?>(null) }
 
@@ -153,77 +166,85 @@ fun OnyxInkOverlay(
             .pointerInteropFilter { event ->
                 val tool = event.getToolType(0)
                 lastToolRef.value = tool
-                // Barrel button / eraser tip, read the same way InkOverlay
-                // reads it — proven on this device. The SDK's own erase
-                // callbacks (onBeginRawErasing and friends) have never once
-                // fired here across three attempts, so erase is detected and
-                // handled by us rather than waiting for the driver to offer
-                // an erase mode it apparently never enters.
-                // Sticky, and evaluated on EVERY event rather than only on
-                // ACTION_DOWN. The eraser arrives as a sequence of contacts —
-                // the arming one (tool=4) and then the tip landing — and
-                // re-evaluating on each DOWN disarmed it again before the
-                // stroke committed: the log showed "erase mode armed" twice
-                // and then a perfectly ordinary stroke.
                 val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS ||
                     tool == MotionEvent.TOOL_TYPE_ERASER
-                val erasingNow = tool == MotionEvent.TOOL_TYPE_ERASER ||
-                    (isStylus && (event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0)
-                if (erasingNow && !eraseModeRef.value) {
-                    Log.d(TAG, "erase mode armed (tool=$tool button=${event.buttonState})")
-                }
-                if (erasingNow) eraseModeRef.value = true
-
-                // Collect the sweep from the MotionEvent stream, not from the
-                // raw callback. The raw path reports an eraser contact as a
-                // single point — "erase sweep n=2 removed=0" — because the SDK
-                // never enters erase mode on this firmware and treats the tip
-                // as one touchdown. MotionEvent carries the whole path.
-                if (eraseModeRef.value) {
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                            // historical samples too: a fast sweep batches
-                            // several positions into one MOVE event, and
-                            // missing them is how a sweep skips over a stroke.
-                            for (h in 0 until event.historySize) {
-                                eraseTrailRef.value += event.getHistoricalX(h) to
-                                    event.getHistoricalY(h)
-                            }
-                            eraseTrailRef.value += event.x to event.y
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            val trail = eraseTrailRef.value
-                            eraseTrailRef.value = emptyList()
-                            eraseModeRef.value = false
-                            if (trail.isNotEmpty()) {
-                                val getTopErase = blockTopYRef.value
-                                val doomed = LinkedHashSet<Stroke>()
-                                trail.forEach { (x, y) ->
-                                    hitTestForErase(strokesRef.value, x, y, getTopErase)
-                                        ?.let(doomed::add)
-                                }
-                                Log.d(
-                                    TAG,
-                                    "erase trail pts=${trail.size} removed=${doomed.size}",
-                                )
-                                doomed.forEach(erasedRef.value)
-                                unlockRequestRef.value?.invoke("eraseTrail")
-                            }
-                        }
-                    }
-                }
-                if (event.actionMasked == MotionEvent.ACTION_UP ||
-                    event.actionMasked == MotionEvent.ACTION_CANCEL
-                ) {
-                    eraseModeRef.value = false
-                }
-                if (tool == MotionEvent.TOOL_TYPE_STYLUS ||
-                    tool == MotionEvent.TOOL_TYPE_ERASER
-                ) {
+                if (isStylus) {
                     penContactRef.value = event.actionMasked != MotionEvent.ACTION_UP &&
                         event.actionMasked != MotionEvent.ACTION_CANCEL
                 }
-                false
+                // The Boolean this lambda returns follows View.onTouchEvent
+                // rules: answering `false` to a DOWN means "not mine", and
+                // Compose then delivers NOTHING more from that contact — no
+                // MOVE, no UP. So an eraser contact has to be claimed with
+                // `true` on its DOWN, or its path and its release are never
+                // seen. (The previous version answered false to everything;
+                // its MOVE/UP branches were dead code, and the erase flag it
+                // latched on DOWN could never be cleared, which turned every
+                // later pen stroke into an erase sweep.) Pen and finger
+                // contacts still get `false`, so the raw path and the finger
+                // gestures below are untouched.
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        // Decided once per contact, from its DOWN. The SDK's
+                        // own erase callbacks (onBeginRawErasing and friends)
+                        // have never fired on this device, so erase is read
+                        // off the MotionEvent — the way InkOverlay does, and
+                        // that is proven on this hardware.
+                        val erasing = tool == MotionEvent.TOOL_TYPE_ERASER ||
+                            (isStylus &&
+                                (event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0)
+                        eraseModeRef.value = erasing
+                        eraseTrail.clear()
+                        if (erasing) {
+                            eraseTrail += event.x to event.y
+                            Log.d(TAG, "erase mode armed (tool=$tool button=${event.buttonState})")
+                        }
+                        erasing
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (eraseModeRef.value) {
+                            // Historical samples too: a fast sweep batches
+                            // several positions into one MOVE, and skipping
+                            // them is how a sweep jumps over a stroke.
+                            for (h in 0 until event.historySize) {
+                                eraseTrail += event.getHistoricalX(h) to event.getHistoricalY(h)
+                            }
+                            eraseTrail += event.x to event.y
+                        }
+                        eraseModeRef.value
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (eraseModeRef.value) {
+                            eraseTrail += event.x to event.y
+                            val getTop = blockTopYRef.value
+                            val doomed = LinkedHashSet<Stroke>()
+                            eraseTrail.forEach { (x, y) ->
+                                hitTestForErase(strokesRef.value, x, y, getTop)?.let(doomed::add)
+                            }
+                            Log.d(TAG, "erase trail pts=${eraseTrail.size} removed=${doomed.size}")
+                            eraseTrail.clear()
+                            eraseModeRef.value = false
+                            eraseEndedAtRef.value = SystemClock.uptimeMillis()
+                            if (doomed.isEmpty()) {
+                                // A miss still reports, with null, so an open
+                                // chip can be dismissed by an eraser tap in
+                                // empty space — same contract as InkOverlay.
+                                erasedRef.value(null)
+                            } else {
+                                doomed.forEach(erasedRef.value)
+                            }
+                            // The model changed, but the panel is frozen while
+                            // the driver holds it, and the driver may have
+                            // inked the sweep itself. The unlock shows the
+                            // former and wipes the latter.
+                            unlockRequestRef.value?.invoke("eraseTrail")
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
             }
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -418,10 +439,18 @@ fun OnyxInkOverlay(
                             scheduleUnlock("fingerStroke")
                             return
                         }
-                        // Belt and braces: the latched flag OR the tool type
-                        // at commit time. Either is enough to mean "erase".
+                        // Belt and braces: the primary erase path is the
+                        // interop filter's MotionEvent trail; this only has
+                        // to keep the eraser sweep from being COMMITTED as
+                        // ink. Eraser tip: the tool type says so. Barrel
+                        // button: the tool type says stylus, so rely on the
+                        // erase flag — plus a short grace, because this runs
+                        // on the SDK thread and can land a few ms after the
+                        // UP that already cleared the flag.
+                        val sinceEraseUp = SystemClock.uptimeMillis() - eraseEndedAtRef.value
                         if (eraseModeRef.value ||
-                            lastToolRef.value == MotionEvent.TOOL_TYPE_ERASER
+                            lastToolRef.value == MotionEvent.TOOL_TYPE_ERASER ||
+                            sinceEraseUp < ERASE_COMMIT_GRACE_MS
                         ) {
                             // Treat the gesture as an eraser sweep: anything
                             // it crosses goes. The driver has already inked the
@@ -772,6 +801,13 @@ private const val PEN_CONTACT_TIMEOUT_MS = 350L
 
 /** How long after a stroke ends before the panel is released. */
 private const val UNLOCK_DEBOUNCE_MS = 200L
+
+/**
+ * How long after an eraser contact lifts a stroke committed by the SDK is
+ * still taken to be that eraser sweep rather than ink. Only the sweep itself
+ * can end inside this window; nobody flips a pen over in 150 ms.
+ */
+private const val ERASE_COMMIT_GRACE_MS = 150L
 
 private fun findAnchorBlockOnyx(
     range: IntRange,
