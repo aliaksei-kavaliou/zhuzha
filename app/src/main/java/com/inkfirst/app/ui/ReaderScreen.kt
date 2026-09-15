@@ -1061,6 +1061,20 @@ private fun PagedContent(
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
                             onStrokeTapped = onStrokeTapped,
+                            // The Onyx overlay reports page taps itself: with
+                            // raw drawing live the SDK owns the host view's
+                            // touch stream and the release never reaches the
+                            // gesture detector below, so tap-to-turn silently
+                            // stopped working. Same thirds as the reader.
+                            onPageTap = { fx ->
+                                when {
+                                    fx < 1f / 3f ->
+                                        goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                    fx > 2f / 3f ->
+                                        goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                    else -> onToggleMenu()
+                                }
+                            },
                             modifier = overlayModifier,
                         )
                     } else {

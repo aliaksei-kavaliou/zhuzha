@@ -37,6 +37,11 @@ import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
 import com.onyx.android.sdk.pen.data.TouchPointList
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /**
@@ -87,11 +92,22 @@ fun OnyxInkOverlay(
     onStrokeAdded: (Stroke) -> Unit,
     onStrokeErased: (Stroke?) -> Unit,
     onStrokeTapped: (Stroke) -> Unit,
+    /**
+     * A finger tap that hit no stroke, as a fraction of overlay width (0..1).
+     *
+     * The overlay reports these itself rather than letting the tap fall
+     * through to the reader's own detector. In this mode the SDK is attached
+     * to the host view's touch stream, and the parent never sees the release
+     * — the tap is observed here (hit=false in the log) and then vanishes, so
+     * page turns silently stopped working.
+     */
+    onPageTap: (fractionX: Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val addedRef = rememberUpdatedState(onStrokeAdded)
     val tappedRef = rememberUpdatedState(onStrokeTapped)
     val erasedRef = rememberUpdatedState(onStrokeErased)
+    val pageTapRef = rememberUpdatedState(onPageTap)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
     val rangeRef = rememberUpdatedState(pageBlockRange)
@@ -113,6 +129,14 @@ fun OnyxInkOverlay(
     /** Tool type of the most recent MotionEvent — the authoritative pen/finger signal. */
     val lastToolRef = remember { mutableStateOf(MotionEvent.TOOL_TYPE_UNKNOWN) }
     val penContactRef = remember { mutableStateOf(false) }
+    val uiScope = rememberCoroutineScope()
+    val unlockJobRef = remember { mutableStateOf<Job?>(null) }
+    /** True while the current contact is a barrel-button press or eraser tip. */
+    val eraseModeRef = remember { mutableStateOf(false) }
+    /** Points the eraser has passed over during the current contact. */
+    val eraseTrailRef = remember { mutableStateOf<List<Pair<Float, Float>>>(emptyList()) }
+    /** Set once the SurfaceView is built, so the interop filter can ask for an unlock. */
+    val unlockRequestRef = remember { mutableStateOf<((String) -> Unit)?>(null) }
 
     Box(
         modifier = modifier
@@ -129,6 +153,70 @@ fun OnyxInkOverlay(
             .pointerInteropFilter { event ->
                 val tool = event.getToolType(0)
                 lastToolRef.value = tool
+                // Barrel button / eraser tip, read the same way InkOverlay
+                // reads it — proven on this device. The SDK's own erase
+                // callbacks (onBeginRawErasing and friends) have never once
+                // fired here across three attempts, so erase is detected and
+                // handled by us rather than waiting for the driver to offer
+                // an erase mode it apparently never enters.
+                // Sticky, and evaluated on EVERY event rather than only on
+                // ACTION_DOWN. The eraser arrives as a sequence of contacts —
+                // the arming one (tool=4) and then the tip landing — and
+                // re-evaluating on each DOWN disarmed it again before the
+                // stroke committed: the log showed "erase mode armed" twice
+                // and then a perfectly ordinary stroke.
+                val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS ||
+                    tool == MotionEvent.TOOL_TYPE_ERASER
+                val erasingNow = tool == MotionEvent.TOOL_TYPE_ERASER ||
+                    (isStylus && (event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0)
+                if (erasingNow && !eraseModeRef.value) {
+                    Log.d(TAG, "erase mode armed (tool=$tool button=${event.buttonState})")
+                }
+                if (erasingNow) eraseModeRef.value = true
+
+                // Collect the sweep from the MotionEvent stream, not from the
+                // raw callback. The raw path reports an eraser contact as a
+                // single point — "erase sweep n=2 removed=0" — because the SDK
+                // never enters erase mode on this firmware and treats the tip
+                // as one touchdown. MotionEvent carries the whole path.
+                if (eraseModeRef.value) {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                            // historical samples too: a fast sweep batches
+                            // several positions into one MOVE event, and
+                            // missing them is how a sweep skips over a stroke.
+                            for (h in 0 until event.historySize) {
+                                eraseTrailRef.value += event.getHistoricalX(h) to
+                                    event.getHistoricalY(h)
+                            }
+                            eraseTrailRef.value += event.x to event.y
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            val trail = eraseTrailRef.value
+                            eraseTrailRef.value = emptyList()
+                            eraseModeRef.value = false
+                            if (trail.isNotEmpty()) {
+                                val getTopErase = blockTopYRef.value
+                                val doomed = LinkedHashSet<Stroke>()
+                                trail.forEach { (x, y) ->
+                                    hitTestForErase(strokesRef.value, x, y, getTopErase)
+                                        ?.let(doomed::add)
+                                }
+                                Log.d(
+                                    TAG,
+                                    "erase trail pts=${trail.size} removed=${doomed.size}",
+                                )
+                                doomed.forEach(erasedRef.value)
+                                unlockRequestRef.value?.invoke("eraseTrail")
+                            }
+                        }
+                    }
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP ||
+                    event.actionMasked == MotionEvent.ACTION_CANCEL
+                ) {
+                    eraseModeRef.value = false
+                }
                 if (tool == MotionEvent.TOOL_TYPE_STYLUS ||
                     tool == MotionEvent.TOOL_TYPE_ERASER
                 ) {
@@ -219,14 +307,15 @@ fun OnyxInkOverlay(
                                         ch.consume()
                                         if (!ch.pressed) break
                                     }
+                                } else {
+                                // Report it ourselves — see onPageTap.
+                                val w = size.width.toFloat()
+                                if (w > 0f) {
+                                    val fx = (at.x / w).coerceIn(0f, 1f)
+                                    Log.d(TAG, "page tap fx=$fx")
+                                    pageTapRef.value(fx)
                                 }
-                                // A miss deliberately does NOT hold the
-                                // gesture. Waiting here for the finger to lift
-                                // broke tap-to-turn-page — the parent's tap
-                                // detector never got its chance and only the
-                                // hardware buttons still paged. The stroke the
-                                // finger generates is caught by the grace
-                                // window below instead, which needs no hold.
+                            }
                             } finally {
                                 fingerDownRef.value = false
                                 fingerUpAtRef.value = System.currentTimeMillis()
@@ -270,26 +359,111 @@ fun OnyxInkOverlay(
                     // Samples collected during one pen-down, in screen space.
                     val sampleBuf = mutableListOf<TouchPoint>()
 
+                    /**
+                     * While raw drawing is enabled the driver owns the panel
+                     * and ordinary posts are not shown — anything Compose
+                     * draws lands in the framebuffer invisibly. Disabling and
+                     * re-enabling releases it; re-enabling does not re-freeze
+                     * until the next stroke begins.
+                     *
+                     * One mechanism behind three symptoms that looked
+                     * unrelated: driver ink surviving an app restart, the
+                     * Compose redraw doubling with the driver's copy, and
+                     * erase appearing to do nothing while correctly editing
+                     * the model.
+                     *
+                     * Unlocking before the frame carrying the change is
+                     * committed flushes the pre-stroke buffer and makes the
+                     * ink flash, hence the debounce and the two frame waits.
+                     */
+                    fun cancelUnlock() {
+                        unlockJobRef.value?.cancel()
+                        unlockJobRef.value = null
+                    }
+
+                    fun scheduleUnlock(reason: String) {
+                        unlockJobRef.value?.cancel()
+                        unlockJobRef.value = uiScope.launch {
+                            delay(UNLOCK_DEBOUNCE_MS)
+                            withFrameNanos {}
+                            withFrameNanos {}
+                            try {
+                                touchHelperRef.value?.let {
+                                    it.setRawDrawingEnabled(false)
+                                    it.setRawDrawingEnabled(true)
+                                }
+                                Log.d(TAG, "unlock($reason)")
+                            } catch (t: Throwable) {
+                                Log.w(TAG, "unlock($reason) failed", t)
+                            }
+                        }
+                    }
+
+                    unlockRequestRef.value = { reason -> scheduleUnlock(reason) }
+
                     fun emitStroke(pts: List<TouchPoint>, source: String) {
                         if (pts.isEmpty()) return
-                        // Mode 4 hands us finger contacts as strokes too: every
-                        // page-turn tap drew a dot, then "hit" the dot it had
-                        // just made, which made tap, page-turn and erase all
-                        // look broken at once. Compose sees the finger, the SDK
-                        // doesn't distinguish it, so this is where they meet.
-                        val lastUp = fingerUpAtRef.value
-                        val sinceFingerUp =
-                            if (lastUp == 0L) Long.MAX_VALUE else System.currentTimeMillis() - lastUp
-                        val toolIsPen = lastToolRef.value == MotionEvent.TOOL_TYPE_STYLUS ||
-                            lastToolRef.value == MotionEvent.TOOL_TYPE_ERASER
-                        if (!toolIsPen &&
-                            (fingerDownRef.value || sinceFingerUp < FINGER_STROKE_GRACE_MS)
+                        // Ink only from the pen. Tool type comes from the
+                        // MotionEvent via pointerInteropFilter — the raw
+                        // callbacks carry none, and the SDK's own
+                        // enableFingerTouch(false) disables the whole reader
+                        // on this firmware (pen included), so it is unusable.
+                        val tool = lastToolRef.value
+                        if (tool != MotionEvent.TOOL_TYPE_STYLUS &&
+                            tool != MotionEvent.TOOL_TYPE_ERASER
                         ) {
+                            Log.d(TAG, "emit($source) n=${pts.size} dropped — tool=$tool not a pen")
+                            // Unlock anyway: the driver already inked this on
+                            // the panel and nothing will redraw over it.
+                            scheduleUnlock("fingerStroke")
+                            return
+                        }
+                        // Belt and braces: the latched flag OR the tool type
+                        // at commit time. Either is enough to mean "erase".
+                        if (eraseModeRef.value ||
+                            lastToolRef.value == MotionEvent.TOOL_TYPE_ERASER
+                        ) {
+                            // Treat the gesture as an eraser sweep: anything
+                            // it crosses goes. The driver has already inked the
+                            // sweep itself on the panel; the unlock wipes it,
+                            // because nothing about it is committed.
+                            val getTopErase = blockTopYRef.value
+                            val doomed = LinkedHashSet<Stroke>()
+                            pts.forEach { p ->
+                                hitTestForErase(strokesRef.value, p.x, p.y, getTopErase)
+                                    ?.let(doomed::add)
+                            }
+                            // Why nothing matched, in numbers: where the sweep
+                            // actually went versus where the strokes actually
+                            // are, in the same coordinate space.
+                            val sxs = pts.map { it.x }
+                            val sys = pts.map { it.y }
                             Log.d(
                                 TAG,
-                                "emit($source) n=${pts.size} dropped — finger contact " +
-                                    "(down=${fingerDownRef.value} sinceUp=${sinceFingerUp}ms)",
+                                "erase sweep n=${pts.size} removed=${doomed.size} " +
+                                    "sweepBox=(${sxs.min().toInt()},${sys.min().toInt()})-" +
+                                    "(${sxs.max().toInt()},${sys.max().toInt()}) " +
+                                    "strokes=${strokesRef.value.size}",
                             )
+                            strokesRef.value.take(4).forEach { st ->
+                                val top = getTopErase(st.blockIndex)
+                                if (top == null) {
+                                    Log.d(TAG, "  stroke blk=${st.blockIndex} top=NULL (skipped)")
+                                } else {
+                                    val xs2 = st.points.map { it.x }
+                                    val ys2 = st.points.map { it.y + top }
+                                    Log.d(
+                                        TAG,
+                                        "  stroke blk=${st.blockIndex} top=${top.toInt()} " +
+                                            "box=(${xs2.min().toInt()},${ys2.min().toInt()})-" +
+                                            "(${xs2.max().toInt()},${ys2.max().toInt()})",
+                                    )
+                                }
+                            }
+                            if (doomed.isNotEmpty()) {
+                                mainHandler.post { doomed.forEach(erasedRef.value) }
+                            }
+                            scheduleUnlock("eraseSweep")
                             return
                         }
                         val (ox, oy) = originRef.value
@@ -330,6 +504,7 @@ fun OnyxInkOverlay(
 
                     val callback = object : RawInputCallback() {
                         override fun onBeginRawDrawing(shortcut: Boolean, point: TouchPoint) {
+                            cancelUnlock()   // don't refresh mid-writing
                             originRef.value = originOnScreen()
                             Log.d(TAG, "onBeginRawDrawing local=(${point.x},${point.y})")
                             startTouchRef.value = point
@@ -357,6 +532,7 @@ fun OnyxInkOverlay(
                             if (!emittedRef.value) emitStroke(sampleBuf.toList(), "moves")
                             emittedRef.value = false
                             sampleBuf.clear()
+                            scheduleUnlock("draw")
                         }
 
                         override fun onRawDrawingTouchPointMoveReceived(point: TouchPoint) {
@@ -397,6 +573,10 @@ fun OnyxInkOverlay(
                         }
                         override fun onEndRawErasing(outOfLimit: Boolean, point: TouchPoint) {
                             Log.d(TAG, "onEndRawErasing outOfLimit=$outOfLimit")
+                            // Erasing edits the model, but nothing redraws
+                            // while the panel is frozen — which is exactly why
+                            // erase looked like it did nothing at all.
+                            scheduleUnlock("erase")
                         }
                         override fun onRawErasingTouchPointMoveReceived(point: TouchPoint) {}
                         override fun onRawErasingTouchPointListReceived(list: TouchPointList) {
@@ -589,6 +769,9 @@ private const val FINGER_STROKE_GRACE_MS = 800L
  * blocked every tap for six seconds after each stroke.
  */
 private const val PEN_CONTACT_TIMEOUT_MS = 350L
+
+/** How long after a stroke ends before the panel is released. */
+private const val UNLOCK_DEBOUNCE_MS = 200L
 
 private fun findAnchorBlockOnyx(
     range: IntRange,
