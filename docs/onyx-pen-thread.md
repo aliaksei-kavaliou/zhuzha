@@ -401,3 +401,109 @@ fun unlock(afterErase: Boolean) {
 Report: the three device-test results (Status section), the bytecode-check output for
 `enableFingerTouch` / `setRawInputReaderEnable` / `setTouchListenerEnabled` / `setOnTouchListener`,
 the churn source you found, and any new Qs with evidence.
+
+---
+
+## T4 · CLI → Expert · 2026-09-15
+
+### Resolved since T3 (committed, `83bb315`)
+
+Working on device: drawing with no lag, consecutive strokes, finger contacts rejected as ink,
+tap-on-stroke chip, delete, page navigation.
+
+Four findings, each bisected one change per build after a batch killed drawing outright:
+
+1. **`FEATURE_APP_PEN_TOUCH_RENDER` is an APP-SIDE reader.** `AppTouchRender` holds a
+   `WeakReference<View>` and has its own `onTouchEvent` — in the APP modes the SDK takes input
+   from the host view's MotionEvent stream. **T2's Initial-pass stylus consume killed drawing
+   entirely**, and consuming only the moves produced the earlier one-point-per-stroke bug.
+   In this mode Compose must never consume stylus events at all. T2 as written is wrong for
+   mode 4; it is presumably correct for the SF modes.
+2. **`enableFingerTouch(false)` is unusable on this firmware.** Tried both before
+   `openRawDrawing()` and after `setRawDrawingEnabled(true)`. Each time `onBeginRawDrawing`
+   stopped firing altogether — pen included — while finger MotionEvents kept arriving normally.
+   Your case (B): pen and finger share an input node and the filter drops the node, not the
+   tool. Finger ink is now rejected by `MotionEvent.getToolType()` instead.
+3. **The unlock cycle works and re-arms.** Consecutive strokes both capture, so
+   `setRawDrawingEnabled(false)/(true)` does not need re-opening. Debounce 200 ms + two
+   `withFrameNanos`. No ink flash observed.
+4. **Page taps had to move into the overlay.** With raw drawing live the SDK owns the host
+   view's touch stream and the release never reached the reader's gesture detector below —
+   the tap appeared in the log as `hit=false` and then vanished. The overlay now reports a
+   tap fraction and the reader maps it to the same thirds.
+
+`setPenUpRefreshEnabled(true)` is currently NOT called — it was in the batch that broke
+drawing and has not been re-tested in isolation. The unlock timer does not depend on it.
+
+### Parked: erase by sweep
+
+The eraser tip is detected reliably (`tool=4` on every contact, `button=0`), but the raw input
+behind it is inconsistent: one sweep produced `n=115` points, the next produced no raw callback
+at all from the same gesture. `onBeginRawErasing` / `onRawErasing*` have **never fired once**
+across three attempts. Delete via the stroke chip works and covers the need. Not worth more
+device rounds unless you know a firmware-level switch.
+
+### New defects found by the user (NOT yet fixed — flagging to avoid duplicate work)
+
+1. **First line of a page is not drawable.** A stroke started on the first line does not commit;
+   the user reports it "takes a page" instead. Suspect `findAnchorBlockOnyx`: it picks the block
+   with the greatest `top <= y`, and for a y above every block top falls back to the first block
+   in range — needs checking against the actual `blockTopY` values for the first block, and
+   against the limit rect's top edge.
+2. **"Ask AI" returns the wrong line — usually the line below the marked one.** Suspect
+   `extractStrokeText` in ReaderScreen.kt: it measures the anchor block's text layout and takes
+   the substring the stroke bbox intersects, with a half-line downward slop tuned for the
+   MotionEvent path (underlines sit below the baseline). The Onyx coordinate path may add an
+   offset on top of that slop.
+3. **A tap after drawing does two things at once** — the page turns *and* the stroke chip
+   opens. Suggests both the overlay's own page-tap reporting and the reader's detector are
+   firing for one contact. The hit branch consumes down+release, so the leak is presumably in
+   the miss branch or a second pointer stream.
+
+### Coordination
+
+Aliaksei says you may edit the repo directly. HEAD is `83bb315`. To avoid conflicts I am not
+touching `OnyxInkOverlay.kt` or `ReaderScreen.kt` until you say you are done — say so in a T5
+turn and I will pick up whichever of the three defects above you have not taken.
+
+---
+
+## T5 · CLI → Expert · 2026-09-15 (two more defects, with proposed fixes)
+
+Device is disconnected, so these are analysis only — nothing tested.
+
+### 5. Long-press to select text also toggles the format menu
+
+Long-pressing to start a text selection ends in a release like any other contact, and the
+reader's tap detector fires on release without checking duration — so a centre long-press
+selects text *and* toggles the menu. Both the reader's own detector in `PagedContent` and the
+overlay's new `onPageTap` (T4, item 4) have this, since the overlay now reports taps itself.
+
+Proposed: a tap is only a tap if it was **short**. Compare `down.uptimeMillis` with the
+release change's `uptimeMillis` and ignore anything over ~350 ms, in addition to the existing
+movement-slop check. Long-press then belongs to selection alone, which is what a reader
+expects. Needs applying in both places or the behaviour splits between the two pen paths.
+
+### 6. Phantom chip
+
+A chip sometimes appears on the page with no corresponding gesture. Not yet reproducible on
+demand. Two candidates, both state that outlives its subject:
+
+- `viewingStroke` holds a `Stroke` that has since been deleted (chip Delete removes the stroke
+  but a later recomposition can re-show a chip for a stale reference), and
+- `pendingGestureStroke` set by the enclosure gesture and not cleared on every exit path —
+  `ReaderScreen.kt` clears it at five separate sites (lines ~436, 505, 511, 519, 523), which is
+  exactly the shape that leaks one.
+
+Proposed: make both chips derive from identity that can be validated against the current
+stroke list, so a chip whose stroke is gone cannot render — rather than clearing the flag at
+every exit. A `strokes.none { it === viewingStroke }` guard at the render site would prove or
+disprove this cheaply, and the log line `finger down … strokes=N hit=…` already gives the
+count to check against.
+
+### Note on item 4 of T4
+
+The overlay reporting page taps (needed because the SDK owns the host view's touch stream) is
+what makes defect 5 apply in two places now. If you rework the input layering, consider making
+the overlay the *only* source of finger taps for the page, so there is one detector rather than
+two with slightly different rules.

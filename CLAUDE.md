@@ -21,7 +21,10 @@ Name origin: "Ink First" = e-ink-first design + a nod to Head First. GitHub name
 - Primary device: **Onyx Boox Go 7 (black, 2025 gen)** — 7" e-ink, Android-based, stylus support, sideloaded APK.
 - E-ink rules: **no animations, no scrolling** in reading UI. Paginated everything. High contrast, no gradients, generous tap targets. This is a feature, not a limitation — the book-page metaphor is the whole point.
 - Standard Android app; Boox runs Android (Go 7: Android 12). Develop/test on emulator or any Android phone, verify on device via sideload.
-- Onyx SDK (onyxsdk-pen) exists for low-latency raw pen input — needed for the handwriting notebook **later**, not for MVP. It's sparsely maintained; treat as a phase-2 integration risk.
+- Onyx SDK (onyxsdk-pen 1.5.4) provides low-latency raw pen input. **Integrated and working**
+  as of 2026-09-15, after three failed attempts — it is sparsely documented and several of its
+  behaviours are counter-intuitive enough to have cost whole sessions. Read design.md §11 and
+  `docs/onyx-pen-thread.md` before changing anything in `OnyxInkOverlay.kt`.
 
 ## Architecture decisions (already made — don't relitigate without asking)
 
@@ -51,7 +54,9 @@ Aliaksei's main language is PHP; Python is a language he likes but rarely uses; 
 6. **Progress tracking**: chapter done/in-progress, simple course dashboard.
 7. Typed notes per chapter.
 
-**Explicitly NOT in MVP**: handwriting/stylus (phase 2, via Onyx pen SDK), other platforms (iPad was discussed and deliberately deferred; not a goal), accounts/sync/backend (never, unless this becomes a product).
+**Explicitly NOT in MVP**: handwriting/stylus (phase 2, via Onyx pen SDK — *since built, see
+design.md §11*), other platforms (iPad was discussed and deliberately deferred; not a goal),
+accounts/sync/backend (never, unless this becomes a product).
 
 ## Working agreements
 
@@ -60,10 +65,25 @@ Aliaksei's main language is PHP; Python is a language he likes but rarely uses; 
 - Keep `docs/design.md` updated when architecture actually changes; keep this file updated when *decisions* change.
 - Dogfooding is the success metric: "Aliaksei reads a generated chapter on the Boox in the evening" beats any feature. Bias toward getting the read-loop working end-to-end early, even ugly.
 
-## Where things stand
+## Where things stand (2026-09-15)
 
-- [x] Idea validated (no direct competitor combines: generated paced book + selection-aware chat + notes + e-ink-first)
-- [x] Name, stack, architecture decided; folder created at `~/dev_pers/inkfirst`
-- [ ] Nothing built yet. Next step: MVP item 1 (scaffold), then git init + first commit.
+The app is **built and in daily use on the Boox Go 7**. MVP items 1–7 all ship; several
+post-MVP slices ship on top. Treat the list below as the current truth — the "nothing built
+yet" note that used to live here was two months stale.
+
+- [x] MVP 1–7: scaffold, course creation, chapter generation with cross-chapter memory,
+      paginated reader, selection-anchored chat, progress tracking, notes.
+- [x] **Phase 3 figures** — hand-drawn chapter illustrations, device-verified (see design.md §7).
+- [x] **Badges** — a per-course mascot marking exercise / recap / answer / code blocks (§9).
+- [x] **Chapter covers** — an opening picture of the problem each chapter solves (§10).
+- [x] **Phase 2 handwriting** — the Onyx raw-ink path works: drawing with no lag, stroke
+      persistence, tap-on-stroke chip, delete, page navigation (§11).
+- [ ] **Erase by sweep on the pen path** — uncommitted and device-untested as of 2026-09-15.
+      Read `docs/handoff-2026-09-15-onyx-erase.md` before touching `OnyxInkOverlay.kt` or
+      `ReaderScreen.kt`; `docs/onyx-pen-thread.md` is the full investigation log.
+- [ ] Known open defects: first line of a page not drawable; "Ask AI" returns the line below
+      the marked one; a tap after drawing both turns the page and opens the chip; long-press
+      to select also toggles the format menu; an occasional phantom chip. All documented in
+      `docs/onyx-pen-thread.md` (T4/T5).
 
 See `docs/design.md` for data model, file formats, and the generation strategy.
