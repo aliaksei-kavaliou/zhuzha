@@ -320,6 +320,35 @@ class CourseStore(private val root: File) {
     }
 
     /**
+     * The chapter's closing picture — the cover's payoff — or null.
+     */
+    fun tailFile(courseSlug: String, chapterSlug: String): File? {
+        val dir = File(root, "$courseSlug/figures")
+        if (!dir.isDirectory) return null
+        return dir.listFiles().orEmpty().firstOrNull {
+            it.isFile && it.length() > 0L && it.nameWithoutExtension == "$chapterSlug-tail"
+        }
+    }
+
+    /**
+     * The scene brief the cover was drawn from, saved beside it.
+     *
+     * The closing picture is a rewrite of that one scene rather than a second
+     * idea about the chapter, so it needs the original wording — the image
+     * alone would let the model drift to a different metaphor.
+     */
+    fun saveCoverBrief(courseSlug: String, chapterSlug: String, brief: String) {
+        if (brief.isBlank()) return
+        val dir = File(root, "$courseSlug/figures").apply { mkdirs() }
+        File(dir, "$chapterSlug-cover.txt").writeText(brief.trim())
+    }
+
+    fun readCoverBrief(courseSlug: String, chapterSlug: String): String {
+        val f = File(root, "$courseSlug/figures/$chapterSlug-cover.txt")
+        return if (f.isFile) f.readText().trim() else ""
+    }
+
+    /**
      * Badge kinds become file names, so they are held to plain letters — a
      * kind is a fence keyword from the chapter model, and nothing stops that
      * model from emitting one with a slash in it.

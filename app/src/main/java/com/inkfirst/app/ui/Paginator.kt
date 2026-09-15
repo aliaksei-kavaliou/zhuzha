@@ -143,7 +143,14 @@ private fun estimateHeight(
             }
             val fontSize = baseSize * fontScale
             val result = measurer.measure(
-                text = AnnotatedString(block.inlines.plainText()),
+                // Measure what is drawn: an h1 has its "Chapter N:" prefix
+                // stripped by the renderer, and on a narrow page that is the
+                // difference between a two-line and a three-line title.
+                text = AnnotatedString(
+                    block.inlines.plainText().let {
+                        if (block.level == 1) stripChapterPrefixForMeasure(it) else it
+                    },
+                ),
                 style = TextStyle(
                     fontSize = fontSize,
                     lineHeight = fontSize * 1.2f,  // headings ignore lineSpacing — always tight
@@ -152,7 +159,14 @@ private fun estimateHeight(
                 ),
                 constraints = Constraints(maxWidth = widthPx),
             )
-            (if (atPageTop) 0 else topPad.toPx().toInt()) + result.size.height + botPad.toPx().toInt()
+            // A chapter cover attached to the title heading (see
+            // Block.Heading.coverSrc) is a fixed-ratio picture below it.
+            val cover = block.coverSrc
+                ?.takeIf { hasFigureImage(it) }
+                ?.let { (widthPx / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt() }
+                ?: 0
+            (if (atPageTop) 0 else topPad.toPx().toInt()) + result.size.height +
+                botPad.toPx().toInt() + cover
         }
         is Block.Paragraph -> {
             val result = measurer.measure(
@@ -207,6 +221,15 @@ private fun estimateHeight(
                     0
                 }
                 return@with result.size.height + 8.dp.toPx().toInt() + standInTitle + cover
+            }
+            // The closing picture: a fixed-ratio image with air above it.
+            if (block.kind == "tail") {
+                val src = block.params["src"]
+                return@with if (src != null && hasFigureImage(src)) {
+                    (widthPx / FIGURE_ASPECT).toInt() + 24.dp.toPx().toInt()
+                } else {
+                    0
+                }
             }
             // An illustrated figure is a picture, not a bordered text box:
             // full content width at the fixed figure ratio, plus the vertical
@@ -295,3 +318,10 @@ private fun List<Inline>.plainText(): String = joinToString("") { i ->
         is Inline.Code -> i.text
     }
 }
+
+/** Mirror of the renderer's chapter-prefix strip; keep the two in step. */
+private fun stripChapterPrefixForMeasure(title: String): String =
+    MEASURE_CHAPTER_PREFIX.replace(title, "").trim().ifBlank { title }
+
+private val MEASURE_CHAPTER_PREFIX =
+    Regex("""^\s*chapter\s+\d+\s*[:.\u2014\u2013-]\s*""", RegexOption.IGNORE_CASE)

@@ -78,7 +78,7 @@ yet" note that used to live here was two months stale.
 - [x] **Chapter covers** — an opening picture of the problem each chapter solves (§10).
 - [x] **Phase 2 handwriting** — the Onyx raw-ink path works: drawing with no lag, stroke
       persistence, tap-on-stroke chip, delete, page navigation (§11).
-- [ ] **Erase by sweep on the pen path** — uncommitted and device-untested as of 2026-09-15.
+- [ ] **Erase by sweep on the pen path** — committed in `eb7ea05`, device-untested as of 2026-09-15.
       Read `docs/handoff-2026-09-15-onyx-erase.md` before touching `OnyxInkOverlay.kt` or
       `ReaderScreen.kt`; `docs/onyx-pen-thread.md` is the full investigation log.
 - [ ] Known open defects: first line of a page not drawable; "Ask AI" returns the line below

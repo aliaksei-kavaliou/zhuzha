@@ -38,6 +38,7 @@ class ChapterIllustrator(
         apiKey: String,
         textModel: String,
         saveImage: (fileName: String, bytes: ByteArray) -> Unit,
+        saveBrief: (String) -> Unit = {},
     ): String? {
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
         return try {
@@ -56,12 +57,72 @@ class ChapterIllustrator(
             )
             val fileName = chapterCoverName(chapter.slug, image.extension)
             saveImage(fileName, image.bytes)
+            // Keep the brief: the closing picture is a rewrite of this exact
+            // scene, and only the PNG used to survive.
+            saveBrief(brief)
             fileName
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             System.err.println(
                 "cover for ${chapter.slug} failed: ${e::class.simpleName}: ${e.message}",
+            )
+            null
+        }
+    }
+
+    /**
+     * Draws the chapter's closing picture — the payoff to the cover.
+     *
+     * Deliberately NOT an independent generation. Two separate calls about
+     * the same chapter produce two unrelated drawings, and the whole point is
+     * that the pair rhymes: same character, same setting, same objects, only
+     * the situation changed. So the cover's own brief is rewritten into an
+     * "after" scene, and the cover PNG rides along as the reference image —
+     * the same mechanism that keeps a course's badges one mascot.
+     *
+     * Needs [coverBrief]; without the original wording the model drifts to a
+     * different metaphor even with the picture attached.
+     *
+     * Returns the file name written, or null if nothing was drawn.
+     */
+    suspend fun drawTail(
+        course: Course,
+        chapter: PersistedChapter,
+        apiKey: String,
+        textModel: String,
+        coverBrief: String,
+        coverImage: GeneratedImage?,
+        saveImage: (fileName: String, bytes: ByteArray) -> Unit,
+    ): String? {
+        require(apiKey.isNotBlank()) { "apiKey must not be blank" }
+        if (coverBrief.isBlank() && coverImage == null) {
+            System.err.println("tail for ${chapter.slug}: no cover to pay off — skipped")
+            return null
+        }
+        return try {
+            val brief = client.generateText(
+                model = textModel,
+                systemInstruction = "You write briefs for illustrators. You reply with the brief and nothing else.",
+                userPrompt = buildClosingBriefPrompt(course, chapter, coverBrief),
+                apiKey = apiKey,
+            ).trim().ifBlank { coverBrief }
+
+            val image = client.generateImage(
+                model = model,
+                prompt = buildCoverPrompt(course, chapter, brief),
+                aspectRatio = FIGURE_ASPECT_RATIO,
+                apiKey = apiKey,
+                referenceImage = coverImage,
+            )
+            val fileName = chapterTailName(chapter.slug, image.extension)
+            saveImage(fileName, image.bytes)
+            fileName
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println(
+                "tail for ${chapter.slug} failed: ${e::class.simpleName}: ${e.message}",
             )
             null
         }

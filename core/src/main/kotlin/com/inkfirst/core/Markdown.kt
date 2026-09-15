@@ -8,7 +8,18 @@ package com.inkfirst.core
  * touching callers because [Block] stays as the contract.
  */
 sealed interface Block {
-    data class Heading(val level: Int, val inlines: List<Inline>) : Block
+    /**
+     * [coverSrc] is set by the reader, never by the parser: when a chapter
+     * opens with its own h1, the chapter cover is attached to that heading so
+     * the picture renders *after* the title. Tagging the existing block keeps
+     * every annotation and ink anchor at its index, which prepending a block
+     * would not.
+     */
+    data class Heading(
+        val level: Int,
+        val inlines: List<Inline>,
+        val coverSrc: String? = null,
+    ) : Block
     data class Paragraph(val inlines: List<Inline>) : Block
     data class BulletItem(val inlines: List<Inline>) : Block
     data class OrderedItem(val n: Int, val inlines: List<Inline>) : Block

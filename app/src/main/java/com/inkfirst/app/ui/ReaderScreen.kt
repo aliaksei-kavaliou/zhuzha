@@ -256,6 +256,9 @@ fun ReaderScreen(
     val hasCover = remember(course?.slug, chapterSlug, badgeVersion) {
         course?.slug?.let { store.coverFile(it, chapterSlug) != null } == true
     }
+    val hasTail = remember(course?.slug, chapterSlug, badgeVersion) {
+        course?.slug?.let { store.tailFile(it, chapterSlug) != null } == true
+    }
     val pendingBadges = remember(course?.slug, badgeVersion, neededBadges) {
         val have = course?.slug?.let { store.badgeKinds(it) }.orEmpty()
         neededBadges.count { it !in have }
@@ -274,8 +277,13 @@ fun ReaderScreen(
             val dayLabel = course?.let { c ->
                 courseDaySchedule(c).firstOrNull { it.chapterN == chapter.n }?.label
             }
+            // "Chapter N" leads the byline so every chapter is numbered the
+            // same way, whatever the model wrote. Some chapters opened with
+            // "# Chapter 5: …" and others with a bare title, because the
+            // number only ever existed when the model happened to type it.
             val metaBody = buildString {
-                append("~${chapter.estMinutes} min")
+                append("Chapter ${chapter.n}")
+                append(" · ~${chapter.estMinutes} min")
                 if (!dayLabel.isNullOrEmpty()) append(" · $dayLabel")
                 append(" · ${statusLabel(chapter.status)}")
             }
@@ -290,14 +298,40 @@ fun ReaderScreen(
             // block index, and inserting a block would slide every anchor in
             // exactly the chapters that lack a title.
             val opensWithTitle = (parsed.firstOrNull() as? Block.Heading)?.level == 1
+            val coverName = course?.slug?.let { slug ->
+                store.coverFile(slug, chapter.slug)?.name
+            }
             val metaParams = buildMap {
                 if (!opensWithTitle) put("title", chapter.title)
-                course?.slug?.let { slug ->
-                    store.coverFile(slug, chapter.slug)?.let { put("cover", it.name) }
-                }
+                // The cover belongs AFTER the title, always. When the model
+                // wrote its own h1 the cover used to sit in the meta block
+                // above it, so the picture came before the title in some
+                // chapters and after it in others. It rides with whichever
+                // block actually shows the title.
+                if (coverName != null && !opensWithTitle) put("cover", coverName)
             }
             val meta = Block.CustomFence(kind = "meta", params = metaParams, body = metaBody)
-            listOf(meta) + parsed
+            val rest = if (coverName != null && opensWithTitle) {
+                // Attach the cover to the model's own h1 by tagging that
+                // heading — no block is added or removed, so every annotation
+                // and ink anchor keeps its index.
+                parsed.mapIndexed { i, b ->
+                    if (i == 0 && b is Block.Heading) b.copy(coverSrc = coverName) else b
+                }
+            } else {
+                parsed
+            }
+            // The closing picture rides in a synthetic block appended at the
+            // END. Unlike the title, this one can safely be a block of its
+            // own: adding to the tail shifts no existing index, so no
+            // annotation or ink anchor moves.
+            val tailName = course?.slug?.let { slug ->
+                store.tailFile(slug, chapter.slug)?.name
+            }
+            val tail = tailName?.let {
+                Block.CustomFence(kind = "tail", params = mapOf("src" to it), body = "")
+            }
+            listOf(meta) + rest + listOfNotNull(tail)
         }
     }
 
@@ -660,6 +694,20 @@ fun ReaderScreen(
                 busyDrawing = compileState is CompileState.Illustrating,
                 pendingBadges = pendingBadges,
                 hasCover = hasCover,
+                hasTail = hasTail,
+                onDrawTail = {
+                    val c = course ?: return@FormatMenu
+                    val ch = chapter ?: return@FormatMenu
+                    drawChapterTail(
+                        course = c,
+                        chapter = ch,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { badgeVersion++ },
+                    )
+                },
                 onDrawCover = {
                     val c = course ?: return@FormatMenu
                     val ch = chapter ?: return@FormatMenu
@@ -1202,11 +1250,13 @@ private fun FormatMenu(
     pendingFigures: Int,
     pendingBadges: Int,
     hasCover: Boolean,
+    hasTail: Boolean,
     figureStatus: String?,
     busyDrawing: Boolean,
     onIllustrate: () -> Unit,
     onDrawBadges: () -> Unit,
     onDrawCover: () -> Unit,
+    onDrawTail: () -> Unit,
     onToggleBookmark: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
@@ -1291,6 +1341,25 @@ private fun FormatMenu(
                 ) {
                     Text(
                         text = "Draw chapter picture",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (busyDrawing) MutedColor else InkColor,
+                    )
+                }
+            }
+        }
+
+        // The closing picture. Only offered once a cover exists, since it is
+        // that scene resolved rather than a picture in its own right.
+        if (hasCover && !hasTail) {
+            MenuRow(label = "Chapter") {
+                Box(
+                    modifier = Modifier
+                        .clickable(enabled = !busyDrawing) { onDrawTail() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "Draw closing picture",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (busyDrawing) MutedColor else InkColor,
@@ -1448,7 +1517,7 @@ private fun RenderBlock(
     loadBadge: (String) -> ImageBitmap?,
 ) {
     when (block) {
-        is Block.Heading -> HeadingBlock(block, fontScale, atPageTop)
+        is Block.Heading -> HeadingBlock(block, fontScale, atPageTop, loadFigure)
         is Block.Paragraph -> ParagraphBlock(
             block.inlines, fontScale, lineSpacing, textAlign,
             annotations, onOpenAnnotation,
@@ -1461,13 +1530,19 @@ private fun RenderBlock(
             "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge)
             "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
             "meta" -> MetaBlock(block, fontScale, loadFigure)
+            "tail" -> TailBlock(block, loadFigure)
             else -> UnknownFenceBlock(block, fontScale, loadBadge)
         }
     }
 }
 
 @Composable
-private fun HeadingBlock(h: Block.Heading, fontScale: Float, atPageTop: Boolean = false) {
+private fun HeadingBlock(
+    h: Block.Heading,
+    fontScale: Float,
+    atPageTop: Boolean = false,
+    loadFigure: (String) -> ImageBitmap? = { null },
+) {
     // Space below a heading used to be 10dp for an h2 — 19px against a 56px
     // body leading, so the gap under a heading was SMALLER than the gap
     // between two ordinary lines, and the heading read as falling into the
@@ -1487,7 +1562,12 @@ private fun HeadingBlock(h: Block.Heading, fontScale: Float, atPageTop: Boolean 
     // the air — and the spacer just pushes the page down.
     if (!atPageTop) Spacer(Modifier.height(top))
     Text(
-        text = renderInlines(h.inlines),
+        // "Chapter 5: " is stripped from the model's own heading because the
+        // byline above already numbers every chapter. Leaving it produced
+        // "Chapter 5 · ~60 min" directly above "Chapter 5: Stepping Down…".
+        text = renderInlines(h.inlines).let {
+            if (h.level == 1) AnnotatedString(stripChapterPrefix(it.text)) else it
+        },
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Bold,
         fontSize = fontSize,
@@ -1495,7 +1575,28 @@ private fun HeadingBlock(h: Block.Heading, fontScale: Float, atPageTop: Boolean 
         color = InkColor,
     )
     Spacer(Modifier.height(bottom))
+    // The chapter's opening picture, when this heading is the chapter title.
+    h.coverSrc?.let(loadFigure)?.let { cover ->
+        Image(
+            bitmap = cover,
+            contentDescription = null,
+            modifier = Modifier.fillMaxWidth().aspectRatio(FIGURE_ASPECT),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+        )
+        Spacer(Modifier.height(16.dp))
+    }
 }
+
+/**
+ * Drops a leading "Chapter 5:", "Chapter 5 —" or "Chapter 5." from a title.
+ * The model writes the number roughly half the time; the reader numbers every
+ * chapter itself, so the model's copy is redundant when present.
+ */
+private fun stripChapterPrefix(title: String): String =
+    CHAPTER_PREFIX.replace(title, "").trim().ifBlank { title }
+
+private val CHAPTER_PREFIX = Regex("""^\s*chapter\s+\d+\s*[:.\u2014\u2013-]\s*""", RegexOption.IGNORE_CASE)
 
 @Composable
 private fun ParagraphBlock(
@@ -1897,6 +1998,24 @@ private fun badgeColorFilter(): ColorFilter {
         ),
     )
     return ColorFilter.colorMatrix(matrix)
+}
+
+/**
+ * The chapter's closing picture — the cover's payoff, shown after the last
+ * block. Borderless and uncaptioned like every other picture in the book;
+ * arriving at it is what tells you the chapter is over.
+ */
+@Composable
+private fun TailBlock(f: Block.CustomFence, loadFigure: (String) -> ImageBitmap?) {
+    val picture = f.params["src"]?.let(loadFigure) ?: return
+    Spacer(Modifier.height(24.dp))
+    Image(
+        bitmap = picture,
+        contentDescription = null,
+        modifier = Modifier.fillMaxWidth().aspectRatio(FIGURE_ASPECT),
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+    )
 }
 
 /**
@@ -2646,6 +2765,7 @@ private fun drawChapterCover(
                     apiKey = apiKey,
                     textModel = course.model,
                     saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
+                    saveBrief = { brief -> store.saveCoverBrief(course.slug, chapter.slug, brief) },
                 )
                 onState(CompileState.Idle)
                 onDone()
@@ -2654,6 +2774,60 @@ private fun drawChapterCover(
             throw e
         } catch (e: Exception) {
             System.err.println("cover failed: ${e::class.simpleName}: ${e.message}")
+            onState(CompileState.Failed(geminiErrorLabel(e)))
+        }
+    }
+}
+
+/**
+ * Draws the chapter's closing picture: the cover's payoff.
+ *
+ * Requires a cover — it is a rewrite of that scene, not a second idea about
+ * the chapter — so the cover's brief and the cover PNG both go along, the
+ * latter as the image model's reference.
+ */
+private fun drawChapterTail(
+    course: Course,
+    chapter: PersistedChapter,
+    scope: kotlinx.coroutines.CoroutineScope,
+    store: com.inkfirst.core.CourseStore,
+    apiKeyStore: ApiKeyStore,
+    onState: (CompileState) -> Unit,
+    onDone: () -> Unit,
+) {
+    val apiKey = apiKeyStore.getApiKey().orEmpty()
+    if (apiKey.isBlank()) {
+        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        return
+    }
+    val coverFile = store.coverFile(course.slug, chapter.slug)
+    if (coverFile == null) {
+        onState(CompileState.Failed("Draw the chapter picture first."))
+        return
+    }
+    scope.launch {
+        try {
+            onState(CompileState.Illustrating(0, 1))
+            KtorGeminiClient().use { client ->
+                ChapterIllustrator(client, apiKeyStore.getImageModelName()).drawTail(
+                    course = course,
+                    chapter = chapter,
+                    apiKey = apiKey,
+                    textModel = course.model,
+                    coverBrief = store.readCoverBrief(course.slug, chapter.slug),
+                    coverImage = GeneratedImage(
+                        bytes = coverFile.readBytes(),
+                        mimeType = if (coverFile.extension == "jpg") "image/jpeg" else "image/png",
+                    ),
+                    saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
+                )
+                onState(CompileState.Idle)
+                onDone()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("tail failed: ${e::class.simpleName}: ${e.message}")
             onState(CompileState.Failed(geminiErrorLabel(e)))
         }
     }

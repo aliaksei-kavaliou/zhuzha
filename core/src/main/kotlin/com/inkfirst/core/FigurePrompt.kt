@@ -124,3 +124,47 @@ internal fun buildCoverPrompt(course: Course, chapter: PersistedChapter, brief: 
 fun chapterCoverName(chapterSlug: String, extension: String): String =
     "$chapterSlug-cover.${extension.ifBlank { "png" }}"
 
+/**
+ * Brief-writing prompt for a chapter's *closing* picture.
+ *
+ * Not another illustration — the payoff to the cover. The cover shows the
+ * difficulty the reader arrives with; this shows the same scene after they
+ * have learned the thing. Same character, same setting, same objects; only
+ * the situation has changed. That is why it takes the cover's own brief as
+ * input rather than the chapter title: it is a rewrite of one scene, not a
+ * second idea about the chapter.
+ */
+internal fun buildClosingBriefPrompt(
+    course: Course,
+    chapter: PersistedChapter,
+    coverBrief: String,
+): String = buildString {
+    appendLine("A study book chapter opened with this picture:")
+    appendLine()
+    appendLine(coverBrief.trim())
+    appendLine()
+    appendLine("BOOK: ${course.title}")
+    appendLine("CHAPTER ${chapter.n}: ${chapter.title}")
+    if (chapter.objectives.isNotEmpty()) {
+        appendLine("WHAT THE READER HAS NOW LEARNED:")
+        chapter.objectives.forEach { appendLine("  - $it") }
+    }
+    appendLine()
+    appendLine("Describe the SAME scene at the end of the chapter, once the reader has")
+    appendLine("learned all of that. Keep the same character, the same setting and the same")
+    appendLine("objects — a reader must recognise it instantly as the opening picture")
+    appendLine("revisited. Change only the SITUATION: what was overwhelming is now handled")
+    appendLine("easily, what was a mess is in order, the character who was buried in it is")
+    appendLine("on top of it and pleased with themselves.")
+    appendLine()
+    appendLine("Do NOT invent a new metaphor, a new place or a new cast. Do not simply")
+    appendLine("remove the problem — show the same objects mastered, so the pair reads as")
+    appendLine("before and after.")
+    appendLine()
+    appendLine("Reply with the scene description only — one or two sentences, nothing else.")
+}
+
+/** File name a chapter's closing picture is stored under. */
+fun chapterTailName(chapterSlug: String, extension: String): String =
+    "$chapterSlug-tail.${extension.ifBlank { "png" }}"
+

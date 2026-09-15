@@ -310,7 +310,7 @@ that matter, because none of them are documented by the vendor:
 - **Page taps had to move into the overlay.** With raw drawing live the SDK owns the host view's
   touch stream and the release never reaches the reader's gesture detector.
 
-Still open: erase by sweep (uncommitted, device-untested — see
+Still open: erase by sweep (committed in `eb7ea05`, device-untested — see
 `docs/handoff-2026-09-15-onyx-erase.md`), EPD ghosting, and the defects listed in CLAUDE.md.
 
 ## 12. Open questions (revisit while building)
