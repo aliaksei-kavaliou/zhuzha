@@ -35,6 +35,28 @@ import com.inkfirst.core.Inline
  * instead. The renderer must answer the same question the same way or pages
  * will overflow.
  */
+/**
+ * One block, or part of one, placed on a page.
+ *
+ * [index] is the block's position in the chapter's block list, carried
+ * explicitly because a paragraph may now appear on two consecutive pages —
+ * the old "sum the sizes of earlier pages" arithmetic would double-count it.
+ * Annotations, bookmarks and ink all anchor to this index, and splitting a
+ * paragraph must not change it.
+ *
+ * [skippedPx] is the height of this block's lines shown on earlier pages, so
+ * a continuation can report a *virtual* block top — the y the block would
+ * have started at had it not been split. Every stored stroke offset is
+ * relative to that, so ink keeps working across a split with no change to the
+ * on-disk format: a stroke on a line that is now on the previous page simply
+ * clips off the top.
+ */
+data class PageItem(
+    val block: Block,
+    val index: Int,
+    val skippedPx: Int = 0,
+)
+
 fun paginate(
     blocks: List<Block>,
     contentWidthPx: Int,
@@ -46,57 +68,218 @@ fun paginate(
     hasFigureImage: (String) -> Boolean = { false },
     hasBadge: (String) -> Boolean = { false },
     inkTopMarginPx: Int = 0,
-): List<List<Block>> {
-    if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
+): List<List<PageItem>> {
+    if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) {
+        return listOf(blocks.mapIndexed { i, b -> PageItem(b, i) })
+    }
 
     // Safety margin: TextMeasurer under-counts by roughly a half-line per
     // block (font metric slop + sub-pixel rounding). 5% wasn't enough — still
-    // saw single-line clipping. 10% covers observed cases; costs at most one
-    // extra page per ~10 in the chapter.
+    // saw single-line clipping. 10% covers observed cases.
     // The reader reserves INK_TOP_MARGIN above the first block so the first
     // line can be stroked from above; the pack has to fit in what is left.
     val budget = ((contentHeightPx - inkTopMarginPx) * 0.90f).toInt()
 
-    val pages = mutableListOf<MutableList<Block>>()
+    val lineHeightPx = with(density) { (30.sp * fontScale * lineSpacing).toPx().toInt() }
+
+    val pages = mutableListOf<MutableList<PageItem>>()
     pages.add(mutableListOf())
     var height = 0
 
-    for (i in blocks.indices) {
-        val block = blocks[i]
-        // A heading at the top of a page drops its space-above, so it has to
-        // be measured that way too. Conservative by construction: if a block
-        // measured mid-page then moves to the next one it only gets shorter.
+    fun newPage() {
+        pages.add(mutableListOf())
+        height = 0
+    }
+
+    var i = 0
+    // Set when a paragraph was split: the text still to place, and how much of
+    // the original block's height has already been shown.
+    var carry: Block.Paragraph? = null
+    var carriedPx = 0
+
+    while (i < blocks.size) {
+        val block = carry ?: blocks[i]
+        val atTop = pages.last().isEmpty()
         val h = estimateHeight(
-            block, contentWidthPx, density, measurer, fontScale, lineSpacing, hasFigureImage, hasBadge,
-            atPageTop = pages.last().isEmpty(),
+            block, contentWidthPx, density, measurer, fontScale, lineSpacing,
+            hasFigureImage, hasBadge, atPageTop = atTop,
         )
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
         // heading is about to land and the block after it wouldn't fit on the
-        // same page, push the heading to the next page too — as long as the pair
-        // actually fits together on an empty page (otherwise we'd loop).
+        // same page, push the heading too — provided the pair fits together on
+        // an empty page, or we would loop.
         val opensSomething = block is Block.Heading ||
             (block is Block.CustomFence && block.kind == "meta")
         val requiredHeight = if (opensSomething && i + 1 < blocks.size) {
-            val nextH = estimateHeight(
-                blocks[i + 1], contentWidthPx, density, measurer, fontScale, lineSpacing,
-                hasFigureImage, hasBadge,
-            )
+            val next = blocks[i + 1]
+            // A heading must not be orphaned at the foot of a page — but it
+            // only needs ENOUGH of what follows to look attached, not all of
+            // it. Requiring the whole next block was what left half-empty
+            // pages once paragraphs could split: a heading plus a nine-line
+            // paragraph wouldn't fit, so both moved and the rest of the page
+            // was lost even though six lines would have gone under it.
+            val nextH = if (next is Block.Paragraph) {
+                minOf(
+                    estimateHeight(
+                        next, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                        hasFigureImage, hasBadge,
+                    ),
+                    lineHeightPx * MIN_SPLIT_LINES,
+                )
+            } else {
+                estimateHeight(
+                    next, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                    hasFigureImage, hasBadge,
+                )
+            }
             if (h + nextH <= budget) h + nextH else h
         } else {
             h
         }
 
-        val pageIsEmpty = pages.last().isEmpty()
-        if (height + requiredHeight > budget && !pageIsEmpty) {
-            pages.add(mutableListOf())
-            height = 0
+        if (height + requiredHeight <= budget) {
+            pages.last().add(PageItem(block, i, carriedPx))
+            height += h
+            carry = null
+            carriedPx = 0
+            i++
+            continue
         }
-        pages.last().add(block)
-        height += h
+
+        // Doesn't fit. A paragraph can give up the lines that do rather than
+        // surrendering the rest of the page — which is what made a page with
+        // six lines free lose all six.
+        val remaining = budget - height
+        val split = if (block is Block.Paragraph) {
+            splitParagraph(block, remaining, contentWidthPx, measurer, fontScale, lineSpacing, density)
+        } else {
+            null
+        }
+
+        if (split != null && !atTop) {
+            pages.last().add(PageItem(split.head, i, carriedPx))
+            carry = split.tail
+            carriedPx += split.headPx
+            newPage()
+            continue
+        }
+
+        if (atTop) {
+            // Taller than a whole page and nothing to split: place it anyway,
+            // or we would loop forever.
+            pages.last().add(PageItem(block, i, carriedPx))
+            height += h
+            carry = null
+            carriedPx = 0
+            i++
+            continue
+        }
+        newPage()
     }
     return pages.map { it.toList() }
 }
+
+/** [head] fits the space offered; [tail] is what is left to place. */
+private data class SplitParagraph(
+    val head: Block.Paragraph,
+    val tail: Block.Paragraph,
+    val headPx: Int,
+)
+
+/**
+ * Splits a paragraph so its first lines fill [availablePx].
+ *
+ * Returns null when fewer than [MIN_SPLIT_LINES] lines would fit, or when the
+ * remainder would be a single orphaned line — a two-word continuation at the
+ * top of the next page looks like a mistake, and moving the whole paragraph
+ * costs less than that looks.
+ */
+private fun splitParagraph(
+    block: Block.Paragraph,
+    availablePx: Int,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    fontScale: Float,
+    lineSpacing: Float,
+    density: Density,
+): SplitParagraph? = with(density) {
+    val text = block.inlines.plainText()
+    if (text.isBlank()) return null
+    val style = TextStyle(
+        fontSize = 18.sp * fontScale,
+        lineHeight = 30.sp * fontScale * lineSpacing,
+        fontFamily = FontFamily.Serif,
+        hyphens = Hyphens.Auto,
+    )
+    val layout = measurer.measure(
+        text = AnnotatedString(text),
+        style = style,
+        constraints = Constraints(maxWidth = widthPx),
+    )
+    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
+
+    var fitting = 0
+    while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= availablePx) fitting++
+    if (fitting < MIN_SPLIT_LINES) return null
+    // If the tail would be a lone orphan line, give a line back rather than
+    // abandoning the split. Refusing outright is what left a 589px gap for an
+    // eight-line paragraph of which seven fitted: the orphan guard cost more
+    // than the orphan it was avoiding.
+    if (layout.lineCount - fitting < MIN_SPLIT_LINES) {
+        fitting = layout.lineCount - MIN_SPLIT_LINES
+    }
+    if (fitting < MIN_SPLIT_LINES) return null
+
+    val cut = layout.getLineEnd(fitting - 1, visibleEnd = true)
+    if (cut <= 0 || cut >= text.length) return null
+
+    return SplitParagraph(
+        head = Block.Paragraph(sliceInlines(block.inlines, 0, cut)),
+        tail = Block.Paragraph(sliceInlines(block.inlines, cut, text.length)),
+        headPx = layout.getLineBottom(fitting - 1).toInt(),
+    )
+}
+
+/**
+ * Cuts an inline run to a character range of its plain text, preserving the
+ * styling of whatever survives — a split must not lose a bold word that
+ * happens to straddle the boundary.
+ */
+private fun sliceInlines(inlines: List<Inline>, from: Int, to: Int): List<Inline> {
+    val out = mutableListOf<Inline>()
+    var pos = 0
+    for (inline in inlines) {
+        val t = when (inline) {
+            is Inline.Text -> inline.text
+            is Inline.Bold -> inline.text
+            is Inline.Italic -> inline.text
+            is Inline.Code -> inline.text
+        }
+        val start = pos
+        val end = pos + t.length
+        pos = end
+        if (end <= from || start >= to) continue
+        val sliced = t.substring(maxOf(from, start) - start, minOf(to, end) - start)
+        if (sliced.isEmpty()) continue
+        out += when (inline) {
+            is Inline.Text -> Inline.Text(sliced)
+            is Inline.Bold -> Inline.Bold(sliced)
+            is Inline.Italic -> Inline.Italic(sliced)
+            is Inline.Code -> Inline.Code(sliced)
+        }
+    }
+    // A continuation shouldn't open with the space that ended the previous
+    // line.
+    val first = out.firstOrNull()
+    if (first is Inline.Text && first.text.startsWith(" ")) {
+        out[0] = Inline.Text(first.text.trimStart())
+    }
+    return out
+}
+
+/** Fewest lines worth leaving on a page, or carrying to the next one. */
+private const val MIN_SPLIT_LINES = 2
 
 /**
  * Returns the page index that contains the block at [blockIndex]. Purely
@@ -108,12 +291,13 @@ fun paginate(
  * [blocks] is kept as a parameter for API symmetry with the old signature;
  * only its size matters for the range check.
  */
-fun findPageContainingBlock(pages: List<List<Block>>, blocks: List<Block>, blockIndex: Int): Int {
+fun findPageContainingBlock(pages: List<List<PageItem>>, blocks: List<Block>, blockIndex: Int): Int {
     if (blockIndex < 0 || pages.isEmpty()) return 0
-    var cumulative = 0
+    // Explicit indices now, not arithmetic: a split paragraph appears on two
+    // pages, so counting sizes would drift. The first page carrying the block
+    // wins, which is where an anchor should land.
     pages.forEachIndexed { pageIdx, page ->
-        if (blockIndex < cumulative + page.size) return pageIdx
-        cumulative += page.size
+        if (page.any { it.index == blockIndex }) return pageIdx
     }
     return pages.lastIndex.coerceAtLeast(0)
 }

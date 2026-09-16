@@ -939,8 +939,27 @@ private fun PagedContent(
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                 )
             }
-            val pageIndex = remember(pages, anchorBlockIndex) {
-                findPageContainingBlock(pages, blocks, anchorBlockIndex).coerceAtLeast(0)
+            // Page index is view state; the block anchor is for persistence
+            // and for jumps from outside (TOC, bookmark, cold-start resume).
+            //
+            // It used to be derived from the anchor on every recomposition,
+            // which stopped working the moment paragraphs could split: a split
+            // block appears on two pages, so "which page holds block 1" has
+            // two answers, and turning the page set an anchor that resolved
+            // straight back to the page you left.
+            var pageIndex by remember(pages) {
+                mutableStateOf(findPageContainingBlock(pages, blocks, anchorBlockIndex).coerceAtLeast(0))
+            }
+            // Resync only for anchors that aren't already on this page — that
+            // is what distinguishes an external jump from the echo of our own
+            // page turn.
+            LaunchedEffect(anchorBlockIndex, pages) {
+                val onThisPage = pages.getOrNull(pageIndex)
+                    ?.any { it.index == anchorBlockIndex } == true
+                if (!onThisPage) {
+                    pageIndex = findPageContainingBlock(pages, blocks, anchorBlockIndex)
+                        .coerceAtLeast(0)
+                }
             }
             LaunchedEffect(pageIndex) {
                 // Opening a chapter lands on a page without turning to it, so
@@ -965,7 +984,9 @@ private fun PagedContent(
 
             // The block index of a page's first block is just the sum of block counts
             // in all prior pages — paginate() preserves order and never splits blocks.
-            val firstBlockIndex = pages.take(pageIndex).sumOf { it.size }
+            // Read off the page itself now: a split paragraph appears on two
+            // pages, so summing earlier page sizes would double-count it.
+            val firstBlockIndex = pages.getOrNull(pageIndex)?.firstOrNull()?.index ?: 0
             LaunchedEffect(firstBlockIndex) { onFirstBlockChange(firstBlockIndex) }
 
             // What the ink overlay is allowed to touch on this page: the
@@ -997,11 +1018,11 @@ private fun PagedContent(
                             if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                             when (event.key) {
                                 Key.VolumeUp, Key.PageUp, Key.DirectionUp -> {
-                                    goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                    goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
                                     true
                                 }
                                 Key.VolumeDown, Key.PageDown, Key.DirectionDown -> {
-                                    goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                    goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
                                     true
                                 }
                                 else -> false
@@ -1032,8 +1053,8 @@ private fun PagedContent(
                                         } else if (isDrag) {
                                             // Which axis dominates decides the meaning.
                                             if (kotlin.math.abs(totalDx) >= kotlin.math.abs(totalDy)) {
-                                                if (totalDx <= -dragThresholdPx) goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
-                                                else if (totalDx >= dragThresholdPx) goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                                if (totalDx <= -dragThresholdPx) goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
+                                                else if (totalDx >= dragThresholdPx) goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
                                             } else {
                                                 // Vertical: swipe UP → next chapter, swipe DOWN → previous chapter.
                                                 if (totalDy <= -vDragThresholdPx) onOpenNextChapter?.invoke()
@@ -1051,9 +1072,9 @@ private fun PagedContent(
                                             ) {
                                                 TapZone.MENU -> onToggleMenu()
                                                 TapZone.PREV ->
-                                                    goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                                    goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
                                                 TapZone.NEXT ->
-                                                    goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                                    goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
                                             }
                                         }
                                         break
@@ -1083,8 +1104,9 @@ private fun PagedContent(
                             // the first line behave like every other one.
                             Spacer(Modifier.height(INK_TOP_MARGIN))
                             val pageStart = firstBlockIndex  // computed above, arithmetic
-                            pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
-                                val globalIdx = pageStart + i
+                            pages.getOrNull(pageIndex)?.forEachIndexed { i, item ->
+                                val block = item.block
+                                val globalIdx = item.index
                                 val blockAnnotations = annotationsForBlock(annotations, block, globalIdx)
                                 // Wrapper reports each block's top-Y in root
                                 // coords so InkOverlay can convert to its own
@@ -1107,7 +1129,18 @@ private fun PagedContent(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .onGloballyPositioned { coords ->
-                                            blockTopsInRoot[globalIdx] = coords.positionInRoot().y
+                                            // The VIRTUAL top: where this block
+                                            // would have started had it not been
+                                            // split. Stroke offsets are stored
+                                            // relative to the block, not to the
+                                            // page, so a continuation has to
+                                            // report the original origin — ink
+                                            // on lines shown earlier then clips
+                                            // off the top of the page, which is
+                                            // correct. Keeps the on-disk format
+                                            // unchanged across splitting.
+                                            blockTopsInRoot[globalIdx] =
+                                                coords.positionInRoot().y - item.skippedPx
                                         },
                                 ) {
                                     RenderBlock(
@@ -1202,9 +1235,9 @@ private fun PagedContent(
                                 ) {
                                     TapZone.MENU -> onToggleMenu()
                                     TapZone.PREV ->
-                                        goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                        goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
                                     TapZone.NEXT ->
-                                        goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
+                                        goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
                                 }
                             },
                             modifier = overlayModifier,
@@ -1665,13 +1698,17 @@ private fun HeadingBlock(
     Spacer(Modifier.height(bottom))
     // The chapter's opening picture, when this heading is the chapter title.
     h.coverSrc?.let(loadFigure)?.let { cover ->
-        Image(
-            bitmap = cover,
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
-            contentScale = ContentScale.Fit,
-            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
-        )
+        // Centred like a plate in a printed book — a narrowed full-width
+        // element, not a figure aligned to the text column.
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Image(
+                bitmap = cover,
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+            )
+        }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -1969,13 +2006,17 @@ private fun MetaBlock(
     // solve, standing on the title page the way a chapter plate does in a
     // printed book. Borderless and uncaptioned, like every other figure.
     f.params["cover"]?.let(loadFigure)?.let { cover ->
-        Image(
-            bitmap = cover,
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
-            contentScale = ContentScale.Fit,
-            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
-        )
+        // Centred like a plate in a printed book — a narrowed full-width
+        // element, not a figure aligned to the text column.
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Image(
+                bitmap = cover,
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+            )
+        }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -2165,13 +2206,14 @@ private fun List<Inline>.plainText(): String = joinToString("") { i ->
 
 private fun goPrev(
     pageIndex: Int,
-    pages: List<List<Block>>,
+    pages: List<List<PageItem>>,
+    setPage: (Int) -> Unit,
     onAnchorChange: (Int) -> Unit,
     onOpenPrevChapter: (() -> Unit)?,
 ) {
     if (pageIndex > 0) {
-        val prevAnchor = pages.take(pageIndex - 1).sumOf { it.size }
-        onAnchorChange(prevAnchor)
+        setPage(pageIndex - 1)
+        onAnchorChange(pages.getOrNull(pageIndex - 1)?.firstOrNull()?.index ?: 0)
     } else {
         onOpenPrevChapter?.invoke()
     }
@@ -2179,13 +2221,14 @@ private fun goPrev(
 
 private fun goNext(
     pageIndex: Int,
-    pages: List<List<Block>>,
+    pages: List<List<PageItem>>,
+    setPage: (Int) -> Unit,
     onAnchorChange: (Int) -> Unit,
     onOpenNextChapter: (() -> Unit)?,
 ) {
     if (pageIndex < pages.size - 1) {
-        val nextAnchor = pages.take(pageIndex + 1).sumOf { it.size }
-        onAnchorChange(nextAnchor)
+        setPage(pageIndex + 1)
+        onAnchorChange(pages.getOrNull(pageIndex + 1)?.firstOrNull()?.index ?: 0)
     } else {
         onOpenNextChapter?.invoke()
     }
