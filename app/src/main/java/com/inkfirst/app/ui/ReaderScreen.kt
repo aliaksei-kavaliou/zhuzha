@@ -134,6 +134,44 @@ import java.time.LocalDate
  */
 private const val USE_ONYX_PEN = true
 
+/**
+ * Blank space above the first block, so the first line can be stroked from
+ * above the way every other line can.
+ */
+private val INK_TOP_MARGIN = 28.dp
+
+/**
+ * Depth of the menu band across the top of the page.
+ *
+ * The menu used to own the whole centre third — the rarest action in a
+ * reading session (a few taps) holding a third of the screen, exactly where a
+ * thumb rests on a 7" device held one-handed, and on e-ink an accidental menu
+ * costs a full refresh and your place in the sentence. Zones are sized by
+ * frequency now: next page hundreds of times, previous tens, menu a handful.
+ *
+ * A top band is what Kindle and Kobo both use, and for the same reasons: it
+ * is not where a hand rests while reading, it adjoins the header chrome so
+ * "the top is controls" is already half-learned, and reaching it is a
+ * deliberate movement rather than an accident.
+ */
+private val MENU_BAND_HEIGHT = 120.dp
+
+/**
+ * Where a tap lands. One rule, used by both tap detectors — the reader's own
+ * and the Onyx overlay's, which had to take over page taps when the SDK
+ * started owning the host view's touch stream.
+ */
+internal enum class TapZone { MENU, PREV, NEXT }
+
+internal fun tapZoneFor(x: Float, y: Float, width: Float, menuBandPx: Float): TapZone = when {
+    y < menuBandPx -> TapZone.MENU
+    // Left third goes back; everything else goes forward. The old centre
+    // third is given to NEXT because that is what a centre tap usually meant
+    // — someone moving on, not aiming carefully.
+    x < width / 3f -> TapZone.PREV
+    else -> TapZone.NEXT
+}
+
 private val InkColor = Color(0xFF000000)
 private val PaperColor = Color(0xFFFFFFFF)
 private val MutedColor = Color(0xFF555555)
@@ -886,6 +924,7 @@ private fun PagedContent(
                     lineSpacing = lineSpacing,
                     hasFigureImage = hasFigureImage,
                     hasBadge = hasBadge,
+                    inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                 )
             }
             val pageIndex = remember(pages, anchorBlockIndex) {
@@ -960,6 +999,7 @@ private fun PagedContent(
                             val dragThresholdPx = 60.dp.toPx()
                             val vDragThresholdPx = 80.dp.toPx()  // slightly higher — vertical drags happen more accidentally
                             val dragStartPx = 10.dp.toPx()
+                            val menuBandPx = MENU_BAND_HEIGHT.toPx()
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 val downPos = down.position
@@ -989,11 +1029,19 @@ private fun PagedContent(
                                             }
                                         } else {
                                             // Plain tap.
-                                            val third = size.width / 3f
-                                            when {
-                                                downPos.x < third -> goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
-                                                downPos.x > 2 * third -> goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
-                                                else -> onToggleMenu()
+                                            when (
+                                                tapZoneFor(
+                                                    downPos.x,
+                                                    downPos.y,
+                                                    size.width.toFloat(),
+                                                    menuBandPx,
+                                                )
+                                            ) {
+                                                TapZone.MENU -> onToggleMenu()
+                                                TapZone.PREV ->
+                                                    goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
+                                                TapZone.NEXT ->
+                                                    goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
                                             }
                                         }
                                         break
@@ -1014,6 +1062,14 @@ private fun PagedContent(
                     // for whatever gets selected.
                     SelectionContainer {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            // Drawable margin above the first block. Marking
+                            // the first line means stroking slightly ABOVE it —
+                            // an underline sits below its baseline, a circle
+                            // encloses from above — and with the text flush to
+                            // the overlay's top edge there was nowhere to put
+                            // the pen. Costs one line of page height and makes
+                            // the first line behave like every other one.
+                            Spacer(Modifier.height(INK_TOP_MARGIN))
                             val pageStart = firstBlockIndex  // computed above, arithmetic
                             pages.getOrNull(pageIndex)?.forEachIndexed { i, block ->
                                 val globalIdx = pageStart + i
@@ -1115,13 +1171,15 @@ private fun PagedContent(
                             // touch stream and the release never reaches the
                             // gesture detector below, so tap-to-turn silently
                             // stopped working. Same thirds as the reader.
-                            onPageTap = { fx ->
-                                when {
-                                    fx < 1f / 3f ->
+                            onPageTap = { x, y, w ->
+                                when (
+                                    tapZoneFor(x, y, w, with(density) { MENU_BAND_HEIGHT.toPx() })
+                                ) {
+                                    TapZone.MENU -> onToggleMenu()
+                                    TapZone.PREV ->
                                         goPrev(pageIndex, pages, onAnchorChange, onOpenPrevChapter)
-                                    fx > 2f / 3f ->
+                                    TapZone.NEXT ->
                                         goNext(pageIndex, pages, onAnchorChange, onOpenNextChapter)
-                                    else -> onToggleMenu()
                                 }
                             },
                             modifier = overlayModifier,
@@ -2432,10 +2490,20 @@ private fun CompilePrompt(
                                 // these, a not-yet-compiled chapter is a dead end:
                                 // tapping does nothing and the only visible exit
                                 // is Back, which leaves the book entirely.
-                                val third = size.width / 3f
-                                when {
-                                    downPos.x < third -> onOpenPrevChapter?.invoke()
-                                    downPos.x > 2 * third -> onOpenNextChapter?.invoke()
+                                when (
+                                    tapZoneFor(
+                                        downPos.x,
+                                        downPos.y,
+                                        size.width.toFloat(),
+                                        MENU_BAND_HEIGHT.toPx(),
+                                    )
+                                ) {
+                                    // No menu on a prompt, so the band is
+                                    // inert here rather than doing something
+                                    // different from the reader.
+                                    TapZone.MENU -> Unit
+                                    TapZone.PREV -> onOpenPrevChapter?.invoke()
+                                    TapZone.NEXT -> onOpenNextChapter?.invoke()
                                 }
                             }
                             break

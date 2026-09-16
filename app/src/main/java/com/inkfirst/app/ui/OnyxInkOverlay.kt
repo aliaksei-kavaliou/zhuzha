@@ -96,7 +96,10 @@ fun OnyxInkOverlay(
     onStrokeErased: (Stroke?) -> Unit,
     onStrokeTapped: (Stroke) -> Unit,
     /**
-     * A finger tap that hit no stroke, as a fraction of overlay width (0..1).
+     * A finger tap that hit no stroke, in overlay-local pixels plus the
+     * overlay width. Raw coordinates rather than a fraction, because the zone
+     * rule now depends on Y as well — the caller owns the rule so the two tap
+     * detectors cannot drift apart.
      *
      * The overlay reports these itself rather than letting the tap fall
      * through to the reader's own detector. In this mode the SDK is attached
@@ -104,7 +107,7 @@ fun OnyxInkOverlay(
      * — the tap is observed here (hit=false in the log) and then vanishes, so
      * page turns silently stopped working.
      */
-    onPageTap: (fractionX: Float) -> Unit = {},
+    onPageTap: (x: Float, y: Float, width: Float) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val addedRef = rememberUpdatedState(onStrokeAdded)
@@ -322,6 +325,16 @@ fun OnyxInkOverlay(
                                 if (hit != null) {
                                     down.consume()
                                     tappedRef.value(hit)
+                                    // The chip is Compose UI, and while raw
+                                    // drawing is live the driver owns the
+                                    // panel: Compose's output lands in the
+                                    // framebuffer and is not shown. Without
+                                    // this the chip appeared only at the NEXT
+                                    // refresh — a page turn, or the unlock
+                                    // after some later stroke — which read as
+                                    // "tap does nothing". Any UI a finger
+                                    // opens needs this.
+                                    unlockRequestRef.value?.invoke("chip")
                                     while (true) {
                                         val ev = awaitPointerEvent()
                                         val ch = ev.changes.firstOrNull() ?: break
@@ -332,9 +345,8 @@ fun OnyxInkOverlay(
                                 // Report it ourselves — see onPageTap.
                                 val w = size.width.toFloat()
                                 if (w > 0f) {
-                                    val fx = (at.x / w).coerceIn(0f, 1f)
-                                    Log.d(TAG, "page tap fx=$fx")
-                                    pageTapRef.value(fx)
+                                    Log.d(TAG, "page tap at=(${at.x},${at.y}) w=$w")
+                                    pageTapRef.value(at.x, at.y, w)
                                 }
                             }
                             } finally {

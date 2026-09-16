@@ -45,6 +45,7 @@ fun paginate(
     lineSpacing: Float = 1.0f,
     hasFigureImage: (String) -> Boolean = { false },
     hasBadge: (String) -> Boolean = { false },
+    inkTopMarginPx: Int = 0,
 ): List<List<Block>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) return listOf(blocks)
 
@@ -52,7 +53,9 @@ fun paginate(
     // block (font metric slop + sub-pixel rounding). 5% wasn't enough — still
     // saw single-line clipping. 10% covers observed cases; costs at most one
     // extra page per ~10 in the chapter.
-    val budget = (contentHeightPx * 0.90f).toInt()
+    // The reader reserves INK_TOP_MARGIN above the first block so the first
+    // line can be stroked from above; the pack has to fit in what is left.
+    val budget = ((contentHeightPx - inkTopMarginPx) * 0.90f).toInt()
 
     val pages = mutableListOf<MutableList<Block>>()
     pages.add(mutableListOf())
