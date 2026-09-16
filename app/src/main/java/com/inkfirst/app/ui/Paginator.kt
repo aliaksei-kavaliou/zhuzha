@@ -166,7 +166,9 @@ private fun estimateHeight(
             // Block.Heading.coverSrc) is a fixed-ratio picture below it.
             val cover = block.coverSrc
                 ?.takeIf { hasFigureImage(it) }
-                ?.let { (widthPx / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt() }
+                ?.let {
+                    (widthPx * PLATE_WIDTH_FRACTION / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt()
+                }
                 ?: 0
             (if (atPageTop) 0 else topPad.toPx().toInt()) + result.size.height +
                 botPad.toPx().toInt() + cover
@@ -219,7 +221,7 @@ private fun estimateHeight(
                 // A cover turns the opener into a full title page; it is a
                 // fixed-ratio picture like any figure.
                 val cover = if (block.params["cover"] != null) {
-                    (widthPx / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt()
+                    (widthPx * PLATE_WIDTH_FRACTION / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt()
                 } else {
                     0
                 }
@@ -229,7 +231,7 @@ private fun estimateHeight(
             if (block.kind == "tail") {
                 val src = block.params["src"]
                 return@with if (src != null && hasFigureImage(src)) {
-                    (widthPx / FIGURE_ASPECT).toInt() + 24.dp.toPx().toInt()
+                    (widthPx * PLATE_WIDTH_FRACTION / FIGURE_ASPECT).toInt() + 24.dp.toPx().toInt()
                 } else {
                     0
                 }

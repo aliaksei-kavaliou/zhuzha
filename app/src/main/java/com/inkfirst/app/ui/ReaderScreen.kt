@@ -157,6 +157,18 @@ private val INK_TOP_MARGIN = 28.dp
 private val MENU_BAND_HEIGHT = 120.dp
 
 /**
+ * Width of a chapter cover or closing picture, as a fraction of the text
+ * column.
+ *
+ * Full width was too tall: at 4:3 it took ~890px of a ~1300px page, so a
+ * three-line chapter title plus its cover could not fit together on one page
+ * at all — the opener degenerated into a byline alone with the title and the
+ * picture pushed to page 2. A plate that stops short of the text edges also
+ * simply looks better on a book page.
+ */
+internal const val PLATE_WIDTH_FRACTION = 0.72f
+
+/**
  * Where a tap lands. One rule, used by both tap detectors — the reader's own
  * and the Onyx overlay's, which had to take over page taps when the SDK
  * started owning the host view's touch stream.
@@ -1150,8 +1162,21 @@ private fun PagedContent(
                             // gesture chip is up. If the user later cancels
                             // or asks the AI, the caller removes it then.
                             onStrokeAdded(enriched)
-                            if (isEnclosingStroke(enriched) &&
-                                !enriched.annotatedText.isNullOrBlank()) {
+                            // Log the decision, not just the outcome: the
+                            // gesture needs BOTH a closed shape and text under
+                            // it, and "no chip appeared" gives no hint which
+                            // of the two failed.
+                            val enclosing = isEnclosingStroke(enriched)
+                            android.util.Log.d(
+                                "InkGesture",
+                                "stroke pts=${enriched.points.size} enclosing=$enclosing " +
+                                    "text=${enriched.annotatedText?.take(40)?.ifBlank { "<blank>" } ?: "<null>"}",
+                            )
+                            if (enclosing && !enriched.annotatedText.isNullOrBlank()) {
+                                // No explicit unlock needed here, unlike the
+                                // tap chip: this fires at the end of a stroke,
+                                // and the stroke's own scheduleUnlock("draw")
+                                // repaints the panel a moment later.
                                 onStrokeGesture(enriched)
                             }
                     }
@@ -1216,7 +1241,12 @@ private fun PagedContent(
                     // page of the book. Retires itself after a dozen turns.
                     if (showTapHint) {
                         Text(
-                            text = "tap ← / center / → ",
+                            // Describes the zones as they now are: the menu
+                            // moved from the centre third to a band across the
+                            // top, and the centre turns forward like the rest
+                            // of the page. A hint that teaches the old layout
+                            // is worse than none.
+                            text = "tap ← / → · top for menu ",
                             style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                             textAlign = TextAlign.End,
                         )
@@ -1638,7 +1668,7 @@ private fun HeadingBlock(
         Image(
             bitmap = cover,
             contentDescription = null,
-            modifier = Modifier.fillMaxWidth().aspectRatio(FIGURE_ASPECT),
+            modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
         )
@@ -1942,7 +1972,7 @@ private fun MetaBlock(
         Image(
             bitmap = cover,
             contentDescription = null,
-            modifier = Modifier.fillMaxWidth().aspectRatio(FIGURE_ASPECT),
+            modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
         )
@@ -2067,13 +2097,15 @@ private fun badgeColorFilter(): ColorFilter {
 private fun TailBlock(f: Block.CustomFence, loadFigure: (String) -> ImageBitmap?) {
     val picture = f.params["src"]?.let(loadFigure) ?: return
     Spacer(Modifier.height(24.dp))
-    Image(
-        bitmap = picture,
-        contentDescription = null,
-        modifier = Modifier.fillMaxWidth().aspectRatio(FIGURE_ASPECT),
-        contentScale = ContentScale.Fit,
-        colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
-    )
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Image(
+            bitmap = picture,
+            contentDescription = null,
+            modifier = Modifier.fillMaxWidth(PLATE_WIDTH_FRACTION).aspectRatio(FIGURE_ASPECT),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+        )
+    }
 }
 
 /**
