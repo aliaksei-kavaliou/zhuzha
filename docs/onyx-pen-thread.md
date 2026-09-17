@@ -642,3 +642,32 @@ So: artefact visible in the capture → real app state; artefact on the glass bu
 absent from the capture → driver layer or EPD residue. That one distinction
 separated "stale chip state" (real, fixed by clearing it on page change) from
 "driver ink" (not state at all) in minutes, after a lot of guessing without it.
+
+### T7 addendum · selection precision (same session)
+
+`extractStrokeText` is fixed, and it was four faults rather than the one suspected above.
+Each was found by logging the extraction's own geometry and reading it, not by moving
+thresholds — the logs are worth keeping for that reason.
+
+- **Word boundaries.** Character ranges produced "to your ve" / "irst day o". A clipped end
+  word is kept when at least half of it is covered, dropped otherwise; a stroke over part of
+  one word returns that word whole.
+- **An underline marks ONE line, chosen by the stroke's TOP.** Membership was a share of
+  `min(strokeHeight, lineHeight)`, so a ~6px underline needed ~2px of the next line's box to
+  claim it — underlining "Artificial Intelligence" also returned "fiction movie". The top
+  edge is the reliable one; the centre and bottom fall into the next line's box.
+- **Circles use the line as the denominator**, at half its height. `min()` made a 20px
+  overhang clear 30% of a 66px line, so circling a word took its neighbour too.
+- **Anchoring by the stroke's middle, not its first point.** A circle around text on a
+  paragraph's first line starts in the ~37px gap above it, so `greatest top <= y` chose the
+  previous block — the wrong-paragraph bug, which then looks like a text bug and is not.
+
+Two gesture additions: a margin bar opens the chip, takes whole lines, and reads across every
+block it spans (single-block extraction stopped a 469px bar 218px short of where it was
+drawn; a bar in the margin previously returned nothing at all, touching no glyph). And Ask
+now records a `kind="ask"` annotation rendered as a margin `?`, which is what made it
+reasonable to consume an enclosure on Ask while keeping a margin bar.
+
+Margin markers had to be hit-tested by the tap handler: the overlay owns the touch stream, so
+Compose's `clickable` on a `?` or `✎` never ran and tapping one turned the page. That is the
+FOURTH place tap rules now live, and the strongest argument yet for the consolidation.

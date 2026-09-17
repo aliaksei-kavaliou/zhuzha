@@ -84,10 +84,13 @@ yet" note that used to live here was two months stale.
       than the view actually showing the page. Read `docs/onyx-pen-thread.md` §T7 before
       touching anything about repainting, ghosting, or tap handling — it is the session log
       and it records what was measured rather than assumed.
-- [ ] Known open defects: `extractStrokeText` returns null on some strokes, so an enclosure
-      gesture silently produces no chip (`enclosing=true text=<null>`) — likely the same root
-      as "Ask AI" returning the line below the marked one; first line of a page not drawable.
-      See `docs/onyx-pen-thread.md` §T7.
+- [x] **Selection precision** — a pen mark now selects what it points at: whole words with
+      clipped ends kept only if half-covered, an underline marking exactly one line (this was
+      the "Ask AI returns the line below" defect), a circle marking the line it encloses, and
+      strokes anchoring by their middle rather than by wherever the pen landed. A margin bar
+      is a passage-marking gesture that reads across blocks, and asking leaves a `?` marker
+      in the margin so a question is visible on the page.
+- [ ] Known open defects: first line of a page not drawable. See `docs/onyx-pen-thread.md` §T7.
 - [ ] **Two tap detectors, unconsolidated.** One finger contact is handled both by the
       reader's own `awaitEachGesture` and by the overlay (which must report taps itself,
       since the SDK owns the host view's touch stream). Three separate bugs on 2026-09-17
