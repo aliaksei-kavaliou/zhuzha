@@ -469,7 +469,18 @@ fun ReaderScreen(
             // Boox side buttons fire PageUp / PageDown. Request focus so the
             // Reader receives key events without the user having to tap first.
             val focusRequester = remember { FocusRequester() }
-            LaunchedEffect(chapterSlug) { focusRequester.requestFocus() }
+            // The node carrying Modifier.focusRequester lives inside
+            // PagedContent, which is not attached until there are blocks to
+            // show. Keyed on chapterSlug alone, this request raced the
+            // content and threw "FocusRequester is not initialized" whenever
+            // it won — a cold start straight into the reader loses that race
+            // reliably, so the app crashed on launch. Wait for the content,
+            // and stay defensive on top: losing side-button focus is a minor
+            // annoyance, crashing out of the chapter is not.
+            LaunchedEffect(chapterSlug, blocks.isNotEmpty()) {
+                if (blocks.isEmpty()) return@LaunchedEffect
+                runCatching { focusRequester.requestFocus() }
+            }
 
             // Header at ReaderScreen scope so it can read/toggle bookmarks
             // via the hoisted headerFirstBlock / headerBookmarked state.
@@ -2511,7 +2522,9 @@ private fun CompilePrompt(
     // chapter where there is nowhere to go: silently doing nothing is the
     // correct answer for a page-turn key, and the volume popup is not.
     val keyFocus = remember { FocusRequester() }
-    LaunchedEffect(chapter.slug) { keyFocus.requestFocus() }
+    // Same guard as the reader's: the request can outrun its node's
+    // attachment, and an unhandled throw here takes the whole screen down.
+    LaunchedEffect(chapter.slug) { runCatching { keyFocus.requestFocus() } }
 
     // Swipe support on the compile prompt: horizontal or vertical swipe still
     // lets you nav to adjacent chapters. Without this, hitting a pending
