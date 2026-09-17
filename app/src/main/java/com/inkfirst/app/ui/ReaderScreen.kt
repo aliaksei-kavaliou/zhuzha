@@ -41,7 +41,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
@@ -76,6 +78,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -262,22 +265,25 @@ fun ReaderScreen(
     // text-selection chip's actions (Ask / Add note / Delete). Anchor block
     // (and thus context text) is resolved lazily from stroke.blockIndex.
     var viewingStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
-    // Fresh enclosure gesture waiting for the user's action. Distinct from
-    // viewingStroke because the semantics differ: this stroke will be
-    // removed on Ask (via chatOriginStroke) or Cancel, kept on Add note.
+    // Fresh marking gesture (enclosure or margin bar) waiting for the user's
+    // action. Distinct from viewingStroke because the semantics differ: this
+    // one is brand new and Cancel discards it, where Cancel on a tapped
+    // stroke only closes the chip.
     var pendingGestureStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
-    // Set when a chat was opened as the result of an enclosure gesture, so
-    // the ChatPanel's onClose knows to remove that stroke afterwards (the
-    // stroke served as a selection gesture, not a persistent mark).
-    var chatOriginStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
     // The Ask toolbar for the paged content — intercepts text-selection UI.
     // Hoisted to ReaderScreen scope so the floating chip can live in the outer
     // Box (which is what supports Alignment.BottomCenter).
     val clipboard = LocalClipboardManager.current
+    // The toolbar is remembered, so it must not capture a lambda that
+    // closes over composable state — that is the stale-closure trap, and
+    // it would also force every collaborator to be declared above it. The
+    // holder is reassigned each composition, so the toolbar always calls
+    // the live one.
+    val askRef = remember { mutableStateOf<(String, Int?) -> Unit>({ _, _ -> }) }
     val askToolbar = remember(clipboard) {
         AskTextToolbar(
             clipboard = clipboard,
-            onAsk = { selectedText -> chatSelection = selectedText },
+            onAsk = { selectedText -> askRef.value(selectedText, null) },
             onAddNote = { selectedText -> pendingNoteQuote = selectedText },
         )
     }
@@ -297,6 +303,8 @@ fun ReaderScreen(
 
     val chapter = course?.chapters?.firstOrNull { it.slug == chapterSlug }
     val chapterAnnotations = course?.annotations?.filter { it.chapterSlug == chapterSlug }.orEmpty()
+
+
     // Figure slots still waiting for a picture. Drives the menu's "Draw
     // figures" row — the retrofit path for chapters written before figures
     // existed, and the retry path when one came back empty.
@@ -401,6 +409,42 @@ fun ReaderScreen(
     }
 
     // Resolve the "-1 = open at last" sentinel once blocks arrive.
+    // Every Ask goes through here so asking always leaves a trace on the
+    // page. Without one, a question vanished the moment the chat closed: the
+    // Q&A is persisted per chapter, but nothing on the page pointed at it, so
+    // flipping back there was no way to see you had ever asked. That absence
+    // is also why deleting the ink after Ask felt so lossy — the mark was the
+    // only evidence. A margin marker records it without putting a heavy shape
+    // over the words, and gives §13's reader signals the passage they want.
+    val askAbout: (String, Int?) -> Unit = { quote, blockHint ->
+        chatSelection = quote
+        val c = course
+        val trimmed = quote.trim()
+        if (c != null && trimmed.isNotEmpty()) {
+            val anchor = blockHint ?: findBlockContainingQuote(blocks, trimmed)
+            // Asking twice about the same passage is meaningful, but two
+            // identical markers is just noise on the page. The recurrence is
+            // still visible in the chapter's Q&A history.
+            val already = c.annotations.any {
+                it.chapterSlug == chapterSlug && it.kind == "ask" &&
+                    it.quote == trimmed
+            }
+            if (anchor != null && !already) {
+                val updated = store.addAnnotation(
+                    courseSlug = c.slug,
+                    chapterSlug = chapterSlug,
+                    blockIndex = anchor,
+                    quote = trimmed,
+                    note = "",
+                    created = LocalDate.now().toString(),
+                    kind = "ask",
+                )
+                if (updated != null) course = updated
+            }
+        }
+    }
+    askRef.value = askAbout
+
     LaunchedEffect(blocks, startBlockIndex) {
         if (startBlockIndex < 0 && blocks.isNotEmpty()) {
             anchorBlockIndex = blocks.lastIndex
@@ -563,8 +607,17 @@ fun ReaderScreen(
                         pendingGestureStroke = null
                     },
                     onFirstBlockChange = { headerFirstBlock = it },
-                    onAskAboutBlock = { text -> chatSelection = text },
-                    onOpenAnnotation = { a -> viewingAnnotation = a },
+                    onAskAboutBlock = { text -> askAbout(text, null) },
+                    onOpenAnnotation = { a ->
+                        // A question mark is a way back into the conversation
+                        // it came from; a note opens the note. Reusing the
+                        // note viewer for an "ask" would show an empty note,
+                        // which is exactly the dead end the marker exists to
+                        // remove. Does not re-record: the annotation is
+                        // already there.
+                        if (a.kind == "ask") chatSelection = a.quote
+                        else viewingAnnotation = a
+                    },
                     onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
                     onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
                     menuOpen = showFormatMenu,
@@ -603,12 +656,12 @@ fun ReaderScreen(
         // "Delete" for the drawing itself. Context text = plain text of the
         // stroke's anchor block, so Ask/Add-note behave the same way they
         // would if the user had highlighted that block by hand.
-        // Fresh-enclosure gesture chip. Same 4 buttons as the tap chip so
-        // muscle memory transfers. One semantic difference: Ask here also
-        // sets chatOriginStroke, so closing the chat removes the stroke —
-        // the enclosure was a selection cue, not a persistent mark. Cancel
-        // just hides the chip; the stroke stays as marginalia (Delete is
-        // the explicit "remove" action).
+        // Marking-gesture chip, for a freshly drawn enclosure or margin bar.
+        // Same 4 buttons as the tap chip so muscle memory transfers. One
+        // semantic difference: Cancel here discards the mark, because it is
+        // brand new and Cancel means "I did not mean that" — where Cancel on
+        // a tapped stroke only closes the chip. Ask and Add note both keep
+        // it; Delete is the explicit way to remove one.
         pendingGestureStroke?.let { stroke ->
             val text = stroke.annotatedText.orEmpty()
             Row(
@@ -619,8 +672,23 @@ fun ReaderScreen(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 TextButton(onClick = {
-                    chatOriginStroke = stroke
-                    chatSelection = text
+                    askAbout(text, stroke.blockIndex)
+                    // An enclosure is spent once the question is asked: it
+                    // sits ON the words, and five of them in a chapter is
+                    // five heavy shapes over the text you are trying to read.
+                    // A margin bar costs nothing to keep — it sits beside the
+                    // text, which is the paper idiom for "this passage
+                    // matters", so it stays.
+                    //
+                    // Removing the shape is only reasonable because asking
+                    // now leaves a ? in the margin. Before that the ink was
+                    // the sole evidence a question had been asked, which made
+                    // using a mark the way to lose it.
+                    if (!isVerticalMarkStroke(stroke)) {
+                        val updated = strokes - stroke
+                        strokes = updated
+                        store.saveStrokes(courseSlug, chapterSlug, updated)
+                    }
                     pendingGestureStroke = null
                 }) {
                     Text("Ask about this", color = PaperColor)
@@ -661,7 +729,7 @@ fun ReaderScreen(
             ) {
                 if (blockText != null) {
                     TextButton(onClick = {
-                        chatSelection = blockText
+                        askAbout(blockText, stroke.blockIndex)
                         viewingStroke = null
                     }) {
                         Text("Ask about this", color = PaperColor)
@@ -694,18 +762,7 @@ fun ReaderScreen(
                 chapter = chapter,
                 chapterMarkdown = markdown!!,
                 initialSelection = chatSelection?.takeIf { it.isNotBlank() },
-                onClose = {
-                    chatSelection = null
-                    // If this chat was launched from an enclosure gesture,
-                    // the stroke served as a selection cue — remove it now
-                    // so the page doesn't accumulate pen marks after Q&A.
-                    chatOriginStroke?.let { origin ->
-                        val updated = strokes - origin
-                        strokes = updated
-                        store.saveStrokes(courseSlug, chapterSlug, updated)
-                        chatOriginStroke = null
-                    }
-                },
+                onClose = { chatSelection = null },
             )
         }
 
@@ -1035,6 +1092,20 @@ private fun PagedContent(
             val blockVisibleTopsInRoot =
                 remember(chapterSlug) { mutableStateMapOf<Int, Float>() }
             var overlayTopInRoot by remember(chapterSlug) { mutableStateOf(0f) }
+            var overlayLeftInRoot by remember(chapterSlug) { mutableStateOf(0f) }
+            /**
+             * Where each margin marker sits, in root coordinates.
+             *
+             * The ink overlay owns the touch stream, so a tap on a marker is
+             * reported to us as a page tap and Compose's own clickable on the
+             * glyph never runs — tapping ? or ✎ just turned the page. The tap
+             * handler has to hit-test them itself, the same way it already
+             * hit-tests strokes. Keyed by the annotation's identity so a
+             * repagination replaces rather than accumulates.
+             */
+            val markerRects = remember(chapterSlug) {
+                mutableStateMapOf<String, Pair<Annotation, Rect>>()
+            }
 
             // The block index of a page's first block is just the sum of block counts
             // in all prior pages — paginate() preserves order and never splits blocks.
@@ -1221,6 +1292,9 @@ private fun PagedContent(
                                         revealed = revealed[globalIdx] == true,
                                         onReveal = { revealed[globalIdx] = true },
                                         onOpenAnnotation = onOpenAnnotation,
+                                        onMarkerBounds = { a, r ->
+                                            markerRects[a.created + "|" + a.quote] = a to r
+                                        },
                                         loadFigure = loadFigure,
                                         loadBadge = loadBadge,
                                     )
@@ -1254,9 +1328,25 @@ private fun PagedContent(
                             // later font-size change doesn't drift it.
                             val anchor = blocks.getOrNull(raw.blockIndex)
                             val enriched = if (anchor != null) {
-                                val text = extractStrokeText(
-                                    raw, anchor, widthPx, measurer, density, fontScale, lineSpacing,
-                                )
+                                // A margin bar marks a PASSAGE, and passages
+                                // cross paragraphs. Reading only the anchor
+                                // block stopped the selection dead at that
+                                // paragraph's last line however far the bar
+                                // was drawn — measured: a 469px bar against a
+                                // block whose text ended 218px short of it.
+                                // Underlines and circles stay single-block,
+                                // which is what they mean.
+                                val text = if (isVerticalMarkStroke(raw)) {
+                                    extractMarkedPassage(
+                                        raw, blocks, blockTopsInRoot, overlayTopInRoot,
+                                        widthPx, measurer, density, fontScale, lineSpacing,
+                                    )
+                                } else {
+                                    extractStrokeText(
+                                        raw, anchor, widthPx, measurer, density,
+                                        fontScale, lineSpacing,
+                                    )
+                                }
                                 if (!text.isNullOrBlank()) raw.copy(annotatedText = text) else raw
                             } else raw
                             // Save first so the stroke renders while the
@@ -1268,12 +1358,16 @@ private fun PagedContent(
                             // it, and "no chip appeared" gives no hint which
                             // of the two failed.
                             val enclosing = isEnclosingStroke(enriched)
+                            val verticalMark = isVerticalMarkStroke(enriched)
                             android.util.Log.d(
                                 "InkGesture",
                                 "stroke pts=${enriched.points.size} enclosing=$enclosing " +
+                                    "vertical=$verticalMark " +
                                     "text=${enriched.annotatedText?.take(40)?.ifBlank { "<blank>" } ?: "<null>"}",
                             )
-                            if (enclosing && !enriched.annotatedText.isNullOrBlank()) {
+                            if ((enclosing || verticalMark) &&
+                                !enriched.annotatedText.isNullOrBlank()
+                            ) {
                                 // No explicit unlock needed here, unlike the
                                 // tap chip: this fires at the end of a stroke,
                                 // and the stroke's own scheduleUnlock("draw")
@@ -1283,6 +1377,7 @@ private fun PagedContent(
                     }
                     val overlayModifier = Modifier.onGloballyPositioned { coords ->
                         overlayTopInRoot = coords.positionInRoot().y
+                        overlayLeftInRoot = coords.positionInRoot().x
                     }
                     if (USE_ONYX_PEN) {
                         OnyxInkOverlay(
@@ -1303,6 +1398,17 @@ private fun PagedContent(
                             chipOpen = chipOpen,
                             onDismissChip = onDismissChip,
                             onPageTap = { x, y, w, h ->
+                                // A marker is a target, not part of the page.
+                                // The overlay owns the touch stream here, so
+                                // Compose's clickable on the glyph never runs
+                                // and a tap on ? or ✎ simply turned the page.
+                                val hitMarker = markerRects.values.firstOrNull { (_, r) ->
+                                    r.contains(
+                                        Offset(x + overlayLeftInRoot, y + overlayTopInRoot),
+                                    )
+                                }?.first
+                                if (hitMarker != null) onOpenAnnotation(hitMarker)
+                                else
                                 // An open menu swallows the next tap, exactly
                                 // as in the detector below. Without this the
                                 // menu could not be closed at all on the pen
@@ -1736,6 +1842,7 @@ private fun RenderBlock(
     revealed: Boolean,
     onReveal: () -> Unit,
     onOpenAnnotation: (Annotation) -> Unit,
+    onMarkerBounds: (Annotation, Rect) -> Unit,
     loadFigure: (String) -> ImageBitmap?,
     loadBadge: (String) -> ImageBitmap?,
 ) {
@@ -1743,7 +1850,7 @@ private fun RenderBlock(
         is Block.Heading -> HeadingBlock(block, fontScale, atPageTop, loadFigure)
         is Block.Paragraph -> ParagraphBlock(
             block.inlines, fontScale, lineSpacing, textAlign,
-            annotations, onOpenAnnotation,
+            annotations, onOpenAnnotation, onMarkerBounds,
         )
         is Block.BulletItem -> ListItemBlock("• ", block.inlines, fontScale, lineSpacing)
         is Block.OrderedItem -> ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing)
@@ -1833,6 +1940,7 @@ private fun ParagraphBlock(
     textAlign: TextAlignPref,
     annotations: List<Annotation>,
     onOpenAnnotation: (Annotation) -> Unit,
+    onMarkerBounds: (Annotation, Rect) -> Unit,
 ) {
     val textAnnotations = annotations.filter { it.kind == "text" }
     val annotated = if (textAnnotations.isEmpty()) {
@@ -1901,18 +2009,21 @@ private fun ParagraphBlock(
                     }
                 },
         )
-        // Note markers to the right of the paragraph — one small ✎ per
-        // annotation, tappable to open the note. Sits outside the Text so
-        // clicks aren't fighting SelectionContainer.
+        // Margin markers to the right of the paragraph — one per annotation,
+        // tappable. Sits outside the Text so clicks aren't fighting
+        // SelectionContainer. A written note and a question asked are
+        // different acts and read differently at a glance: ✎ is something you
+        // wrote, ? is something you wanted explained.
         if (annotations.isNotEmpty()) {
             Column(modifier = Modifier.padding(start = 6.dp, top = 2.dp)) {
                 annotations.forEach { a ->
                     Text(
-                        text = "✎",
+                        text = if (a.kind == "ask") "?" else "✎",
                         fontFamily = FontFamily.Serif,
                         fontSize = 14.sp * fontScale,
                         color = InkColor,
                         modifier = Modifier
+                            .onGloballyPositioned { onMarkerBounds(a, it.boundsInRoot()) }
                             .clickable { onOpenAnnotation(a) }
                             .padding(vertical = 2.dp, horizontal = 4.dp),
                     )
@@ -2438,6 +2549,32 @@ private fun annotationsForBlock(
  * Non-enclosing strokes (underlines, checkmarks, free scribbles) stay as
  * marginalia — caller only auto-opens the chip when this returns true.
  */
+/**
+ * A tall, narrow stroke spanning more than one line's worth of height: a
+ * margin bar or bracket beside a passage.
+ *
+ * This is a marking gesture like an enclosure, so it opens the chip. An
+ * underline is not — underlines and free scribbles stay silent marginalia,
+ * which is the whole point of only SOME strokes speaking up.
+ */
+private fun isVerticalMarkStroke(stroke: InkStroke): Boolean {
+    val points = stroke.points
+    if (points.size < 4) return false
+    var minX = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    for (p in points) {
+        if (p.x < minX) minX = p.x
+        if (p.x > maxX) maxX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.y > maxY) maxY = p.y
+    }
+    val w = maxX - minX
+    val h = maxY - minY
+    return h >= VERTICAL_MARK_MIN_HEIGHT_PX && h > w * VERTICAL_STROKE_RATIO
+}
+
 private fun isEnclosingStroke(stroke: InkStroke): Boolean {
     val points = stroke.points
     if (points.size < 8) return false
@@ -2489,6 +2626,89 @@ private const val ENCLOSURE_MAX_GAP_RATIO = 0.5f
  * stored in Stroke.annotatedText so a later font-scale change doesn't
  * shift what "the marked text" refers to.
  */
+/**
+ * How much taller than wide a stroke must be, while crossing more than one
+ * line, to read as a margin bar or bracket rather than an underline.
+ */
+/**
+ * Text under a margin bar, across every block the bar spans.
+ *
+ * Ink stores one blockIndex, and that stays true — this only widens what the
+ * bar READS, at draw time, and the stroke still anchors where it always did.
+ * Each block is handled by translating the stroke into that block's local
+ * coordinate space and reusing the ordinary per-block extraction, so the
+ * whole-line behaviour and the line-overlap rules stay in exactly one place.
+ *
+ * Near-miss recovery is off for the walk: it exists for the reader being
+ * slightly off on the block they marked, whereas here a miss means the bar
+ * simply ended, and claiming a line would run the selection past its end.
+ */
+private fun extractMarkedPassage(
+    stroke: InkStroke,
+    blocks: List<Block>,
+    blockTopsInRoot: Map<Int, Float>,
+    overlayTopInRoot: Float,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    density: Density,
+    fontScale: Float,
+    lineSpacing: Float,
+): String? {
+    val anchorTop = blockTopsInRoot[stroke.blockIndex]?.minus(overlayTopInRoot)
+        ?: return null
+    val parts = mutableListOf<String>()
+    for (index in blockTopsInRoot.keys.sorted()) {
+        val block = blocks.getOrNull(index) ?: continue
+        val top = blockTopsInRoot[index]?.minus(overlayTopInRoot) ?: continue
+        // Stroke offsets are relative to their own block's top, so shift them
+        // into this block's space before asking what they cover.
+        val shift = anchorTop - top
+        val moved = stroke.copy(
+            blockIndex = index,
+            points = stroke.points.map { it.copy(y = it.y + shift) },
+        )
+        val part = extractStrokeText(
+            moved, block, widthPx, measurer, density, fontScale, lineSpacing,
+            allowNearMiss = false,
+        )
+        if (!part.isNullOrBlank()) parts += part
+    }
+    if (parts.isEmpty()) return null
+    return parts.joinToString(" ").trim().ifBlank { null }
+}
+
+private const val VERTICAL_STROKE_RATIO = 1.5f
+
+/**
+ * Minimum height for a stroke to read as a margin bar rather than a stray
+ * tick — about two lines at default settings, so one deliberate drag beside a
+ * passage qualifies and a flick of the pen does not.
+ */
+private const val VERTICAL_MARK_MIN_HEIGHT_PX = 90f
+
+/**
+ * Below this share of a line's height, a stroke is an underline or a
+ * strikethrough — a mark on ONE line — rather than a shape drawn around text.
+ */
+private const val THIN_STROKE_FRACTION = 0.8f
+
+/**
+ * Top share of a line box that is leading rather than glyphs. A stroke
+ * starting in there is underlining the line ABOVE.
+ */
+private const val LINE_LEADING_FRACTION = 0.3f
+
+/**
+ * Share of a line a shape must cover to count as drawn around it.
+ */
+private const val LINE_COVERAGE_FRACTION = 0.5f
+
+/**
+ * Share of a word that must sit under the stroke for a clipped word at either
+ * end to be kept whole rather than dropped.
+ */
+private const val PARTIAL_WORD_KEEP_FRACTION = 0.5f
+
 private fun extractStrokeText(
     stroke: InkStroke,
     block: Block,
@@ -2497,6 +2717,14 @@ private fun extractStrokeText(
     density: Density,
     fontScale: Float,
     lineSpacing: Float,
+    /**
+     * Whether a stroke that misses every line may still claim the nearest
+     * one. True for the block a stroke is anchored to, where a near miss is
+     * the reader being slightly off. False when walking neighbouring blocks
+     * for a margin bar, where a near miss means the bar simply stopped there
+     * and claiming a line would over-select.
+     */
+    allowNearMiss: Boolean = true,
 ): String? {
     val plain = when (block) {
         is Block.Paragraph -> block.inlines.plainText()
@@ -2538,47 +2766,218 @@ private fun extractStrokeText(
         if (p.y > maxY) maxY = p.y
     }
 
-    // For each line, include it only if its Y range overlaps the stroke's
-    // Y range by at least 30% of the smaller of the two. A pure slop check
-    // (previous version) grabbed adjacent lines any time the stroke got
-    // within a fraction of a line-height of the boundary — a single-line
-    // circle around "It is simply a" pulled chunks from the line above and
-    // below into the returned text. This ratio test keeps a thin underline
-    // (small stroke fully inside a line → ratio ≈ 1) while cutting off
-    // neighbours (touch of 1px vs 30px line → ratio ≈ 3%).
+    // Which lines the stroke touches. A line counts only if its Y range
+    // overlaps the stroke's by at least 30% of the smaller of the two. A pure
+    // slop check (an older version) grabbed adjacent lines any time the stroke
+    // came within a fraction of a line-height of the boundary — a single-line
+    // circle around "It is simply a" pulled chunks from the lines above and
+    // below. This ratio keeps a thin underline (small stroke fully inside a
+    // line → ratio ≈ 1) while cutting neighbours (1px of a 30px line → 3%).
     val strokeHeight = maxY - minY
+    val strokeWidth = maxX - minX
+    val bodyLineHeight =
+        if (layout.lineCount > 0) layout.getLineBottom(0) - layout.getLineTop(0) else 0f
 
-    val segments = mutableListOf<String>()
-    for (line in 0 until layout.lineCount) {
-        val lineTop = layout.getLineTop(line)
-        val lineBottom = layout.getLineBottom(line)
-        val overlap = kotlin.math.max(
-            0f,
-            kotlin.math.min(lineBottom, maxY) - kotlin.math.max(lineTop, minY),
-        )
-        val lineHeight = lineBottom - lineTop
-        val minDim = kotlin.math.min(strokeHeight, lineHeight)
-        if (minDim <= 0f || overlap < minDim * 0.3f) continue
+    // A tall stroke crossing lines is a margin bar or bracket: the reader is
+    // marking a PASSAGE, not picking words, and its X range is meaningless
+    // (often it is in the margin, touching no glyph at all).
+    val isVerticalMark = strokeHeight > strokeWidth * VERTICAL_STROKE_RATIO &&
+        bodyLineHeight > 0f && strokeHeight > bodyLineHeight * 1.2f
 
-        val lineStart = layout.getLineStart(line)
-        val lineEnd = layout.getLineEnd(line)
-        var firstHit = -1
-        var lastHit = -1
-        for (offset in lineStart until lineEnd) {
-            val box = layout.getBoundingBox(offset)
-            if (box.right >= minX && box.left <= maxX) {
-                if (firstHit < 0) firstHit = offset
-                lastHit = offset
-            }
-        }
-        if (firstHit >= 0) {
-            val endExcl = (lastHit + 1).coerceAtMost(plain.length)
-            val seg = plain.substring(firstHit, endExcl).trim()
-            if (seg.isNotEmpty()) segments += seg
+    // A thin stroke is an underline or a strikethrough, and it marks exactly
+    // ONE line. Letting the overlap test choose was the "returns the line
+    // below" defect: `minDim` is min(strokeHeight, lineHeight), so for a 6px
+    // underline the bar to clear is ~2px, and an underline that dips barely
+    // into the next line's box qualifies it too. Underlining "Artificial
+    // Intelligence" returned that plus "fiction movie" from the line beneath.
+    val isThinMark = !isVerticalMark && bodyLineHeight > 0f &&
+        strokeHeight < bodyLineHeight * THIN_STROKE_FRACTION
+
+    val touched = mutableListOf<Int>()
+    if (isThinMark) {
+        touched += lineMarkedBy(layout, minY)
+    } else {
+        // Circles and other tall shapes genuinely span lines. A line counts
+        // only if the stroke covers most of THAT LINE.
+        //
+        // The measure used to be a share of min(strokeHeight, lineHeight),
+        // which is the wrong denominator for a shape drawn around text: a
+        // circle stands taller than its line, so min() is the line, and a
+        // circle poking ~20px into the line above cleared 30% of a 66px line
+        // and dragged it in. Circling a word kept taking the neighbouring
+        // line with it. Measured against the line alone, that same poke is
+        // 30% and fails, while a circle actually drawn around a line covers
+        // it fully and passes.
+        for (line in 0 until layout.lineCount) {
+            val lineTop = layout.getLineTop(line)
+            val lineBottom = layout.getLineBottom(line)
+            val overlap = kotlin.math.max(
+                0f,
+                kotlin.math.min(lineBottom, maxY) - kotlin.math.max(lineTop, minY),
+            )
+            val lineHeight = lineBottom - lineTop
+            if (lineHeight <= 0f || overlap < lineHeight * LINE_COVERAGE_FRACTION) continue
+            touched += line
         }
     }
-    if (segments.isEmpty()) return null
-    return segments.joinToString(" ").ifBlank { null }
+    if (touched.isEmpty()) {
+        // Nothing passed the ratio. A stroke sitting just off a line is a
+        // near miss and should still resolve — returning null there is what
+        // made the enclosure chip look unpredictable, since the gesture needs
+        // BOTH a shape and text. But a stroke nowhere near this block's text
+        // means the stroke was anchored to the WRONG BLOCK, and answering
+        // with that block's nearest line is worse than answering nothing: it
+        // quotes confident, wrong text back at the reader and sends it to the
+        // model. So the fallback is bounded to one line height.
+        val centre = (minY + maxY) / 2f
+        val nearest = (0 until layout.lineCount).minByOrNull { l ->
+            kotlin.math.abs((layout.getLineTop(l) + layout.getLineBottom(l)) / 2f - centre)
+        } ?: return null
+        val nearTop = layout.getLineTop(nearest)
+        val nearBottom = layout.getLineBottom(nearest)
+        val distance = when {
+            centre < nearTop -> nearTop - centre
+            centre > nearBottom -> centre - nearBottom
+            else -> 0f
+        }
+        val lineHeight = nearBottom - nearTop
+        if (!allowNearMiss || (lineHeight > 0f && distance > lineHeight)) {
+            android.util.Log.d(
+                "InkGesture",
+                "extract blk=${stroke.blockIndex} REJECT strokeY=$minY..$maxY " +
+                    "nearestLine=$nearest ($nearTop..$nearBottom) distance=$distance " +
+                    "— stroke is not over this block's text, likely mis-anchored",
+            )
+            return null
+        }
+        touched += nearest
+    }
+
+    val segments = if (isVerticalMark) {
+        touched.map { line ->
+            plain.substring(layout.getLineStart(line), lineEndOf(layout, plain, line)).trim()
+        }
+    } else {
+        touched.mapNotNull { line -> wordsUnderStroke(plain, layout, line, minX, maxX) }
+    }
+    val result = segments.joinToString(" ").filterNot { it == '\n' }.trim()
+    android.util.Log.d(
+        "InkGesture",
+        "extract blk=${stroke.blockIndex} strokeY=$minY..$maxY x=$minX..$maxX " +
+            "lines=${layout.lineCount} textH=${layout.size.height} " +
+            "touched=$touched vertical=$isVerticalMark -> ${result.take(120)}",
+    )
+    if (segments.isEmpty() || result.isBlank()) return null
+    return result
+}
+
+/**
+ * The line a thin stroke marks, from the stroke's TOP edge.
+ *
+ * The top is the reliable end of an underline: it sits right under the glyph
+ * bottoms of the line being marked. The stroke's centre or bottom can easily
+ * fall inside the NEXT line's box, because a line box extends well below its
+ * baseline and the leading belongs to the line beneath.
+ *
+ * If the top lands in the leading at the very top of a box, the stroke is in
+ * the gap under the previous line's glyphs, and that is the line meant.
+ */
+private fun lineMarkedBy(layout: TextLayoutResult, strokeTop: Float): Int {
+    var line = 0
+    for (l in 0 until layout.lineCount) {
+        if (strokeTop >= layout.getLineTop(l)) line = l else break
+    }
+    val top = layout.getLineTop(line)
+    val height = layout.getLineBottom(line) - top
+    if (line > 0 && height > 0f && (strokeTop - top) < height * LINE_LEADING_FRACTION) {
+        return line - 1
+    }
+    return line
+}
+
+/** [TextLayoutResult.getLineEnd] can run past the string on the last line. */
+private fun lineEndOf(layout: TextLayoutResult, plain: String, line: Int): Int =
+    layout.getLineEnd(line).coerceAtMost(plain.length)
+
+/**
+ * The words on one line that a stroke passes under, snapped to whole words.
+ *
+ * Character-level boundaries returned fragments like "to your ve" and "irst
+ * day o" — real examples from the device log. A fragment is worse than
+ * useless downstream: it is what the model gets asked about, and what the
+ * note quotes back. So a partial word at either END of the run is dropped,
+ * which is what a reader means by underlining "the middle bit".
+ *
+ * The exception is a stroke that covers part of ONE word and nothing else.
+ * Dropping both ends would leave nothing, and the reader clearly meant that
+ * word, so it comes back whole.
+ */
+private fun wordsUnderStroke(
+    plain: String,
+    layout: TextLayoutResult,
+    line: Int,
+    minX: Float,
+    maxX: Float,
+): String? {
+    val lineStart = layout.getLineStart(line)
+    val lineEnd = lineEndOf(layout, plain, line)
+    var firstHit = -1
+    var lastHit = -1
+    for (offset in lineStart until lineEnd) {
+        val box = layout.getBoundingBox(offset)
+        if (box.right >= minX && box.left <= maxX) {
+            if (firstHit < 0) firstHit = offset
+            lastHit = offset
+        }
+    }
+    if (firstHit < 0) return null
+    val hitEnd = (lastHit + 1).coerceAtMost(lineEnd)
+
+    fun isSpace(i: Int) = i < 0 || i >= plain.length || plain[i].isWhitespace()
+
+    // Started mid-word. Dropping it outright was too eager: clipping the
+    // first letter of a word threw the word away. If most of it is under the
+    // stroke, the reader meant it — take it whole; otherwise step past it.
+    var s = firstHit
+    if (!isSpace(s - 1) && s - 1 >= lineStart) {
+        var wordStart = s
+        while (wordStart > lineStart && !isSpace(wordStart - 1)) wordStart--
+        var wordEnd = s
+        while (wordEnd < lineEnd && !isSpace(wordEnd)) wordEnd++
+        val total = wordEnd - wordStart
+        if (total > 0 && (wordEnd - s).toFloat() / total >= PARTIAL_WORD_KEEP_FRACTION) {
+            s = wordStart
+        } else {
+            while (s < hitEnd && !isSpace(s)) s++
+            while (s < hitEnd && isSpace(s)) s++
+        }
+    }
+    // Ended mid-word, same rule from the other side.
+    var e = hitEnd
+    if (!isSpace(e) && e < lineEnd) {
+        var wordStart = e
+        while (wordStart > lineStart && !isSpace(wordStart - 1)) wordStart--
+        var wordEnd = e
+        while (wordEnd < lineEnd && !isSpace(wordEnd)) wordEnd++
+        val total = wordEnd - wordStart
+        if (total > 0 && (e - wordStart).toFloat() / total >= PARTIAL_WORD_KEEP_FRACTION) {
+            e = wordEnd
+        } else {
+            while (e > s && !isSpace(e - 1)) e--
+            while (e > s && isSpace(e - 1)) e--
+        }
+    }
+    if (e > s) {
+        val inner = plain.substring(s, e).trim()
+        if (inner.isNotEmpty()) return inner
+    }
+
+    // Part of a single word — widen to the whole of it.
+    var ws = firstHit
+    while (ws > lineStart && !isSpace(ws - 1)) ws--
+    var we = hitEnd
+    while (we < lineEnd && !isSpace(we)) we++
+    return plain.substring(ws, we).trim().ifEmpty { null }
 }
 
 /**

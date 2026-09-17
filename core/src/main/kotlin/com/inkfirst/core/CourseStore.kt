@@ -244,6 +244,7 @@ class CourseStore(private val root: File) {
         quote: String,
         note: String,
         created: String,
+        kind: String = "text",
     ): Course? {
         val course = load(courseSlug) ?: return null
         val updated = course.copy(
@@ -253,6 +254,7 @@ class CourseStore(private val root: File) {
                 quote = quote,
                 note = note,
                 created = created,
+                kind = kind,
             ),
         )
         writeCourse(courseSlug, updated)

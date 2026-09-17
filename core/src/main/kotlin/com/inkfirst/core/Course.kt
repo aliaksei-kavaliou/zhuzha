@@ -44,9 +44,12 @@ data class Annotation(
     val note: String,
     val created: String,
     // "text" for hand-selected annotations (render as an underline on the
-    // matched quote); "curve" for stylus lasso-selected annotations (render
-    // the stored path). Kept as free-text string not enum so JSON migration
-    // is a non-event when we add more kinds.
+    // matched quote); "ask" for a passage the reader asked the AI about
+    // (a margin marker only — no underline, because the point of recording
+    // the question is to keep the page clean enough to stop marking it up);
+    // "curve" for stylus lasso-selected annotations (render the stored
+    // path). Kept as free-text string not enum so JSON migration is a
+    // non-event when we add more kinds.
     val kind: String = "text",
 )
 

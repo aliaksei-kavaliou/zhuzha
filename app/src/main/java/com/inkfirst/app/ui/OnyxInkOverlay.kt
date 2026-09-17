@@ -790,19 +790,32 @@ fun OnyxInkOverlay(
                             return
                         }
                         val (ox, oy) = originRef.value
-                        val start = pts.first()
-                        val startLocalY = start.y - oy
-                        val getTop = blockTopYRef.value
-                        val anchorIdx = findAnchorBlockOnyx(rangeRef.value, getTop, startLocalY)
                         val xs = pts.map { it.x }
                         val ys = pts.map { it.y }
+                        // Anchor on the stroke's MIDDLE, not where the pen
+                        // happened to land. A circle drawn around text on a
+                        // paragraph's first line often starts in the gap
+                        // ABOVE it — paragraph spacing is ~37px — so the
+                        // "greatest top <= y" rule picked the PREVIOUS block,
+                        // and every downstream step then worked faithfully on
+                        // the wrong paragraph: "Let us start right at the
+                        // beginning. What is an AI, really?" came back for a
+                        // mark made two lines below it. The start point is
+                        // arbitrary for any shape that is not a left-to-right
+                        // underline; the vertical centre is inside the marked
+                        // text for underlines, circles and margin bars alike.
+                        val centreLocalY = ((ys.min() + ys.max()) / 2f) - oy
+                        val startLocalY = pts.first().y - oy
+                        val getTop = blockTopYRef.value
+                        val anchorIdx = findAnchorBlockOnyx(rangeRef.value, getTop, centreLocalY)
                         Log.d(
                             TAG,
-                            "emit($source) n=${pts.size} localY=$startLocalY anchor=$anchorIdx " +
+                            "emit($source) n=${pts.size} centreY=$centreLocalY startY=$startLocalY " +
+                                "anchor=$anchorIdx " +
                                 "extent=${(xs.max() - xs.min()).toInt()}x${(ys.max() - ys.min()).toInt()}px",
                         )
                         if (anchorIdx == null) {
-                            Log.w(TAG, "emit($source): no anchor for localY=$startLocalY — dropped")
+                            Log.w(TAG, "emit($source): no anchor for centreY=$centreLocalY — dropped")
                             return
                         }
                         val anchorY = getTop(anchorIdx) ?: 0f
