@@ -57,6 +57,14 @@ import java.time.LocalDate
 fun InkOverlay(
     pageStrokes: List<Stroke>,
     blockTopY: (globalIdx: Int) -> Float?,
+    /**
+     * The block's top as actually drawn on this page. Equals [blockTopY]
+     * except for the continuation of a split paragraph, where [blockTopY]
+     * reports a virtual top above the page so stored ink keeps one coordinate
+     * space. A stroke rendering above this edge was drawn on a line that now
+     * lives on the previous page, and belongs to that page alone.
+     */
+    blockVisibleTop: (globalIdx: Int) -> Float? = { null },
     pageBlockRange: IntRange,
     allowFingerDraw: Boolean,
     onStrokeAdded: (Stroke) -> Unit,

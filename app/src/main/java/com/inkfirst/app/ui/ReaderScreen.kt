@@ -154,7 +154,16 @@ private val INK_TOP_MARGIN = 28.dp
  * "the top is controls" is already half-learned, and reaching it is a
  * deliberate movement rather than an accident.
  */
-private val MENU_BAND_HEIGHT = 120.dp
+/**
+ * Height of the menu tap band, measured up from the BOTTOM of the page.
+ *
+ * The band sits where the menu itself opens — the panel comes up from the
+ * bottom, so that is where you reach for it. Deliberately thin, roughly the
+ * footer line carrying the page number: at the top it could afford 120dp
+ * because nothing else lived there, but the lower half of the page is prime
+ * page-turn territory and a tall band would swallow forward taps.
+ */
+private val MENU_BAND_HEIGHT = 72.dp
 
 /**
  * Width of a chapter cover or closing picture, as a fraction of the text
@@ -175,8 +184,14 @@ internal const val PLATE_WIDTH_FRACTION = 0.72f
  */
 internal enum class TapZone { MENU, PREV, NEXT }
 
-internal fun tapZoneFor(x: Float, y: Float, width: Float, menuBandPx: Float): TapZone = when {
-    y < menuBandPx -> TapZone.MENU
+internal fun tapZoneFor(
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+    menuBandPx: Float,
+): TapZone = when {
+    y > height - menuBandPx -> TapZone.MENU
     // Left third goes back; everything else goes forward. The old centre
     // third is given to NEXT because that is what a centre tap usually meant
     // — someone moving on, not aiming carefully.
@@ -538,6 +553,15 @@ fun ReaderScreen(
                     },
                     onStrokeTapped = { s -> viewingStroke = s },
                     onStrokeGesture = { g -> pendingGestureStroke = g },
+                    onPageChanged = {
+                        viewingStroke = null
+                        pendingGestureStroke = null
+                    },
+                    chipOpen = viewingStroke != null || pendingGestureStroke != null,
+                    onDismissChip = {
+                        viewingStroke = null
+                        pendingGestureStroke = null
+                    },
                     onFirstBlockChange = { headerFirstBlock = it },
                     onAskAboutBlock = { text -> chatSelection = text },
                     onOpenAnnotation = { a -> viewingAnnotation = a },
@@ -874,6 +898,15 @@ private fun PagedContent(
     onStrokeTapped: (InkStroke) -> Unit,
     onStrokeGesture: (InkStroke) -> Unit,
     onAnchorChange: (Int) -> Unit,
+    /**
+     * The page turned. A stroke chip belongs to a stroke on a particular
+     * page, so it has to go when that page does — otherwise it stays up
+     * offering Delete for ink the reader can no longer see.
+     */
+    onPageChanged: () -> Unit,
+    /** Whether a stroke chip is up, so a page tap can dismiss it instead. */
+    chipOpen: Boolean,
+    onDismissChip: () -> Unit,
     onToggleMenu: () -> Unit,
     onFirstBlockChange: (Int) -> Unit,
     onOpenPrevChapter: (() -> Unit)?,
@@ -980,6 +1013,8 @@ private fun PagedContent(
                     if (readerPrefs.getPageTurns() >= ReaderPrefs.HINT_RETIRES_AFTER) {
                         showTapHint = false
                     }
+                    // The chip's stroke is on the page we just left.
+                    onPageChanged()
                 }
                 lastCountedPage = pageIndex
             }
@@ -991,6 +1026,14 @@ private fun PagedContent(
             // InkOverlay needs to anchor + render strokes per-block). Keyed
             // on chapterSlug so the map is fresh on chapter change.
             val blockTopsInRoot = remember(chapterSlug) { mutableStateMapOf<Int, Float>() }
+            /**
+             * Each on-page block's REAL top, as opposed to the virtual top in
+             * [blockTopsInRoot]. The two differ only for the continuation of a
+             * split paragraph, and that difference is what says whether a
+             * stroke was drawn on a line this page is actually showing.
+             */
+            val blockVisibleTopsInRoot =
+                remember(chapterSlug) { mutableStateMapOf<Int, Float>() }
             var overlayTopInRoot by remember(chapterSlug) { mutableStateOf(0f) }
 
             // The block index of a page's first block is just the sum of block counts
@@ -1078,6 +1121,7 @@ private fun PagedContent(
                                                     downPos.x,
                                                     downPos.y,
                                                     size.width.toFloat(),
+                                                    size.height.toFloat(),
                                                     menuBandPx,
                                                 )
                                             ) {
@@ -1152,6 +1196,19 @@ private fun PagedContent(
                                             // unchanged across splitting.
                                             blockTopsInRoot[globalIdx] =
                                                 coords.positionInRoot().y - item.skippedPx
+                                            // The real top of the slice shown
+                                            // on THIS page, without the
+                                            // virtual-top adjustment. Ink
+                                            // anchors to the virtual top so a
+                                            // split block keeps one
+                                            // coordinate space, but deciding
+                                            // which page a stroke belongs to
+                                            // needs the visible edge: a
+                                            // stroke above it was drawn on a
+                                            // line that is now on the
+                                            // previous page.
+                                            blockVisibleTopsInRoot[globalIdx] =
+                                                coords.positionInRoot().y
                                         },
                                 ) {
                                     RenderBlock(
@@ -1231,6 +1288,9 @@ private fun PagedContent(
                         OnyxInkOverlay(
                             pageStrokes = pageStrokes,
                             blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
+                            blockVisibleTop = { idx ->
+                                blockVisibleTopsInRoot[idx]?.minus(overlayTopInRoot)
+                            },
                             pageBlockRange = pageBlockRange,
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
@@ -1240,9 +1300,25 @@ private fun PagedContent(
                             // touch stream and the release never reaches the
                             // gesture detector below, so tap-to-turn silently
                             // stopped working. Same thirds as the reader.
-                            onPageTap = { x, y, w ->
-                                when (
-                                    tapZoneFor(x, y, w, with(density) { MENU_BAND_HEIGHT.toPx() })
+                            chipOpen = chipOpen,
+                            onDismissChip = onDismissChip,
+                            onPageTap = { x, y, w, h ->
+                                // An open menu swallows the next tap, exactly
+                                // as in the detector below. Without this the
+                                // menu could not be closed at all on the pen
+                                // path: the panel opens over the bottom band,
+                                // so the band that toggles it is underneath
+                                // the panel, and every tap outside fell
+                                // through to a page turn with the menu still
+                                // up. The two detectors must agree — this is
+                                // the drift the T5 note warned about.
+                                if (menuOpen) {
+                                    onToggleMenu()
+                                } else when (
+                                    tapZoneFor(
+                                        x, y, w, h,
+                                        with(density) { MENU_BAND_HEIGHT.toPx() },
+                                    )
                                 ) {
                                     TapZone.MENU -> onToggleMenu()
                                     TapZone.PREV ->
@@ -1257,6 +1333,9 @@ private fun PagedContent(
                         InkOverlay(
                             pageStrokes = pageStrokes,
                             blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
+                            blockVisibleTop = { idx ->
+                                blockVisibleTopsInRoot[idx]?.minus(overlayTopInRoot)
+                            },
                             pageBlockRange = pageBlockRange,
                             allowFingerDraw = fingerDraws,
                             onStrokeAdded = onStrokeAddedEnriched,
@@ -1272,7 +1351,19 @@ private fun PagedContent(
                 }
 
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 8.dp)
+                        // The footer is the menu's tap target too. The band
+                        // above it belongs to the ink overlay, whose box stops
+                        // short of this row — so a tap at the true bottom edge
+                        // of the page, which is where a reader aims for
+                        // "bottom", landed outside every detector and did
+                        // nothing. Hitting the menu meant finding a strip you
+                        // could not see. Now the page-number line itself opens
+                        // it, and the band above is the generous margin around
+                        // that target rather than the whole target.
+                        .pointerInput(Unit) { detectTapGestures { onToggleMenu() } },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -1286,11 +1377,11 @@ private fun PagedContent(
                     if (showTapHint) {
                         Text(
                             // Describes the zones as they now are: the menu
-                            // moved from the centre third to a band across the
-                            // top, and the centre turns forward like the rest
-                            // of the page. A hint that teaches the old layout
-                            // is worse than none.
-                            text = "tap ← / → · top for menu ",
+                            // band sits along the bottom, where the panel
+                            // itself opens, and the centre turns forward like
+                            // the rest of the page. A hint that teaches the
+                            // old layout is worse than none.
+                            text = "tap ← / → · bottom for menu ",
                             style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                             textAlign = TextAlign.End,
                         )
@@ -2583,6 +2674,7 @@ private fun CompilePrompt(
                                         downPos.x,
                                         downPos.y,
                                         size.width.toFloat(),
+                                        size.height.toFloat(),
                                         MENU_BAND_HEIGHT.toPx(),
                                     )
                                 ) {
