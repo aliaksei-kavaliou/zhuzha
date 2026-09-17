@@ -105,11 +105,13 @@ import com.inkfirst.core.ChapterGenerator
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Annotation
 import com.inkfirst.core.Course
+import com.inkfirst.core.CourseStore
 import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.Inline
 import com.inkfirst.core.GeminiClient
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.MemoryUpdater
+import com.inkfirst.core.ReaderSignals
 import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.Stroke as InkStroke
 import com.inkfirst.core.courseDaySchedule
@@ -3500,7 +3502,17 @@ private fun compileChapter(
         try {
             KtorGeminiClient().use { client ->
                 val memory = store.readMemory(course.slug)
-                val markdown = ChapterGenerator(client, model).generate(course, chapterN, memory, apiKey)
+                // Record how the already-read chapters went before writing
+                // the next one. Compile time is the natural moment: it is
+                // "feed forward only" by construction, needs no new trigger,
+                // and the pass is idempotent — appendReaderNotes refuses a
+                // chapter it has already recorded, so running it over the
+                // whole course every compile costs nothing and cannot miss a
+                // chapter that was read while the app was closed.
+                recordReaderNotes(store, course, upTo = chapterN - 1)
+                val readerNotes = store.readReaderNotes(course.slug)
+                val markdown = ChapterGenerator(client, model)
+                    .generate(course, chapterN, memory, apiKey, readerNotes)
                 val chapter = course.chapters.first { it.n == chapterN }
                 store.saveChapter(course.slug, chapter.slug, markdown)
                 val updated = store.updateChapterStatus(course.slug, chapterN, ChapterStatus.GENERATED)
@@ -3562,6 +3574,32 @@ private fun compileChapter(
             System.err.println("chapter compile failed: ${e::class.simpleName}: ${e.message}")
             e.printStackTrace()
             onState(CompileState.Failed(geminiErrorLabel(e)))
+        }
+    }
+}
+
+/**
+ * Writes reader.md sections for every chapter up to [upTo] that has been read
+ * and left a trace — see docs/design.md §13.
+ *
+ * Assembled from what the reader actually did (questions asked, passages
+ * marked, notes written), so it costs no API call and states nothing it
+ * cannot show. Best-effort by design: this is a nicety attached to compiling
+ * a chapter, and it must never be the reason a compile fails.
+ */
+private fun recordReaderNotes(store: CourseStore, course: Course, upTo: Int) {
+    if (upTo < 1) return
+    for (n in 1..upTo) {
+        val chapter = course.chapters.firstOrNull { it.n == n } ?: continue
+        try {
+            val body = ReaderSignals.notesForChapter(
+                chapterSlug = chapter.slug,
+                annotations = course.annotations,
+                qaMarkdown = store.readQa(course.slug, chapter.slug),
+            ) ?: continue
+            store.appendReaderNotes(course.slug, n, chapter.title, body)
+        } catch (e: Exception) {
+            System.err.println("reader notes failed for chapter $n: ${e.message}")
         }
     }
 }

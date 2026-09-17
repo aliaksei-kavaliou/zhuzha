@@ -125,6 +125,53 @@ class CourseStore(private val root: File) {
     }
 
     /**
+     * Reads reader.md — how the READING went, as opposed to what the book
+     * taught. Empty string if never written; callers pass it as prompt input.
+     */
+    fun readReaderNotes(courseSlug: String): String {
+        val file = File(root, "$courseSlug/reader.md")
+        return if (file.exists()) file.readText() else ""
+    }
+
+    /**
+     * Appends one chapter's reading observations to reader.md:
+     *
+     *     ## Chapter 5 — how the reading went
+     *     <body>
+     *
+     * Returns false without writing if that chapter already has a section, so
+     * the caller can run this on every compile without tracking what it has
+     * already recorded.
+     *
+     * Deliberately a plain file the reader can open and edit, which matters
+     * more here than anywhere else in the app: if the book is going to form
+     * opinions about someone's understanding, they need to be able to read
+     * them and cross one out. See docs/design.md §13.
+     */
+    fun appendReaderNotes(
+        courseSlug: String,
+        chapterN: Int,
+        chapterTitle: String,
+        body: String,
+    ): Boolean {
+        if (body.isBlank()) return false
+        val file = File(root, "$courseSlug/reader.md").apply { parentFile?.mkdirs() }
+        val existing = if (file.exists()) file.readText() else ""
+        val heading = "## Chapter $chapterN —"
+        if (existing.lineSequence().any { it.trimStart().startsWith(heading) }) return false
+        val block = buildString {
+            if (existing.isNotBlank() && !existing.endsWith("\n\n")) appendLine()
+            appendLine("$heading how the reading went")
+            appendLine("<!-- $chapterTitle -->")
+            appendLine()
+            appendLine(body.trim())
+            appendLine()
+        }
+        file.writeText(existing + block)
+        return true
+    }
+
+    /**
      * Persists the reader's current position in [chapterN] as a block index
      * (see PersistedChapter.lastBlockIndex — block index, not page number).
      * Cheap: rewrites the small course.json.

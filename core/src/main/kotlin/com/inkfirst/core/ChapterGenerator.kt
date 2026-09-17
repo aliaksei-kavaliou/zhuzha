@@ -16,6 +16,8 @@ class ChapterGenerator(
      * @param course the full persisted Course (drives style + outline + context).
      * @param n 1-indexed chapter number.
      * @param memory current memory.md contents; blank on the first chapter.
+     * @param readerNotes current reader.md contents — how earlier chapters
+     *   were READ (docs/design.md §13). Blank is normal and expected.
      * @param apiKey Gemini API key (BYO — see CLAUDE.md).
      */
     suspend fun generate(
@@ -23,13 +25,14 @@ class ChapterGenerator(
         n: Int,
         memory: String,
         apiKey: String,
+        readerNotes: String = "",
     ): String {
         val chapter = course.chapters.firstOrNull { it.n == n }
             ?: throw IllegalArgumentException("Course has no chapter $n")
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
         val style = StylePresets.byKey(course.style) ?: StylePresets.DEFAULT
-        val prompt = buildChapterPrompt(course, chapter, memory)
+        val prompt = buildChapterPrompt(course, chapter, memory, readerNotes)
 
         return client.generateText(
             model = model,

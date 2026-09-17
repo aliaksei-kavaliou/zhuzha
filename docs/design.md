@@ -318,10 +318,30 @@ Compose underneath it. Wiping that layer and refreshing the panel are separate n
 page turn wants only the wipe, an erase wants both scoped to the rectangle it touched.
 See `docs/onyx-pen-thread.md` §T7; remaining defects are listed in CLAUDE.md.
 
-## 13. Reader signals — adapting the next chapter (designed, not built)
+## 13. Reader signals — adapting the next chapter (built 2026-09-17)
 
 `memory.md` remembers what the book *taught*. This is the other half: what the *reading* looked
-like. Proposed 2026-09-15; nothing built yet.
+like. Proposed 2026-09-15, built 2026-09-17 — `ReaderSignals` in `:core`, written to
+`reader.md`, fed into `buildChapterPrompt`. What shipped differs from the proposal below in
+three ways, each deliberate:
+
+**No model call.** The note said this should ride along with the `MemoryUpdater` call. It is
+assembled deterministically from what the reader did instead: questions asked (parsed from the
+chapter's `notes/<slug>.qa.md`), passages marked with Ask where no question was typed, and
+notes written. That costs nothing and is unit-testable, but the real reason is that it states
+only what the reader actually did — a model pass would reintroduce exactly the inference this
+section exists to avoid, one indirection further from the evidence.
+
+**Recorded when the NEXT chapter is compiled**, not at chapter end. That makes "feed forward
+only" true by construction rather than by discipline, needs no new trigger, and survives the
+app being closed mid-chapter. `CourseStore.appendReaderNotes` refuses a chapter it has already
+recorded, so the pass runs over the whole course on every compile and is idempotent.
+
+**Three signals, not five.** Questions, marked-but-unasked passages, and notes are all
+persisted already. Exercise reveals are in-memory only, and re-reads need a history of
+`last_block_index` that nothing keeps — both need new capture, and neither is worth adding
+until the three cheap ones prove useful. Recurrence across chapters is still open below;
+`reader.md` accumulates, so the model sees repeats even though nothing detects them.
 
 The premise: every time the reader selects a passage and asks about it, they have told us
 something — they stopped reading, and here is the sentence that stopped them. Today that signal

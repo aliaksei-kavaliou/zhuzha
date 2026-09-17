@@ -90,6 +90,12 @@ yet" note that used to live here was two months stale.
       strokes anchoring by their middle rather than by wherever the pen landed. A margin bar
       is a passage-marking gesture that reads across blocks, and asking leaves a `?` marker
       in the margin so a question is visible on the page.
+- [x] **Reader signals (§13)** — `reader.md` per course records how each chapter was READ
+      (questions asked and the passages they were asked about, passages marked without a
+      question, notes written), and feeds forward into the next chapter's prompt under
+      explicit bounds. Assembled from stored data, so no API call and covered by unit tests.
+      Not yet surfaced in the UI: the file is inspectable at
+      `<courses-root>/<slug>/reader.md` and is meant to be editable by hand.
 - [ ] Known open defects: first line of a page not drawable. See `docs/onyx-pen-thread.md` §T7.
 - [ ] **Two tap detectors, unconsolidated.** One finger contact is handled both by the
       reader's own `awaitEachGesture` and by the overlay (which must report taps itself,
