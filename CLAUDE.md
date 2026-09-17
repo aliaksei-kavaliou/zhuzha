@@ -78,12 +78,27 @@ yet" note that used to live here was two months stale.
 - [x] **Chapter covers** — an opening picture of the problem each chapter solves (§10).
 - [x] **Phase 2 handwriting** — the Onyx raw-ink path works: drawing with no lag, stroke
       persistence, tap-on-stroke chip, delete, page navigation (§11).
-- [ ] **Erase by sweep on the pen path** — committed in `eb7ea05`, device-untested as of 2026-09-15.
-      Read `docs/handoff-2026-09-15-onyx-erase.md` before touching `OnyxInkOverlay.kt` or
-      `ReaderScreen.kt`; `docs/onyx-pen-thread.md` is the full investigation log.
-- [ ] Known open defects: first line of a page not drawable; "Ask AI" returns the line below
-      the marked one; a tap after drawing both turns the page and opens the chip; long-press
-      to select also toggles the format menu; an occasional phantom chip. All documented in
-      `docs/onyx-pen-thread.md` (T4/T5).
+- [x] **Erase by sweep** — device-verified 2026-09-17, along with a long chain of panel
+      fixes found while testing it: the Onyx driver keeps its own ink layer below Android's
+      framebuffer, and EPD repaints had been aimed at the transparent ink SurfaceView rather
+      than the view actually showing the page. Read `docs/onyx-pen-thread.md` §T7 before
+      touching anything about repainting, ghosting, or tap handling — it is the session log
+      and it records what was measured rather than assumed.
+- [ ] Known open defects: `extractStrokeText` returns null on some strokes, so an enclosure
+      gesture silently produces no chip (`enclosing=true text=<null>`) — likely the same root
+      as "Ask AI" returning the line below the marked one; first line of a page not drawable.
+      See `docs/onyx-pen-thread.md` §T7.
+- [ ] **Two tap detectors, unconsolidated.** One finger contact is handled both by the
+      reader's own `awaitEachGesture` and by the overlay (which must report taps itself,
+      since the SDK owns the host view's touch stream). Three separate bugs on 2026-09-17
+      came from the two drifting apart. The fix is one detector with an explicit ladder:
+      menu open → close · chip open → dismiss · hits a stroke → chip · footer → menu ·
+      else → zone turn.
+
+**Device tip that paid for itself:** `adb exec-out screencap -p` is a differential test on
+the Boox, not just a screenshot. It captures Android's framebuffer, which the pen driver
+bypasses — so an artefact visible in the capture is real app state, and one visible on the
+glass but absent from the capture is driver ink or EPD residue. That distinction resolved
+several "ghost" reports in minutes.
 
 See `docs/design.md` for data model, file formats, and the generation strategy.

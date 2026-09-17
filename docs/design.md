@@ -310,8 +310,13 @@ that matter, because none of them are documented by the vendor:
 - **Page taps had to move into the overlay.** With raw drawing live the SDK owns the host view's
   touch stream and the release never reaches the reader's gesture detector.
 
-Still open: erase by sweep (committed in `eb7ea05`, device-untested — see
-`docs/handoff-2026-09-15-onyx-erase.md`), EPD ghosting, and the defects listed in CLAUDE.md.
+Erase by sweep and EPD ghosting are both resolved as of 2026-09-17, device-verified. The
+ghosting work turned on two findings worth carrying: the driver keeps its own ink layer
+below Android's framebuffer (invisible to `screencap`, untappable, survives a page turn),
+and repainting the transparent ink SurfaceView does nothing because the page is drawn by
+Compose underneath it. Wiping that layer and refreshing the panel are separate needs — a
+page turn wants only the wipe, an erase wants both scoped to the rectangle it touched.
+See `docs/onyx-pen-thread.md` §T7; remaining defects are listed in CLAUDE.md.
 
 ## 13. Reader signals — adapting the next chapter (designed, not built)
 

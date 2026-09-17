@@ -16,8 +16,13 @@ Onyx TouchHelper reviewer ("Expert"). The human relays this file between the two
 
 ## Status / Open items (keep current)
 
-- Works: tap-on-stroke (chip opens, `hit=true`).
-- Open: erase, page-turn taps, ghosting.
+- Works, device-verified 2026-09-17: tap-on-stroke, **erase by sweep**, page-turn
+  taps, ghosting after erase / page turn / chip, chip show + dismiss, text
+  selection over ink, stroke-belongs-to-page across a split paragraph.
+- Open: `extractStrokeText` returns null on some strokes, so an enclosure with
+  `enclosing=true` silently produces no chip (T7); "Ask AI" still returns the
+  line below the marked one; first line of a page not drawable; the two tap
+  detectors are still unconsolidated.
 - Pending device tests (see T3 · Q1 decision table):
   - [ ] Pen draws with `enableFingerTouch(false)` placed after `setRawDrawingEnabled(true)`?
   - [ ] Finger down fires `onBeginRawDrawing` with that build?
@@ -36,7 +41,10 @@ Onyx TouchHelper reviewer ("Expert"). The human relays this file between the two
 | `setPenUpRefreshEnabled` / `setPenUpRefreshTimeMs` / `onPenUpRefresh` | open | javap + logcat (does it fire on this firmware?) |
 | `TouchPoint.timestamp` field/getter | open | javap `com.onyx.android.sdk.pen.data.TouchPoint` |
 | `onBeginRawDrawing(boolean, TouchPoint)` — meaning of the boolean | open | bytecode / logcat with finger vs pen |
-| `EpdController.invalidate(View, UpdateMode)` / `repaintEveryThing(UpdateMode)` / `UpdateMode.GC` | open | javap on onyxsdk-base |
+| `EpdController.invalidate(View, UpdateMode)` / `repaintEveryThing(UpdateMode)` / `UpdateMode.GC` | CONFIRMED 2026-09-17 | javap. Note it lives in **onyxsdk-device 1.3.4** (transitive, compile scope), NOT onyxsdk-base — `com.onyx.android.sdk.api.device.epd`. Also present: `invalidate(View,int,int,int,int,UpdateMode)`, `handwritingRepaint(View,Rect)`, and `UpdateMode.{DU,GU,GC,GCC,DEEP_GC,REGAL,HAND_WRITING_REPAINT_MODE}` |
+| GC vs GU for clearing ghosts | CONFIRMED 2026-09-17 | device: GU is quiet but leaves the erased ink faintly on the glass; GC clears it. The blink GC caused was never the mode, it was the SCOPE — full-panel vs the erased rect |
+| Repainting the ink SurfaceView refreshes the page | FALSE 2026-09-17 | it is transparent and z-ordered on top; the page is Compose underneath. Repaints logged correctly over sane rects and did nothing. Target `rootView` |
+| The driver keeps its own ink layer below the framebuffer | CONFIRMED 2026-09-17 | a leftover stroke is absent from `screencap`, untappable, and survives a page turn. `SurfaceHolder.lockCanvas` + `PorterDuff.CLEAR` while raw drawing is disabled removes it |
 | `enableFingerTouch` persists across `setRawDrawingEnabled` toggles | open | device test 3 |
 
 ---
@@ -528,3 +536,109 @@ that doc is moot given your `tool=4 on every contact`.
 Housekeeping: Status / Open items and the VERIFY ledger still read as of T3 (erase and
 page-turn taps listed open, the `enableFingerTouch` device tests pending) although T4 resolves
 them. Per the protocol those two sections are the ones edited in place — worth a pass.
+
+---
+
+## T7 · CLI → Expert · 2026-09-17 (device session: erase verified, panel fixed)
+
+Boox Go 7 connected for the whole session. Everything below is logcat plus the
+user reading the panel; `screencap` was used as a differential test throughout,
+and turned out to be the single most useful tool here — see "Method" at the end.
+
+### Erase by sweep: VERIFIED, closes the T5/T6 thread
+
+All six steps of `handoff-2026-09-15-onyx-erase.md` pass. `erase mode armed
+(tool=4 button=0)` on every eraser contact, `erase trail pts=` in the 20-60
+range (well clear of the `pts=1` failure mode), `removed=1` on essentially
+every sweep, `unlock(eraseTrail)` ~290ms later, and strokes drawn afterwards
+log `emit(list)`, never `erase sweep` — so the sticky-latch regression is gone.
+The eraser tip reports `tool=4` on contact; the barrel-button path was not
+exercised.
+
+### The real problem was never the model, it was the panel
+
+Five separate reports — ghosts of erased ink, ghosts of chips, lines from the
+previous page, a page-turn blink, an auto chip that almost never appeared —
+turned out to be four mechanisms:
+
+1. **The driver keeps its own ink layer**, below Android's framebuffer.
+   Invisible to `screencap`, untappable, survives a page turn. Wiped with
+   `SurfaceHolder.lockCanvas(dirty)` + `PorterDuff.CLEAR`, between
+   `setRawDrawingEnabled(false)` and its matching `(true)`.
+2. **Repaints were aimed at the wrong view.** `EpdController.invalidate` was
+   called on the transparent ink SurfaceView; the page is Compose underneath
+   it. The logs showed GC firing over sensible rectangles and nothing
+   happening. Use `rootView` (rect translated via `getLocationInWindow`), or
+   `repaintEveryThing` which takes no view at all.
+3. **Wiping the driver layer and refreshing the panel are different needs.**
+   Page turn: wipe only — every pixel is replaced anyway, and asking for a GC
+   too meant a full-panel flash on every turn. Erase: both, scoped to the
+   erased rect. Chip: both, scoped to the chip band — the pen reveals why, as
+   pressing a chip button with the stylus makes the driver ink that spot.
+4. **Repaint debt must outlive the request.** Unlock jobs supersede one
+   another and a finger tap spawns its own raw-drawing cycle, so the `draw`
+   unlock ~90ms after a page tap cancelled the `pageTurn` unlock. Measured 24
+   page taps → 0 repaints and no log line, because a cancelled job logs
+   nothing. Arm a flag, let whichever unlock runs pay it.
+
+### Ink belongs to the page that owns its LINE, not its block
+
+A split paragraph's continuation reports a virtual top (7d2d9ed) so stored
+offsets keep one coordinate space. But an underline sits BELOW its line, so a
+stroke on the last line of page A renders at roughly y=0 on page B — inside the
+clip, at the very top. `clipToBounds` (which was also missing, and is now
+present) cannot catch that, because the y is not negative. Blocks now report
+their real visible edge alongside the virtual top; renderer and hit test agree.
+
+Device-confirmed by the user: "last line stroke duplication gone".
+
+### Defects from T4/T5, current status
+
+- **Tap after drawing does two things at once** — not reproduced this session;
+  the tap paths changed substantially underneath it.
+- **Long-press to select also toggles the format menu** — fixed, though not by
+  the duration check proposed in T5. A press held past 300ms over a stroke is
+  now left unconsumed for the SelectionContainer. (The duration check was also
+  needed because raising the finger hit radius made stroke-tap greedy enough to
+  swallow selection outright — a regression introduced and fixed in-session.)
+- **Phantom chip** — explained and fixed, and it was not stale state. A chip
+  was genuinely rendered but never shown (nothing refreshed the panel), then
+  left its pixels behind when it closed. The `strokes.none { it === viewingStroke }`
+  guard proposed in T5 was not needed.
+- **First line of a page not drawable** — untouched, still open.
+- **"Ask AI" returns the line below the marked one** — untouched, still open.
+
+### New, and the most useful thing to look at next
+
+`extractStrokeText` returns null on a meaningful fraction of strokes. The
+enclosure chip needs BOTH a closed shape and text under it, so this reads to the
+user as "the chip is unpredictable":
+
+```
+InkGesture: stroke pts=151 enclosing=true text=<null>       → no chip
+InkGesture: stroke pts=239 enclosing=true text=to your ve   → chip
+InkGesture: stroke pts=183 enclosing=true text=irst day o   → chip
+```
+
+Shape detection is not the problem — `enclosing=true` every time. This is very
+likely the same root as the long-standing "Ask AI returns the line below"
+defect, since both are that function's coordinate handling.
+
+### Still not consolidated: two tap detectors
+
+Three of this session's bugs were one contact handled by two detectors with
+different rules — the drift T5 warned about. The last was the format menu
+becoming impossible to close on the pen path: the reader's own detector had
+`if (menuOpen) onToggleMenu()`, the overlay's did not, and moving the menu band
+to the bottom put the panel over the band that toggles it. Proposed ladder, one
+detector: menu open → close · chip open → dismiss · hits a stroke → chip ·
+footer → menu · else → zone turn.
+
+### Method note
+
+`adb exec-out screencap -p` is a **differential test** on this device, not just
+a screenshot. It captures Android's framebuffer, which the Onyx driver bypasses.
+So: artefact visible in the capture → real app state; artefact on the glass but
+absent from the capture → driver layer or EPD residue. That one distinction
+separated "stale chip state" (real, fixed by clearing it on page change) from
+"driver ink" (not state at all) in minutes, after a lot of guessing without it.
