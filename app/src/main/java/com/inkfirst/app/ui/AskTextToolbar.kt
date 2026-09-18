@@ -43,9 +43,14 @@ class AskTextToolbar(
      * selection from here, so the same rect is ignored until the user selects
      * something else.
      *
-     * Trade-off: re-selecting the exact same range, with a pixel-identical
-     * rect, and no other selection in between, won't re-open the chip. Selecting
-     * anything else first clears the block.
+     * Only needed on the path where the selection SURVIVES the dismissal —
+     * Compose calling [hide] on its own. When the reader dismisses on purpose
+     * the caller destroys the selection outright and uses [dismissForRebuild],
+     * which deliberately remembers nothing.
+     *
+     * Trade-off, on this path only: re-selecting the exact same range, with a
+     * pixel-identical rect and no other selection in between, won't re-open
+     * the chip. Selecting anything else first clears the block.
      */
     private var dismissedRect: Rect? = null
 
@@ -54,6 +59,22 @@ class AskTextToolbar(
 
     override fun hide() {
         dismissedRect = selectionRect
+        selectionRect = null
+        copyCallback = null
+    }
+
+    /**
+     * Dismiss because the selection itself is being destroyed — the caller is
+     * about to rebuild the SelectionContainer around it.
+     *
+     * Unlike [hide], this remembers nothing. Suppression exists to stop a
+     * still-live selection from re-reporting itself and putting the chip
+     * straight back, and after a rebuild nothing is live. Remembering anyway
+     * had a visible cost: selecting the same passage again on purpose got no
+     * chip, and because selectionRect stayed null the next tap read as a page
+     * turn instead of dismissing the selection.
+     */
+    fun dismissForRebuild() {
         selectionRect = null
         copyCallback = null
     }

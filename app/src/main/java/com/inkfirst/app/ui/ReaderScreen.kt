@@ -296,7 +296,9 @@ fun ReaderScreen(
 
     val clearSelection: () -> Unit = {
         if (askToolbar.selectionRect != null) {
-            askToolbar.hide()
+            // dismissForRebuild, not hide: the epoch bump below destroys the
+            // selection for real, so nothing needs suppressing afterwards.
+            askToolbar.dismissForRebuild()
             selectionEpoch++
         }
     }
