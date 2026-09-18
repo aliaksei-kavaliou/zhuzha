@@ -96,7 +96,7 @@ import java.time.LocalDate
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun OnyxInkOverlay(
+internal fun OnyxInkOverlay(
     pageStrokes: List<Stroke>,
     blockTopY: (globalIdx: Int) -> Float?,
     /**
@@ -110,36 +110,61 @@ fun OnyxInkOverlay(
     pageBlockRange: IntRange,
     onStrokeAdded: (Stroke) -> Unit,
     onStrokeErased: (Stroke?) -> Unit,
-    onStrokeTapped: (Stroke) -> Unit,
     /**
-     * A finger tap that hit no stroke, in overlay-local pixels plus the
-     * overlay's width and height. Raw coordinates rather than a fraction,
-     * because the zone rule depends on Y against the overlay's own height —
-     * the caller owns the rule so the two tap detectors cannot drift apart.
+     * Resolve what a finger contact means. Pure query, no side effects — it is
+     * called BEFORE anything is acted on, because this overlay has to know the
+     * meaning in advance to give the panel the right treatment (see the
+     * ordering note in the finger branch).
      *
-     * The overlay reports these itself rather than letting the tap fall
-     * through to the reader's own detector. In this mode the SDK is attached
-     * to the host view's touch stream, and the parent never sees the release
-     * — the tap is observed here (hit=false in the log) and then vanishes, so
-     * page turns silently stopped working.
+     * The overlay reports and resolves its own taps rather than letting them
+     * fall through: in this mode the SDK is attached to the host view's touch
+     * stream and the parent's detector never sees the release, so tap-to-turn
+     * silently stopped working. But it does not DECIDE — the caller owns the
+     * one ladder, which is what stops the two detectors drifting apart.
+     *
+     * Coordinates are overlay-local pixels plus the overlay's own width and
+     * height, because the zone rule measures against them. [strokeHit] is the
+     * stroke under the contact, hit-tested here since only this side holds the
+     * page's ink.
      */
-    onPageTap: (x: Float, y: Float, width: Float, height: Float) -> Unit = { _, _, _, _ -> },
+    resolveTap: (x: Float, y: Float, width: Float, height: Float, strokeHit: Stroke?) -> TapAction,
+    /** Carry out what [resolveTap] decided. */
+    onTapAction: (TapAction) -> Unit,
     /**
-     * Whether a stroke chip is currently showing. A tap while one is up means
-     * "dismiss this", not "turn the page" — pressing on the page to put a
-     * chip away is the obvious gesture, and turning the page instead loses
-     * the reader's place to cancel something.
+     * Whether a stroke chip is currently showing. Not used to decide anything
+     * — that is [resolveTap]'s job — but a chip appearing or leaving needs the
+     * panel unlocked, and only this side can ask for that.
      */
     chipOpen: Boolean = false,
-    onDismissChip: () -> Unit = {},
+    /**
+     * Whether the pen may draw at all.
+     *
+     * False whenever a menu, panel or modal is open over the page. The SDK
+     * inks at driver level — onto the glass, below Android's framebuffer but
+     * visibly on top of whatever is rendered after it — so without this the
+     * pen happily draws on the chapter underneath an open dialog. The
+     * Add-note overlay is the worst of it: a box that invites you to write,
+     * with the writing landing on the page behind it.
+     */
+    drawingEnabled: Boolean = true,
+    /**
+     * The chip's own bounds in overlay-local pixels, used to scope the repaint
+     * that shows and hides it.
+     *
+     * Without this the chip was announced by GC-ing a full-width band a
+     * quarter of the screen tall — a lot of panel to flash for one small pill,
+     * and the last visible blink after the overlay repaint was scoped. Falls
+     * back to the band when no chip has been laid out yet.
+     */
+    chipRect: AndroidRect? = null,
     modifier: Modifier = Modifier,
 ) {
     val addedRef = rememberUpdatedState(onStrokeAdded)
-    val tappedRef = rememberUpdatedState(onStrokeTapped)
     val erasedRef = rememberUpdatedState(onStrokeErased)
-    val pageTapRef = rememberUpdatedState(onPageTap)
-    val chipOpenRef = rememberUpdatedState(chipOpen)
-    val dismissChipRef = rememberUpdatedState(onDismissChip)
+    val resolveTapRef = rememberUpdatedState(resolveTap)
+    val drawEnabledRef = rememberUpdatedState(drawingEnabled)
+    val chipRectRef = rememberUpdatedState(chipRect)
+    val tapActionRef = rememberUpdatedState(onTapAction)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
     val blockVisibleTopRef = rememberUpdatedState(blockVisibleTop)
@@ -214,10 +239,62 @@ fun OnyxInkOverlay(
     //
     // Scoped to the band chips live in: a solid black pill ghosts hard, but
     // repainting the page to put one away is the flash we removed earlier.
+    // Hand the pen to the page, or take it away when something opens over it.
+    LaunchedEffect(drawingEnabled) {
+        if (drawingEnabled) {
+            try {
+                touchHelperRef.value?.setRawDrawingEnabled(true)
+            } catch (t: Throwable) {
+                Log.w(TAG, "re-enable drawing failed", t)
+            }
+        } else {
+            // Standing the driver down is not enough on its own: ink already
+            // on the glass sits above whatever Compose renders next, so an
+            // open dialog would wear the page's underlines across it.
+            //
+            // But only the INKED pixels can bleed, so only they need
+            // repainting. The first version of this asked for the whole panel
+            // and that is precisely the blink the erase work removed in
+            // September: the flash was never the GC mode, it was the SCOPE.
+            // A page with no ink on it — the common case when the format menu
+            // opens — now costs nothing at all.
+            val region = inkRegion(strokesRef.value, blockTopYRef.value)
+            if (region == null) {
+                try {
+                    touchHelperRef.value?.setRawDrawingEnabled(false)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "stand-down failed", t)
+                }
+                Log.d(TAG, "overlay opened over a clean page — no repaint")
+            } else {
+                repaintRectRef.value = region
+                unlockRequestRef.value?.invoke("overlay")
+            }
+        }
+    }
+
     LaunchedEffect(chipOpen) {
         if (chipWasOpenRef.value != chipOpen) {
+            // Let the pill lay out and report its bounds before scoping to
+            // it. Without this the FIRST chip of a session repainted the
+            // fallback band — a quarter of the screen — because the effect
+            // ran before onGloballyPositioned had said where the chip was.
+            if (chipOpen) {
+                withFrameNanos {}
+                withFrameNanos {}
+            }
             val (w, h) = overlaySizeRef.value
-            if (w > 0 && h > 0) {
+            val known = chipRectRef.value
+            if (known != null) {
+                // The pill itself, padded the same as an erase rect.
+                repaintRectRef.value = AndroidRect(
+                    (known.left - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
+                    (known.top - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
+                    known.right + REPAINT_PAD_PX.toInt(),
+                    known.bottom + REPAINT_PAD_PX.toInt(),
+                )
+            } else if (w > 0 && h > 0) {
+                // Nothing measured yet — fall back to the band.
                 repaintRectRef.value = AndroidRect(
                     0,
                     (h * (1f - CHIP_BAND_FRACTION)).toInt().coerceAtLeast(0),
@@ -410,7 +487,14 @@ fun OnyxInkOverlay(
                             // page turn was discarded as if a finger had made
                             // it — the pen appeared to die after one tap.
                             try {
-                                if (hit != null) {
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                // Before the first layout pass there is no
+                                // geometry to resolve a zone against.
+                                if (w > 0f) {
+                                val action = resolveTapRef.value(at.x, at.y, w, h, hit)
+                                Log.d(TAG, "finger tap at=(${at.x},${at.y}) w=$w h=$h -> $action")
+                                if (action is TapAction.ShowStrokeChip) {
                                     // Wait and see what this contact becomes
                                     // before claiming it. Claiming on DOWN
                                     // made every contact within TAP_SLOP of a
@@ -441,74 +525,91 @@ fun OnyxInkOverlay(
                                         Log.d(TAG, "long press near stroke — left for selection")
                                         return@awaitEachGesture
                                     }
-                                    down.consume()
-                                    tappedRef.value(hit)
-                                    // The chip is Compose UI, and while raw
-                                    // drawing is live the driver owns the
-                                    // panel: Compose's output lands in the
-                                    // framebuffer and is not shown. Without
-                                    // this the chip appeared only at the NEXT
-                                    // refresh — a page turn, or the unlock
-                                    // after some later stroke — which read as
-                                    // "tap does nothing". Any UI a finger
-                                    // opens needs this.
-                                    unlockRequestRef.value?.invoke("chip")
-                                } else {
-                                // Report it ourselves — see onPageTap.
-                                if (chipOpenRef.value) {
-                                    // Put the chip away and stop there. The
-                                    // reader tapped the page to dismiss it;
-                                    // turning the page as well meant the only
-                                    // way to cancel a chip was to leave the
-                                    // page it belonged to.
-                                    Log.d(TAG, "tap dismissed chip at=(${at.x},${at.y})")
-                                    down.consume()
-                                    dismissChipRef.value()
-                                    // A chip is a solid black pill, so it
-                                    // ghosts harder than ink does — it leaves
-                                    // a pale rectangle where it sat. Scope the
-                                    // clear to the band it lives in (bottom,
-                                    // full width) rather than the whole page:
-                                    // same reasoning as the erase rect, since
-                                    // a page-wide GC to put one chip away is
-                                    // the flash we just spent the morning
-                                    // removing.
-                                    repaintRectRef.value = AndroidRect(
-                                        0,
-                                        (size.height * (1f - CHIP_BAND_FRACTION)).toInt()
-                                            .coerceAtLeast(0),
-                                        size.width,
-                                        size.height,
-                                    )
-                                    unlockRequestRef.value?.invoke("chipClose")
-                                    return@awaitEachGesture
                                 }
-                                val w = size.width.toFloat()
-                                val h = size.height.toFloat()
-                                if (w > 0f) {
-                                    Log.d(TAG, "page tap at=(${at.x},${at.y}) w=$w h=$h")
-                                    // BEFORE the tap is reported, not after.
-                                    // A page turn replaces everything on the
-                                    // panel, including ink the driver painted
-                                    // for the page being left; nothing else
-                                    // unlocks here, so that ink stayed on the
-                                    // glass over the new page — the "line
-                                    // from the previous page, cut off at the
-                                    // top" report.
-                                    //
-                                    // Ordering is the whole fix: reporting
-                                    // the tap recomposes this overlay and
-                                    // cancels this gesture coroutine (see the
-                                    // try/finally above), so a call placed
-                                    // after it never runs. Measured: 24 page
-                                    // taps, zero unlocks. scheduleUnlock
-                                    // launches in a scope that outlives the
-                                    // gesture, and its debounce means the
-                                    // repaint lands after the new page is up.
-                                    unlockRequestRef.value?.invoke("pageTurn")
-                                    pageTapRef.value(at.x, at.y, w, h)
+                                when (action) {
+                                    is TapAction.ShowStrokeChip -> {
+                                        down.consume()
+                                        tapActionRef.value(action)
+                                        // The chip is Compose UI, and while raw
+                                        // drawing is live the driver owns the
+                                        // panel: Compose's output lands in the
+                                        // framebuffer and is not shown. Without
+                                        // this the chip appeared only at the NEXT
+                                        // refresh — a page turn, or the unlock
+                                        // after some later stroke — which read as
+                                        // "tap does nothing". Any UI a finger
+                                        // opens needs this.
+                                        unlockRequestRef.value?.invoke("chip")
+                                    }
+                                    TapAction.DismissChip,
+                                    TapAction.ClearSelection -> {
+                                        down.consume()
+                                        tapActionRef.value(action)
+                                        // A chip is a solid black pill, so it
+                                        // ghosts harder than ink does — it leaves
+                                        // a pale rectangle where it sat. Scope the
+                                        // clear to the band it lives in (bottom,
+                                        // full width) rather than the whole page:
+                                        // same reasoning as the erase rect, since
+                                        // a page-wide GC to put one chip away is
+                                        // the flash we just spent the morning
+                                        // removing.
+                                        repaintRectRef.value = chipRectRef.value?.let { r ->
+                                            AndroidRect(
+                                                (r.left - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
+                                                (r.top - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
+                                                r.right + REPAINT_PAD_PX.toInt(),
+                                                r.bottom + REPAINT_PAD_PX.toInt(),
+                                            )
+                                        } ?: AndroidRect(
+                                            0,
+                                            (size.height * (1f - CHIP_BAND_FRACTION)).toInt()
+                                                .coerceAtLeast(0),
+                                            size.width,
+                                            size.height,
+                                        )
+                                        unlockRequestRef.value?.invoke("chipClose")
+                                    }
+                                    // The dead middle. Still REPORTED — an
+                                    // earlier version swallowed it here, which
+                                    // is why a centre tap could not dismiss
+                                    // anything: nothing downstream ever heard
+                                    // about it. What it skips is the unlock,
+                                    // because that wipes the driver's ink
+                                    // layer and a contact that means nothing
+                                    // must not cost the reader ink already on
+                                    // the page.
+                                    TapAction.Ignore -> tapActionRef.value(action)
+                                    else -> {
+                                        // BEFORE the action is carried out, not
+                                        // after. A page turn replaces everything
+                                        // on the panel, including ink the driver
+                                        // painted for the page being left;
+                                        // nothing else unlocks here, so that ink
+                                        // stayed on the glass over the new page —
+                                        // the "line from the previous page, cut
+                                        // off at the top" report.
+                                        //
+                                        // Ordering is the whole fix: acting
+                                        // recomposes this overlay and cancels
+                                        // this gesture coroutine (see the
+                                        // try/finally above), so a call placed
+                                        // after it never runs. Measured: 24 page
+                                        // taps, zero unlocks. scheduleUnlock
+                                        // launches in a scope that outlives the
+                                        // gesture, and its debounce means the
+                                        // repaint lands after the new page is up.
+                                        //
+                                        // Every non-chip rung shares this
+                                        // treatment, which is what the old code
+                                        // did too: it unlocked once, here, and
+                                        // let the caller sort out menu from
+                                        // marker from page turn.
+                                        unlockRequestRef.value?.invoke("pageTurn")
+                                        tapActionRef.value(action)
+                                    }
                                 }
-                            }
+                                }
                             } finally {
                                 fingerDownRef.value = false
                                 fingerUpAtRef.value = System.currentTimeMillis()
@@ -650,7 +751,10 @@ fun OnyxInkOverlay(
                                         clearPendingRef.value = false
                                         clearSurface(repaintRectRef.value)
                                     }
-                                    it.setRawDrawingEnabled(true)
+                                    // Not unconditional: an unlock that
+                                    // fires while a dialog is open must not
+                                    // hand the pen back to the page beneath it.
+                                    if (drawEnabledRef.value) it.setRawDrawingEnabled(true)
                                 }
                                 Log.d(TAG, "unlock($reason)")
                                 // Releasing the panel is not repainting it.
@@ -688,23 +792,25 @@ fun OnyxInkOverlay(
                                         // rect was measured against this view.
                                         val loc = IntArray(2)
                                         surface.getLocationInWindow(loc)
+                                        val mode = REPAINT_MODE
                                         EpdController.invalidate(
                                             target,
                                             r.left + loc[0], r.top + loc[1],
                                             r.right + loc[0], r.bottom + loc[1],
-                                            REPAINT_MODE,
+                                            mode,
                                         )
                                         Log.d(
                                             TAG,
-                                            "repaint($reason, $REPAINT_MODE, rect=$r +${loc[0]},${loc[1]})",
+                                            "repaint($reason, $mode, rect=$r +${loc[0]},${loc[1]})",
                                         )
                                     } else {
                                         // Nothing to scope it to: refresh the
                                         // panel outright. repaintEveryThing
                                         // needs no view at all, so it cannot
                                         // be aimed at the wrong one.
-                                        EpdController.repaintEveryThing(REPAINT_MODE)
-                                        Log.d(TAG, "repaint($reason, $REPAINT_MODE, everything)")
+                                        val mode = REPAINT_MODE
+                                        EpdController.repaintEveryThing(mode)
+                                        Log.d(TAG, "repaint($reason, $mode, everything)")
                                     }
                                     repaintRectRef.value = null
                                 }
@@ -979,7 +1085,7 @@ fun OnyxInkOverlay(
                                 val bounds = AndroidRect(0, 0, surface.width, surface.height)
                                 helper.setLimitRect(bounds, emptyList())
                                 Log.d(TAG, "  (view origin on screen = ${loc[0]},${loc[1]})")
-                                helper.setRawDrawingEnabled(true)
+                                if (drawEnabledRef.value) helper.setRawDrawingEnabled(true)
                                 Log.d(TAG, "limitRect($reason) viewLocal=$bounds")
                             } catch (t: Throwable) {
                                 Log.w(TAG, "limitRect($reason) failed", t)
@@ -992,7 +1098,7 @@ fun OnyxInkOverlay(
                             try {
                                 helper.setStrokeWidth(3f).openRawDrawing()
                                 helper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
-                                helper.setRawDrawingEnabled(true)
+                                if (drawEnabledRef.value) helper.setRawDrawingEnabled(true)
                                 Log.d(TAG, "TouchHelper opened ${width}x$height")
                                 applyLimitRect("created")
                             } catch (t: Throwable) {
@@ -1135,10 +1241,10 @@ private const val ERASE_COMMIT_GRACE_MS = 150L
  * Unlock reasons that must not wait out [UNLOCK_DEBOUNCE_MS]: UI the reader is
  * waiting to see or to see gone, rather than ink being committed.
  */
-private val IMMEDIATE_REASONS = setOf("chip", "chipShow", "chipClose")
+private val IMMEDIATE_REASONS = setOf("chip", "chipShow", "chipClose", "overlay")
 
 private val REPAINT_REASONS =
-    setOf("eraseTrail", "eraseSweep", "erase", "chipClose", "chipShow")
+    setOf("eraseTrail", "eraseSweep", "erase", "chipClose", "chipShow", "overlay")
 
 /**
  * Reasons that need the driver's ink layer WIPED — a different question from
@@ -1158,7 +1264,7 @@ private val REPAINT_REASONS =
  * the chip band, so ink elsewhere on the page keeps its low-latency copy.
  */
 private val CLEAR_REASONS =
-    setOf("eraseTrail", "eraseSweep", "erase", "pageTurn", "chipShow", "chipClose")
+    setOf("eraseTrail", "eraseSweep", "erase", "pageTurn", "chipShow", "chipClose", "overlay")
 
 /**
  * How the panel is repainted once ink has been removed from it.
@@ -1174,6 +1280,16 @@ private val CLEAR_REASONS =
  * is a strip most of a line high and the page around it never moves.
  */
 private val REPAINT_MODE = UpdateMode.GC
+
+/**
+ * Deliberately one mode for every reason.
+ *
+ * A gentler UpdateMode.GU was tried for chips, on the theory that the blink
+ * was the mode. It was not — it was the SCOPE, exactly as the erase work found
+ * in September. Once the repaint was scoped to the pill instead of a
+ * quarter-screen band the flash went away on its own, and GU would have risked
+ * bringing back the chip-shaped ghost that this repaint exists to prevent.
+ */
 
 /** Slop around an erased region, so antialiased edges are repainted too. */
 private const val REPAINT_PAD_PX = 12f
@@ -1271,6 +1387,17 @@ private fun hitTestForErase(
  * strokes it removed — padded, in overlay-local pixels. Null when there is
  * nothing to bound, which asks for a whole-view repaint instead.
  */
+/**
+ * Bounding box of all the ink on this page, or null when there is none.
+ *
+ * Shares [eraseRegion]'s geometry because it is the same question — which
+ * pixels does this ink occupy — asked with no eraser trail.
+ */
+private fun inkRegion(
+    strokes: List<Stroke>,
+    blockTopY: (Int) -> Float?,
+): AndroidRect? = eraseRegion(emptyList(), strokes, blockTopY)
+
 private fun eraseRegion(
     trail: List<Pair<Float, Float>>,
     removed: Collection<Stroke>,

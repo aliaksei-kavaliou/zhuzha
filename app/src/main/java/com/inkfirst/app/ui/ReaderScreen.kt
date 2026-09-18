@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.graphics.Rect as AndroidRect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -182,27 +184,6 @@ private val MENU_BAND_HEIGHT = 72.dp
  */
 internal const val PLATE_WIDTH_FRACTION = 0.72f
 
-/**
- * Where a tap lands. One rule, used by both tap detectors — the reader's own
- * and the Onyx overlay's, which had to take over page taps when the SDK
- * started owning the host view's touch stream.
- */
-internal enum class TapZone { MENU, PREV, NEXT }
-
-internal fun tapZoneFor(
-    x: Float,
-    y: Float,
-    width: Float,
-    height: Float,
-    menuBandPx: Float,
-): TapZone = when {
-    y > height - menuBandPx -> TapZone.MENU
-    // Left third goes back; everything else goes forward. The old centre
-    // third is given to NEXT because that is what a centre tap usually meant
-    // — someone moving on, not aiming carefully.
-    x < width / 3f -> TapZone.PREV
-    else -> TapZone.NEXT
-}
 
 private val InkColor = Color(0xFF000000)
 private val PaperColor = Color(0xFFFFFFFF)
@@ -263,6 +244,29 @@ fun ReaderScreen(
     var pendingNoteQuote by remember(chapterSlug) { mutableStateOf<String?>(null) }
     // When non-null, the NoteView overlay shows this annotation for read + delete.
     var viewingAnnotation by remember(chapterSlug) { mutableStateOf<Annotation?>(null) }
+    /**
+     * Where the stroke chip last sat, in root coords.
+     *
+     * Deliberately never cleared: by the time the chip closes it is gone from
+     * composition, and the panel still has to repaint the pixels it used to
+     * occupy. Keeping the last position is what makes scoping that possible.
+     */
+    var lastChipBounds by remember(chapterSlug) { mutableStateOf<Rect?>(null) }
+
+    /**
+     * Bumped to throw away a live text selection.
+     *
+     * [AskTextToolbar.hide] can only take the CHIP away — the selection itself
+     * lives inside SelectionContainer, which exposes no way to clear it, so
+     * Cancel left the passage sitting there highlighted and tapping elsewhere
+     * did not shift it either (on the pen path the overlay owns the touch
+     * stream, so the container never sees the tap that would normally
+     * collapse it). Rebuilding the container is the only lever available.
+     *
+     * Only bumped when a selection is actually live: recreating the page
+     * subtree is not something to do on every stray tap.
+     */
+    var selectionEpoch by remember(chapterSlug) { mutableStateOf(0) }
     // When non-null, a chip is showing for a tapped drawing — mirrors the
     // text-selection chip's actions (Ask / Add note / Delete). Anchor block
     // (and thus context text) is resolved lazily from stroke.blockIndex.
@@ -288,6 +292,13 @@ fun ReaderScreen(
             onAsk = { selectedText -> askRef.value(selectedText, null) },
             onAddNote = { selectedText -> pendingNoteQuote = selectedText },
         )
+    }
+
+    val clearSelection: () -> Unit = {
+        if (askToolbar.selectionRect != null) {
+            askToolbar.hide()
+            selectionEpoch++
+        }
     }
     // startBlockIndex = -1 is the "open at last block" sentinel — used when
     // flipping left off the first page of a chapter into the previous
@@ -604,6 +615,10 @@ fun ReaderScreen(
                         pendingGestureStroke = null
                     },
                     chipOpen = viewingStroke != null || pendingGestureStroke != null,
+                    chipBoundsInRoot = lastChipBounds,
+                    selectionEpoch = selectionEpoch,
+                    selectionActive = askToolbar.selectionRect != null,
+                    onClearSelection = clearSelection,
                     onDismissChip = {
                         viewingStroke = null
                         pendingGestureStroke = null
@@ -623,6 +638,14 @@ fun ReaderScreen(
                     onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
                     onOpenNextChapter = nextChapter?.let { n -> { onOpenChapter(n.slug, 0) } },
                     menuOpen = showFormatMenu,
+                    // Everything that can sit over the page. The pen inks at
+                    // driver level and does not know a dialog is there, so
+                    // the list has to be exhaustive — a modal missing from it
+                    // is one you can accidentally draw straight through.
+                    penEnabled = !showFormatMenu &&
+                        chatSelection == null &&
+                        pendingNoteQuote == null &&
+                        viewingAnnotation == null,
                     onAnchorChange = { anchorBlockIndex = it },
                     onToggleMenu = { showFormatMenu = !showFormatMenu },
                 )
@@ -648,7 +671,7 @@ fun ReaderScreen(
                 TextButton(onClick = { askToolbar.addNote() }) {
                     Text("Add note", color = PaperColor)
                 }
-                TextButton(onClick = { askToolbar.hide() }) {
+                TextButton(onClick = clearSelection) {
                     Text("Cancel", color = PaperColor)
                 }
             }
@@ -670,6 +693,7 @@ fun ReaderScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 64.dp)
+                    .onGloballyPositioned { lastChipBounds = it.boundsInRoot() }
                     .background(InkColor, RoundedCornerShape(24.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
@@ -726,6 +750,7 @@ fun ReaderScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 64.dp)
+                    .onGloballyPositioned { lastChipBounds = it.boundsInRoot() }
                     .background(InkColor, RoundedCornerShape(24.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
@@ -949,6 +974,11 @@ private fun PagedContent(
     textAlign: TextAlignPref,
     anchorBlockIndex: Int,
     menuOpen: Boolean,
+    /**
+     * False while anything is open over the page — a menu, a modal, the chat
+     * panel. Passed down so the pen stops inking the chapter underneath it.
+     */
+    penEnabled: Boolean,
     focusRequester: FocusRequester,
     strokes: List<InkStroke>,
     fingerDraws: Boolean,
@@ -965,6 +995,17 @@ private fun PagedContent(
     onPageChanged: () -> Unit,
     /** Whether a stroke chip is up, so a page tap can dismiss it instead. */
     chipOpen: Boolean,
+    /**
+     * Where the chip sits, so showing and hiding it repaints that pill rather
+     * than a quarter of the screen. Null until one has been laid out.
+     */
+    chipBoundsInRoot: Rect?,
+    /** Rebuilds the SelectionContainer when it changes, dropping any selection. */
+    selectionEpoch: Int,
+    /** Whether a text selection and its chip are showing. */
+    selectionActive: Boolean,
+    /** Drop a live text selection — a tap on the page means the reader is done with it. */
+    onClearSelection: () -> Unit,
     onDismissChip: () -> Unit,
     onToggleMenu: () -> Unit,
     onFirstBlockChange: (Int) -> Unit,
@@ -1123,6 +1164,25 @@ private fun PagedContent(
             val pageBlockRange = firstBlockIndex until (firstBlockIndex + pageBlockCount)
             val pageStrokes = strokes.filter { it.blockIndex in pageBlockRange }
 
+            // The one executor. Both transports — the finger detector below
+            // and the Onyx overlay, which has to observe its own taps — decide
+            // with resolveTap and act here, so a rule exists exactly once.
+            val performTap: (TapAction) -> Unit = { action ->
+                when (action) {
+                    TapAction.CloseMenu -> onToggleMenu()
+                    TapAction.DismissChip -> onDismissChip()
+                    TapAction.ClearSelection -> onClearSelection()
+                    is TapAction.OpenMarker -> onOpenAnnotation(action.annotation)
+                    is TapAction.ShowStrokeChip -> onStrokeTapped(action.stroke)
+                    TapAction.ToggleMenu -> onToggleMenu()
+                    TapAction.PrevPage ->
+                        goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
+                    TapAction.NextPage ->
+                        goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
+                    TapAction.Ignore -> Unit
+                }
+            }
+
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
@@ -1175,9 +1235,12 @@ private fun PagedContent(
                                         // of it. That was the "Show answer button also flipped a
                                         // page" bug.
                                         if (change.isConsumed) break
-                                        if (menuOpen) {
-                                            onToggleMenu()
-                                        } else if (isDrag) {
+                                        // A drag is the one meaning the ladder
+                                        // does not cover — it has no position,
+                                        // only a direction. An open menu still
+                                        // outranks it: the panel swallows the
+                                        // contact whatever shape it had.
+                                        if (isDrag && !menuOpen) {
                                             // Which axis dominates decides the meaning.
                                             if (kotlin.math.abs(totalDx) >= kotlin.math.abs(totalDy)) {
                                                 if (totalDx <= -dragThresholdPx) goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
@@ -1188,22 +1251,28 @@ private fun PagedContent(
                                                 else if (totalDy >= vDragThresholdPx) onOpenPrevChapter?.invoke()
                                             }
                                         } else {
-                                            // Plain tap.
-                                            when (
-                                                tapZoneFor(
+                                            performTap(
+                                                resolveTap(
                                                     downPos.x,
                                                     downPos.y,
                                                     size.width.toFloat(),
                                                     size.height.toFloat(),
                                                     menuBandPx,
+                                                    menuOpen = menuOpen,
+                                                    chipOpen = chipOpen,
+                                                    selectionActive = selectionActive,
+                                                    // Null on this path by
+                                                    // design: markers are
+                                                    // clickable composables and
+                                                    // InkOverlay runs its own
+                                                    // stroke hit-test, and both
+                                                    // consume — which the
+                                                    // isConsumed check above has
+                                                    // already turned into a break.
+                                                    markerHit = null,
+                                                    strokeHit = null,
                                                 )
-                                            ) {
-                                                TapZone.MENU -> onToggleMenu()
-                                                TapZone.PREV ->
-                                                    goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
-                                                TapZone.NEXT ->
-                                                    goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
-                                            }
+                                            )
                                         }
                                         break
                                     }
@@ -1221,6 +1290,7 @@ private fun PagedContent(
                     // specific text; our custom AskTextToolbar (installed via
                     // LocalTextToolbar above) is what surfaces the "Ask" action
                     // for whatever gets selected.
+                    key(selectionEpoch) {
                     SelectionContainer {
                         Column(modifier = Modifier.fillMaxSize()) {
                             // Drawable margin above the first block. Marking
@@ -1303,6 +1373,7 @@ private fun PagedContent(
                                 }
                             }
                         }
+                    }
                     }
 
                     // Freehand-ink layer sits on top of the text, transparent
@@ -1391,50 +1462,42 @@ private fun PagedContent(
                             pageBlockRange = pageBlockRange,
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
-                            onStrokeTapped = onStrokeTapped,
-                            // The Onyx overlay reports page taps itself: with
-                            // raw drawing live the SDK owns the host view's
-                            // touch stream and the release never reaches the
-                            // gesture detector below, so tap-to-turn silently
-                            // stopped working. Same thirds as the reader.
                             chipOpen = chipOpen,
-                            onDismissChip = onDismissChip,
-                            onPageTap = { x, y, w, h ->
-                                // A marker is a target, not part of the page.
-                                // The overlay owns the touch stream here, so
-                                // Compose's clickable on the glyph never runs
-                                // and a tap on ? or ✎ simply turned the page.
+                            drawingEnabled = penEnabled,
+                            chipRect = chipBoundsInRoot?.let { b ->
+                                AndroidRect(
+                                    (b.left - overlayLeftInRoot).toInt(),
+                                    (b.top - overlayTopInRoot).toInt(),
+                                    (b.right - overlayLeftInRoot).toInt(),
+                                    (b.bottom - overlayTopInRoot).toInt(),
+                                )
+                            },
+                            // The overlay observes its own taps but does not
+                            // interpret them: it hands the contact and the
+                            // stroke under it to the one ladder, and carries
+                            // out whatever comes back. Markers are hit-tested
+                            // here because their rects live on this side — a
+                            // marker is a target, not part of the page, and
+                            // while the SDK owns the touch stream the
+                            // clickable on the glyph never runs, so a tap on
+                            // ? or \u270e simply turned the page.
+                            resolveTap = { x, y, w, h, strokeHit ->
                                 val hitMarker = markerRects.values.firstOrNull { (_, r) ->
                                     r.contains(
                                         Offset(x + overlayLeftInRoot, y + overlayTopInRoot),
                                     )
                                 }?.first
-                                if (hitMarker != null) onOpenAnnotation(hitMarker)
-                                else
-                                // An open menu swallows the next tap, exactly
-                                // as in the detector below. Without this the
-                                // menu could not be closed at all on the pen
-                                // path: the panel opens over the bottom band,
-                                // so the band that toggles it is underneath
-                                // the panel, and every tap outside fell
-                                // through to a page turn with the menu still
-                                // up. The two detectors must agree — this is
-                                // the drift the T5 note warned about.
-                                if (menuOpen) {
-                                    onToggleMenu()
-                                } else when (
-                                    tapZoneFor(
-                                        x, y, w, h,
-                                        with(density) { MENU_BAND_HEIGHT.toPx() },
-                                    )
-                                ) {
-                                    TapZone.MENU -> onToggleMenu()
-                                    TapZone.PREV ->
-                                        goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
-                                    TapZone.NEXT ->
-                                        goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
-                                }
+                                resolveTap(
+                                    x, y, w, h,
+                                    with(density) { MENU_BAND_HEIGHT.toPx() },
+                                    menuOpen = menuOpen,
+                                    chipOpen = chipOpen,
+                                    selectionActive = selectionActive,
+                                    markerHit = hitMarker,
+                                    strokeHit = strokeHit,
+                                )
                             },
+                            onTapAction = performTap,
                             modifier = overlayModifier,
                         )
                     } else {
@@ -1484,12 +1547,15 @@ private fun PagedContent(
                     // page of the book. Retires itself after a dozen turns.
                     if (showTapHint) {
                         Text(
-                            // Describes the zones as they now are: the menu
-                            // band sits along the bottom, where the panel
-                            // itself opens, and the centre turns forward like
-                            // the rest of the page. A hint that teaches the
-                            // old layout is worse than none.
-                            text = "tap ← / → · bottom for menu ",
+                            // Describes the zones as they now are: narrow
+                            // bands at the two EDGES turn the page, the menu
+                            // band runs along the bottom where the panel
+                            // itself opens, and the middle of the page answers
+                            // to nothing. A hint that teaches the old layout
+                            // is worse than none — and now that the centre is
+                            // inert, an arrow pointing at the edges is the
+                            // hint that matters.
+                            text = "tap edge ← / → · bottom for menu ",
                             style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                             textAlign = TextAlign.End,
                         )
@@ -2449,7 +2515,7 @@ private fun goNext(
     }
 }
 
-private fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotatedString {
+internal fun renderInlines(inlines: List<Inline>): AnnotatedString = buildAnnotatedString {
     inlines.forEach { i ->
         when (i) {
             is Inline.Text -> append(i.text)
@@ -3085,6 +3151,7 @@ private fun CompilePrompt(
                                     TapZone.MENU -> Unit
                                     TapZone.PREV -> onOpenPrevChapter?.invoke()
                                     TapZone.NEXT -> onOpenNextChapter?.invoke()
+                                    TapZone.NONE -> Unit
                                 }
                             }
                             break

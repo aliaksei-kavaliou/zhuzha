@@ -38,6 +38,13 @@ android {
         compose = true
     }
 
+    // Plain JVM unit tests, for the pure logic that has no business needing a
+    // device — TapRouting above all, whose whole reason for existing is that
+    // the tap rules drifted apart once already.
+    testOptions {
+        unitTests.all { it.useJUnitPlatform() }
+    }
+
     packaging {
         // Three of Onyx's transitive artifacts each ship their own copy of
         // libc++_shared.so. They're the same runtime; keep the first.
@@ -56,6 +63,9 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
     implementation(project(":core"))
 
     implementation(libs.androidx.core.ktx)
