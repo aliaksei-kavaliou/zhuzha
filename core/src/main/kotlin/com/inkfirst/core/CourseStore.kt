@@ -3,6 +3,10 @@ package com.inkfirst.core
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * On-disk course storage. See docs/design.md §1 for the layout:
@@ -60,7 +64,7 @@ class CourseStore(private val root: File) {
         File(courseDir, "chapters").mkdirs()
         File(courseDir, "notes").mkdirs()
         File(courseDir, "memory.md").writeText("")
-        File(courseDir, "course.json").writeText(json.encodeToString(Course.serializer(), course))
+        writeCourse(slug, course)
         return course
     }
 
@@ -692,9 +696,59 @@ class CourseStore(private val root: File) {
         return removed
     }
 
+    /**
+     * Writes course.json so that being killed mid-write cannot damage it.
+     *
+     * This used to write straight over the file, which truncates it first.
+     * Two facts make that window dangerous rather than theoretical. The file
+     * holds the OUTLINE — chapter titles and objectives, the one thing an API
+     * call produced that cannot be reconstructed by re-reading anything — and
+     * [updateChapterProgress] rewrites the whole file on every page turn, so
+     * the window opened several times a minute while reading. Android killing
+     * a backgrounded app mid-rename is ordinary on an e-reader, where the
+     * usual way to stop reading is to shut the cover.
+     *
+     * The damage was also silent. [tryDecode] answers null rather than
+     * throwing, and [list] drops a course it cannot decode — so a half-written
+     * file did not show an error, it made the book VANISH from the Library
+     * with its chapters and figures still sitting on disk.
+     *
+     * The fix is the standard one: write a sibling temp file, push it to the
+     * physical disk, then rename it over the target. A rename within one
+     * filesystem is atomic, so a reader sees either the whole old file or the
+     * whole new one and never half of either. Android's own `AtomicFile` does
+     * exactly this; it is spelled out by hand here because this module holds
+     * no Android dependencies.
+     */
     private fun writeCourse(courseSlug: String, course: Course) {
-        File(root, "$courseSlug/course.json")
-            .writeText(json.encodeToString(Course.serializer(), course))
+        val target = File(root, "$courseSlug/course.json")
+        val temp = File(root, "$courseSlug/course.json.tmp")
+        val bytes = json.encodeToString(Course.serializer(), course).toByteArray()
+
+        // `use` closes the stream on the way out however the block ends —
+        // Kotlin's try-with-resources.
+        FileOutputStream(temp).use { out ->
+            out.write(bytes)
+            // Without this the bytes can still be sitting in the OS page cache
+            // when the rename lands, and a power cut would publish an empty
+            // file over a good one.
+            out.fd.sync()
+        }
+        try {
+            Files.move(
+                temp.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            // Not expected on the app's own storage — Android's SharedPreferences
+            // and AtomicFile both rename on this path — but an unsupported
+            // ATOMIC_MOVE would throw on EVERY page turn, which is a far worse
+            // outcome than the problem being fixed. Without the flag the same
+            // rename is still attempted first; it just stops being a promise.
+            Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     private fun tryDecode(file: File): Course? = try {

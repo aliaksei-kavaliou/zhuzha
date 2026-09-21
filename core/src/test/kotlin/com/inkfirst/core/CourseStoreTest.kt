@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -544,5 +545,50 @@ class CourseStoreTest {
         // Removing a missing bookmark is a no-op (course still returned).
         val same = store.removeBookmark("kotlin", "nowhere", 99)!!
         assertEquals(1, same.bookmarks.size)
+    }
+
+    @Test
+    fun `writing the course leaves no temp file behind`(@TempDir tmp: File) {
+        // course.json is rewritten on every page turn and holds the outline,
+        // so it is written temp-then-rename. The rename must consume the temp
+        // file rather than leaving one beside it for the backup to copy.
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        store.updateChapterProgress("kotlin", 1, 12)
+        store.updateChapterProgress("kotlin", 1, 34)
+
+        assertFalse(File(tmp, "kotlin/course.json.tmp").exists())
+        assertEquals(34, store.load("kotlin")!!.chapters[0].lastBlockIndex)
+    }
+
+    @Test
+    fun `a stale temp file from an earlier crash does not block the next write`(@TempDir tmp: File) {
+        // Being killed between writing the temp file and the rename is
+        // exactly the case this design exists for. What it must not do is
+        // wedge every later save.
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        File(tmp, "kotlin/course.json.tmp").writeText("half a file, from a kill mid-write")
+
+        val after = store.updateChapterProgress("kotlin", 2, 7)
+
+        assertNotNull(after)
+        assertEquals(7, store.load("kotlin")!!.chapters[1].lastBlockIndex)
+        assertFalse(File(tmp, "kotlin/course.json.tmp").exists())
+    }
+
+    @Test
+    fun `an interrupted write cannot leave course json undecodable`(@TempDir tmp: File) {
+        // The failure this replaces was silent: a truncated course.json made
+        // tryDecode answer null, list() drop the course, and the book vanish
+        // from the Library with its chapters still on disk. Standing in for
+        // the kill: whatever is at course.json is always a whole document,
+        // because a half-written one only ever exists under the temp name.
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        repeat(20) { store.updateChapterProgress("kotlin", 1, it) }
+
+        assertNotNull(store.load("kotlin"))
+        assertEquals(1, store.list().size)
     }
 }
