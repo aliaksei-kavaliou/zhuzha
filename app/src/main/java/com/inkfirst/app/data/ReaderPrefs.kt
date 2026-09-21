@@ -73,16 +73,30 @@ class ReaderPrefs(context: Context) {
 
         const val DEFAULT_FONT_SCALE = 1.0f
         const val DEFAULT_LINE_SPACING = 1.0f
-        const val DEFAULT_HORIZONTAL_PADDING = 20f
+        const val DEFAULT_HORIZONTAL_PADDING = 40f
         val DEFAULT_ALIGN = TextAlignPref.LEFT
 
         val FONT_SCALES = listOf(0.85f, 1.0f, 1.15f, 1.3f, 1.5f)
         val LINE_SPACINGS = listOf(0.85f, 1.0f, 1.2f)  // tight / normal / relaxed
         val LINE_SPACING_LABELS = listOf("Tight", "Normal", "Relaxed")
-        // Symmetric side padding. Wide doubles as marginalia space for pen
-        // notes. Narrow maximizes text density for reading-first users.
-        val HORIZONTAL_PADDINGS = listOf(12f, 20f, 40f)
-        val HORIZONTAL_PADDING_LABELS = listOf("Narrow", "Normal", "Wide")
+        // Symmetric side padding, in dp. The whole scale was raised on
+        // 2026-09-21: the old one topped out at 40dp, which on the Go 7's
+        // 300dpi panel is 6.4mm — about a third of the 12-18mm a printed
+        // page this size carries, and far too narrow to write in. Since the
+        // margins are where the pen is meant to go, the top of the scale has
+        // to be a margin you can actually put a word in.
+        //
+        // At 300dpi (density 1.875) on a 107mm-wide page:
+        //   Narrow   16dp =  2.7mm  — text column 102mm
+        //   Normal   40dp =  6.4mm  — text column  94mm   (the old "Wide")
+        //   Wide     72dp = 11.4mm  — text column  84mm
+        //   Notebook 112dp = 17.8mm — text column  71mm, a writable column
+        //
+        // 40dp is kept as a step, and is the new default, so a reader already
+        // on the old "Wide" keeps exactly the layout they had and still finds
+        // their setting selected in the picker.
+        val HORIZONTAL_PADDINGS = listOf(16f, 40f, 72f, 112f)
+        val HORIZONTAL_PADDING_LABELS = listOf("Narrow", "Normal", "Wide", "Notebook")
 
         private const val PREFS_NAME = "inkfirst_reader_prefs"
         private const val KEY_FONT_SCALE = "font_scale"

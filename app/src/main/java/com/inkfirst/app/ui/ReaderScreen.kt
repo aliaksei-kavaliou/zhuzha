@@ -237,8 +237,17 @@ private val BorderColor = Color(0xFF888888)
 private sealed interface CompileState {
     data object Idle : CompileState
     data object Running : CompileState
-    /** Words are written and saved; pictures are still being drawn. */
-    data class Illustrating(val done: Int, val total: Int) : CompileState
+    /**
+     * Words are written and saved; pictures are still being drawn.
+     *
+     * [what] names the stage — "figures", "badges", "the chapter picture".
+     * Without it the footer said "Drawing pictures… 2/3" for four different
+     * passes in a row, which is why a reader who had already been given
+     * figures and badges went to the menu and asked for them again
+     * (2026-09-21). Knowing something is happening is not the same as
+     * knowing WHAT.
+     */
+    data class Illustrating(val done: Int, val total: Int, val what: String = "pictures") : CompileState
     data class Failed(val message: String) : CompileState
 }
 
@@ -417,6 +426,11 @@ fun ReaderScreen(
     val pendingFigures = remember(markdown) {
         markdown?.let { md -> findFigureSlots(md).count { it.isPending } } ?: 0
     }
+    // How many slots the chapter has at all, so a finished pass can say "all
+    // 3 drawn" instead of vanishing and leaving the reader to guess.
+    val figureSlots = remember(markdown) {
+        markdown?.let { md -> findFigureSlots(md).size } ?: 0
+    }
     // Progress (or the failure) of a manual illustrate pass, shown in the
     // menu row itself. With the chapter already on screen there is no
     // compile prompt to report into, and drawing takes long enough that
@@ -454,11 +468,39 @@ fun ReaderScreen(
     // failed. It goes in the footer because that is the one strip of the
     // page that is already chrome, and it is a LABEL rather than a spinner:
     // an animation on e-ink is a repaint every frame.
+    // What is still missing, said once nothing is running. A picture pass
+    // that has finished leaves no trace on a page you have not scrolled to,
+    // so "is it done, or did my tap miss?" had no answer anywhere — and the
+    // menu hides a row the moment its work completes, which makes absence
+    // mean "done" and "not started" at the same time. Naming the leftovers
+    // is what stops a reader drawing the same picture twice.
+    //
+    // Null once everything exists: a finished book page should be a book
+    // page, not a status board.
+    val picturesOutstanding = remember(pendingFigures, hasCover, hasTail, pendingBadges) {
+        val missing = buildList {
+            if (pendingFigures > 0) {
+                add("$pendingFigures figure" + if (pendingFigures == 1) "" else "s")
+            }
+            if (!hasCover) add("chapter picture")
+            // The closing picture is the cover resolved, so it is not
+            // outstanding until there is a cover for it to pay off.
+            if (hasCover && !hasTail) add("closing picture")
+            if (pendingBadges > 0) {
+                add("$pendingBadges badge" + if (pendingBadges == 1) "" else "s")
+            }
+        }
+        if (missing.isEmpty()) null else "still to draw: " + missing.joinToString(" · ")
+    }
     val readerStatus = when (val state = compileState) {
         CompileState.Running -> "Rewriting this chapter…"
-        is CompileState.Illustrating -> "Drawing pictures… ${state.done}/${state.total}"
+        is CompileState.Illustrating ->
+            // A one-shot pass has no meaningful count — "the chapter picture
+            // 0/1" reads worse than saying nothing about progress at all.
+            if (state.total <= 1) "Drawing ${state.what}…"
+            else "Drawing ${state.what}… ${state.done}/${state.total}"
         is CompileState.Failed -> state.message
-        CompileState.Idle -> null
+        CompileState.Idle -> picturesOutstanding
     }
     // Anything that spends an API call is off while one is in flight. Failed
     // is deliberately not busy — the way to recover is to try again.
@@ -656,7 +698,7 @@ fun ReaderScreen(
                     courseDaySchedule(c).firstOrNull { it.chapterN == chapter!!.n }?.label
                 }
                 CompilePrompt(
-                    modifier = Modifier.padding(horizontal = horizontalPadding.dp),
+                    horizontalPadding = horizontalPadding,
                     chapter = chapter!!,
                     chapterCount = course?.chapters?.size ?: 0,
                     dayLabel = pendingDayLabel,
@@ -1086,6 +1128,7 @@ fun ReaderScreen(
                     onSearch()
                 },
                 pendingFigures = pendingFigures,
+                figureSlots = figureSlots,
                 figureStatus = figureStatus,
                 busyDrawing = compileBusy,
                 pendingBadges = pendingBadges,
@@ -2012,6 +2055,7 @@ private fun FormatMenu(
     onOpenReaderNotes: () -> Unit,
     onSearch: () -> Unit,
     pendingFigures: Int,
+    figureSlots: Int,
     pendingBadges: Int,
     hasCover: Boolean,
     hasTail: Boolean,
@@ -2108,82 +2152,67 @@ private fun FormatMenu(
             }
         }
 
-        // Draw the chapter's outstanding figures. Hidden once every slot
-        // has a picture, so a fully illustrated chapter shows no dead row.
-        if (pendingFigures > 0 || figureStatus != null) {
+        // The picture rows below REPORT before they offer. Each one used to
+        // disappear the moment its work finished, which reads as "not done
+        // yet" exactly as easily as "done" — so a reader whose figures and
+        // badges had already been drawn went looking for something to tap
+        // and redrew what he already had (2026-09-21). A finished row says
+        // so and is not clickable; only genuinely outstanding work is.
+        if (figureSlots > 0) {
             MenuRow(label = "Figures") {
-                Box(
-                    modifier = Modifier
-                        .clickable(enabled = !busyDrawing && pendingFigures > 0) { onIllustrate() }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = figureStatus
-                            ?: ("Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (busyDrawing) MutedColor else InkColor,
-                    )
-                }
+                MenuAction(
+                    text = figureStatus ?: when {
+                        pendingFigures == 0 ->
+                            "all $figureSlots drawn"
+                        else ->
+                            "Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"
+                    },
+                    enabled = !busyDrawing && pendingFigures > 0 && figureStatus == null,
+                    onClick = onIllustrate,
+                )
             }
         }
 
-        // The chapter's opening picture. One per chapter, so the row goes
-        // away for good once it exists.
-        if (!hasCover) {
-            MenuRow(label = "Chapter") {
-                Box(
-                    modifier = Modifier
-                        .clickable(enabled = !busyDrawing) { onDrawCover() }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = "Draw chapter picture",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (busyDrawing) MutedColor else InkColor,
-                    )
-                }
-            }
+        // "Opening" rather than "Chapter": now that the row no longer
+        // disappears when drawn, it sits permanently above Rewrite, which is
+        // also a chapter-level action — two rows labelled "Chapter" doing
+        // unrelated things. Opening/Closing reads as the pair it is.
+        MenuRow(label = "Opening") {
+            MenuAction(
+                text = if (hasCover) "picture drawn" else "Draw opening picture",
+                enabled = !busyDrawing && !hasCover,
+                onClick = onDrawCover,
+            )
         }
 
-        // The closing picture. Only offered once a cover exists, since it is
-        // that scene resolved rather than a picture in its own right.
-        if (hasCover && !hasTail) {
-            MenuRow(label = "Chapter") {
-                Box(
-                    modifier = Modifier
-                        .clickable(enabled = !busyDrawing) { onDrawTail() }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = "Draw closing picture",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (busyDrawing) MutedColor else InkColor,
-                    )
-                }
-            }
+        // The closing picture is the cover's scene resolved rather than a
+        // picture in its own right, so it cannot be drawn first. Saying that
+        // beats offering nothing and leaving the gap unexplained.
+        MenuRow(label = "Closing") {
+            MenuAction(
+                text = when {
+                    hasTail -> "picture drawn"
+                    !hasCover -> "needs the chapter picture first"
+                    else -> "Draw closing picture"
+                },
+                enabled = !busyDrawing && hasCover && !hasTail,
+                onClick = onDrawTail,
+            )
         }
 
-        // Draw the book's mascot badges — the small marks on exercise and
-        // recap blocks. Two pictures for the whole course, so this row
-        // disappears for good once they exist.
-        if (pendingBadges > 0) {
-            MenuRow(label = "Badges") {
-                Box(
-                    modifier = Modifier
-                        .clickable(enabled = !busyDrawing) { onDrawBadges() }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = "Draw $pendingBadges book badge" + if (pendingBadges == 1) "" else "s",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (busyDrawing) MutedColor else InkColor,
-                    )
-                }
-            }
+        // The book's mascot badges — the small marks on exercise and recap
+        // blocks. Drawn once for the whole course, so after the first chapter
+        // this row is a report rather than an offer.
+        MenuRow(label = "Badges") {
+            MenuAction(
+                text = if (pendingBadges == 0) {
+                    "all drawn"
+                } else {
+                    "Draw $pendingBadges book badge" + if (pendingBadges == 1) "" else "s"
+                },
+                enabled = !busyDrawing && pendingBadges > 0,
+                onClick = onDrawBadges,
+            )
         }
 
         // The repair mechanism the generate-a-book premise needs: the model
@@ -2269,6 +2298,28 @@ private fun FormatMenu(
                 )
             }
         }
+    }
+}
+
+/**
+ * One tappable word in the menu — or, when there is nothing left to do, the
+ * same row saying so in grey. Sharing it keeps "offer" and "report" looking
+ * like one control rather than two, which is the point: the reader should not
+ * have to work out whether a row is a button or a status line.
+ */
+@Composable
+private fun MenuAction(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (enabled) InkColor else MutedColor,
+        )
     }
 }
 
@@ -3667,7 +3718,19 @@ private fun findBlockContainingQuote(blocks: List<Block>, quote: String): Int? {
 
 @Composable
 private fun CompilePrompt(
-    modifier: Modifier = Modifier,
+    /**
+     * The reader's margin setting, in dp. Applied AFTER the gesture modifier
+     * below so the tap zones still measure the whole page while the text is
+     * inset — the same rule the paginated reader follows (design.md §11).
+     *
+     * This page used to take a `modifier` parameter, get
+     * `Modifier.padding(horizontal = ...)` handed to it by its caller, and
+     * then never use it: the root Column started from a fresh
+     * `Modifier.fillMaxSize()`. So a not-yet-compiled chapter rendered its
+     * title and objectives hard against the bezel while every other page in
+     * the book honoured the setting. Found 2026-09-21.
+     */
+    horizontalPadding: Float,
     chapter: PersistedChapter,
     chapterCount: Int,
     dayLabel: String?,
@@ -3769,7 +3832,8 @@ private fun CompilePrompt(
                         }
                     }
                 }
-            },
+            }
+            .padding(horizontal = horizontalPadding.dp),
     ) {
     // Book-native "front matter" for a not-yet-compiled chapter: user sees the
     // title, meta, and objectives before spending a Gemini call. Tap Compile
@@ -3945,7 +4009,7 @@ private suspend fun illustrateChapter(
         chapter = chapter,
         markdown = markdown,
         apiKey = apiKey,
-        onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
+        onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "figures")) },
         saveImage = { fileName, bytes -> store.saveFigure(course.slug, fileName, bytes) },
     )
     if (result.generated > 0) {
@@ -4033,7 +4097,7 @@ private fun drawCourseBadges(
                     kinds = kinds,
                     existing = store.badgeKinds(course.slug),
                     knownMascot = store.readMascot(course.slug),
-                    onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
+                    onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "badges")) },
                     loadBadge = { kind ->
                         store.badgeFile(course.slug, kind)?.let { f ->
                             GeneratedImage(
@@ -4078,7 +4142,7 @@ private fun drawChapterCover(
     }
     scope.launch {
         try {
-            onState(CompileState.Illustrating(0, 1))
+            onState(CompileState.Illustrating(0, 1, "the chapter picture"))
             KtorGeminiClient().use { client ->
                 ChapterIllustrator(client, apiKeyStore.getImageModelName()).drawCover(
                     course = course,
@@ -4128,7 +4192,7 @@ private fun drawChapterTail(
     }
     scope.launch {
         try {
-            onState(CompileState.Illustrating(0, 1))
+            onState(CompileState.Illustrating(0, 1, "the closing picture"))
             KtorGeminiClient().use { client ->
                 ChapterIllustrator(client, apiKeyStore.getImageModelName()).drawTail(
                     course = course,
@@ -4264,7 +4328,7 @@ private fun compileChapter(
                         kinds = badgeKindsIn(illustrated),
                         existing = store.badgeKinds(course.slug),
                         knownMascot = store.readMascot(course.slug),
-                        onProgress = { done, total -> onState(CompileState.Illustrating(done, total)) },
+                        onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "badges")) },
                         loadBadge = { kind ->
                             store.badgeFile(course.slug, kind)?.let { f ->
                                 GeneratedImage(
