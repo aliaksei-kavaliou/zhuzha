@@ -20,6 +20,7 @@ import com.inkfirst.app.ui.CourseDetailScreen
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
 import com.inkfirst.app.ui.PageKeys
+import com.inkfirst.app.ui.ReaderNotesScreen
 import com.inkfirst.app.ui.ReaderScreen
 import com.inkfirst.app.ui.SettingsScreen
 
@@ -32,6 +33,8 @@ private object Routes {
     // can highlight the "you are here" row.
     const val COURSE_DETAIL = "course/{slug}/{currentChapter}"
     const val READER = "reader/{courseSlug}/{chapterSlug}/{blockIndex}"
+    const val READER_NOTES = "reader-notes/{slug}"
+    fun readerNotes(slug: String) = "reader-notes/$slug"
     fun courseDetail(slug: String, currentChapter: String? = null) =
         "course/$slug/${currentChapter?.takeIf { it.isNotBlank() } ?: "-"}"
     fun reader(courseSlug: String, chapterSlug: String, blockIndex: Int = 0) =
@@ -150,8 +153,25 @@ private fun InkFirstApp() {
                         launchSingleTop = true
                     }
                 },
+                onOpenReaderNotes = { nav.navigate(Routes.readerNotes(slug)) },
                 onReadChapter = { chapterSlug, blockIndex ->
                     nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
+                },
+            )
+        }
+        composable(Routes.READER_NOTES) { entry ->
+            val slug = entry.arguments?.getString("slug").orEmpty()
+            ReaderNotesScreen(
+                slug = slug,
+                // Always Contents, never a pop: this screen is reached from
+                // the Contents list AND from the reader's own menu, and a pop
+                // from the second lands back in the chapter rather than
+                // where the label says.
+                onBack = {
+                    nav.navigate(Routes.courseDetail(slug)) {
+                        popUpTo(Routes.COURSE_DETAIL) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -174,6 +194,7 @@ private fun InkFirstApp() {
                         launchSingleTop = true
                     }
                 },
+                onOpenReaderNotes = { nav.navigate(Routes.readerNotes(courseSlug)) },
                 onOpenChapter = { newChapterSlug, newBlockIndex ->
                     nav.navigate(Routes.reader(courseSlug, newChapterSlug, newBlockIndex)) {
                         popUpTo(Routes.READER) { inclusive = true }

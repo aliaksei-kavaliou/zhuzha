@@ -21,6 +21,14 @@ package com.inkfirst.core
  *    fails honestly: a wrong observation can be read and seen to be wrong,
  *    where a wrong number just looks precise.
  *
+ * 3. **No counts in the lead-in lines.** They used to read "Asked 2
+ *    questions:", which was true until the reader crossed one out — and then
+ *    the file stated a number the list directly beneath it contradicted. The
+ *    count was never load-bearing, since the list says how many; it only
+ *    became visible as a defect once the file got a screen and the reader
+ *    could edit it. Anything a reader can edit must not carry a summary of
+ *    itself.
+ *
  * 2. **Nothing here is inferred.** This is assembled from what the reader
  *    did, not from a model's opinion about them — which is why it costs no
  *    API call and can be unit-tested. The file is theirs to read and cross
@@ -92,7 +100,7 @@ object ReaderSignals {
 
         return buildString {
             if (questions.isNotEmpty()) {
-                appendLine("Asked ${questions.size} ${plural(questions.size, "question")}:")
+                appendLine("Asked about:")
                 questions.forEach { q ->
                     if (q.passage != null) {
                         appendLine("- On \"${oneLine(q.passage)}\" — asked: ${oneLine(q.question)}")
@@ -108,15 +116,13 @@ object ReaderSignals {
                 appendLine()
             }
             if (written.isNotEmpty()) {
-                appendLine("Wrote ${written.size} ${plural(written.size, "note")}:")
+                appendLine("Wrote these notes:")
                 written.forEach {
                     appendLine("- On \"${oneLine(it.quote)}\" — ${oneLine(it.note)}")
                 }
             }
         }.trim()
     }
-
-    private fun plural(n: Int, word: String) = if (n == 1) word else "${word}s"
 
     /**
      * Quotes get long, and a prompt full of half-paragraphs buries the point.

@@ -59,6 +59,7 @@ import com.inkfirst.core.Bookmark
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
 import com.inkfirst.core.PersistedChapter
+import com.inkfirst.core.ReaderNotes
 import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.totalCourseDays
 
@@ -78,6 +79,17 @@ private sealed interface TocBlock {
     ) : TocBlock
     data class BookmarkEntry(val bookmark: Bookmark, val chapterTitle: String) : TocBlock
     data class NoteEntry(val annotation: Annotation, val chapterLabel: String) : TocBlock
+
+    /**
+     * The way into `reader.md` — what the book has noticed about this reader.
+     *
+     * Shown whether or not anything has been recorded yet, unlike the
+     * bookmark ribbon's appear-only-when-set rule. That rule is for an
+     * INDICATOR of state; this is a door, and a door that is invisible until
+     * the book has already formed opinions and fed them forward once is the
+     * wrong way round.
+     */
+    data class ReaderNotesEntry(val count: Int) : TocBlock
 }
 
 @Composable
@@ -85,6 +97,7 @@ fun CourseDetailScreen(
     slug: String,
     currentChapterSlug: String? = null,
     onBack: () -> Unit,
+    onOpenReaderNotes: () -> Unit,
     onReadChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val courseStore = rememberCourseStore()
@@ -137,8 +150,13 @@ fun CourseDetailScreen(
             }
 
             val effectiveCurrentSlug = currentChapterSlug ?: lastReadChapterSlug
-            val tocBlocks = remember(c, effectiveCurrentSlug) {
-                buildTocBlocks(c, effectiveCurrentSlug)
+            val readerNoteCount = remember(c) {
+                ReaderNotes.parse(courseStore.readReaderNotes(c.slug)).sumOf {
+                    it.observations.size
+                }
+            }
+            val tocBlocks = remember(c, effectiveCurrentSlug, readerNoteCount) {
+                buildTocBlocks(c, effectiveCurrentSlug, readerNoteCount)
             }
 
             PagedContents(
@@ -156,18 +174,24 @@ fun CourseDetailScreen(
                 onBookmarkTap = { bookmark -> onReadChapter(bookmark.chapterSlug, bookmark.blockIndex) },
                 onNoteTap = { note -> onReadChapter(note.chapterSlug, note.blockIndex) },
                 onNoteDelete = onDeleteAnnotation,
+                onReaderNotesTap = onOpenReaderNotes,
             )
         }
     }
 }
 
-private fun buildTocBlocks(course: Course, currentChapterSlug: String?): List<TocBlock> {
+private fun buildTocBlocks(
+    course: Course,
+    currentChapterSlug: String?,
+    readerNoteCount: Int,
+): List<TocBlock> {
     val blocks = mutableListOf<TocBlock>()
     val totalDays = totalCourseDays(course)
     blocks += TocBlock.BookTitle(
         title = course.title,
         subtitle = "${course.chapters.size} chapters · ${course.dailyMinutes} min/day · ~$totalDays days",
     )
+    blocks += TocBlock.ReaderNotesEntry(readerNoteCount)
     blocks += TocBlock.SectionHeader("Contents")
     val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
     val schedule = courseDaySchedule(course).associateBy { it.chapterN }
@@ -220,6 +244,7 @@ private fun PagedContents(
     onBookmarkTap: (Bookmark) -> Unit,
     onNoteTap: (Annotation) -> Unit,
     onNoteDelete: (Annotation) -> Unit,
+    onReaderNotesTap: () -> Unit,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -322,6 +347,7 @@ private fun PagedContents(
                             onBookmarkTap = onBookmarkTap,
                             onNoteTap = onNoteTap,
                             onNoteDelete = onNoteDelete,
+                            onReaderNotesTap = onReaderNotesTap,
                         )
                     }
                 }
@@ -363,6 +389,7 @@ private fun RenderTocBlock(
     onBookmarkTap: (Bookmark) -> Unit,
     onNoteTap: (Annotation) -> Unit,
     onNoteDelete: (Annotation) -> Unit,
+    onReaderNotesTap: () -> Unit,
 ) {
     when (block) {
         is TocBlock.BookTitle -> BookTitleBlock(block)
@@ -370,6 +397,39 @@ private fun RenderTocBlock(
         is TocBlock.ChapterEntry -> ChapterEntryBlock(block, onChapterTap)
         is TocBlock.BookmarkEntry -> BookmarkEntryBlock(block, onBookmarkTap)
         is TocBlock.NoteEntry -> NoteEntryBlock(block, onNoteTap, onNoteDelete)
+        is TocBlock.ReaderNotesEntry -> ReaderNotesEntryBlock(block, onReaderNotesTap)
+    }
+}
+
+@Composable
+private fun ReaderNotesEntryBlock(entry: TocBlock.ReaderNotesEntry, onTap: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTap() }
+            .padding(vertical = 10.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "How the reading has gone",
+                fontFamily = FontFamily.Serif,
+                fontSize = 16.sp,
+                color = InkColor,
+            )
+            Text(
+                text = when (entry.count) {
+                    0 -> "nothing recorded yet"
+                    1 -> "1 observation · feeds the next chapter"
+                    else -> "${entry.count} observations · feed the next chapter"
+                },
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                fontSize = 12.sp,
+                color = MutedColor,
+            )
+        }
+        Text(text = "›", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = MutedColor)
     }
 }
 
@@ -629,6 +689,9 @@ private fun estimateTocBlockHeight(
             val padding = 8.dp.toPx().toInt() * 2
             titleResult.size.height + padding
         }
+        is TocBlock.ReaderNotesEntry ->
+            (16.sp.toPx() * 1.3f).toInt() + (12.sp.toPx() * 1.3f).toInt() +
+                10.dp.toPx().toInt() * 2
         is TocBlock.BookmarkEntry -> {
             (14.sp.toPx() * 1.3f).toInt() + 4.dp.toPx().toInt() * 2
         }

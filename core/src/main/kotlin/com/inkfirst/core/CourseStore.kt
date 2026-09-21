@@ -136,6 +136,20 @@ class CourseStore(private val root: File) {
     }
 
     /**
+     * Replaces reader.md wholesale — what the in-app editor writes after the
+     * reader strikes an observation out.
+     *
+     * Deletes the file when nothing is left, so a course with every
+     * observation crossed out is indistinguishable from one that never
+     * recorded any. That is the right answer: the absence of the file is what
+     * [buildChapterPrompt] already reads as "no reader notes".
+     */
+    fun writeReaderNotes(courseSlug: String, markdown: String) {
+        val file = File(root, "$courseSlug/reader.md").apply { parentFile?.mkdirs() }
+        if (markdown.isBlank()) file.delete() else file.writeText(markdown)
+    }
+
+    /**
      * Appends one chapter's reading observations to reader.md:
      *
      *     ## Chapter 5 — how the reading went

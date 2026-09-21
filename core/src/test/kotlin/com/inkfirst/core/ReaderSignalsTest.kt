@@ -103,12 +103,14 @@ class ReaderSignalsTest {
             qaMarkdown = qaFile,
         )
         requireNotNull(body)
-        assertTrue(body.contains("Asked 2 questions"), body)
+        // No count in the lead-in: the reader can strike a line out, and a
+        // tally that contradicts the list under it is worse than no tally.
+        assertTrue(body.contains("Asked about:"), body)
         assertTrue(body.contains("what is a gradient exactly?"), body)
         // Marked but never asked about — a different signal, kept separate.
         assertTrue(body.contains("Stopped at these passages without asking"), body)
         assertTrue(body.contains("loss functions measure how wrong we are"), body)
-        assertTrue(body.contains("Wrote 1 note"), body)
+        assertTrue(body.contains("Wrote these notes:"), body)
         assertTrue(body.contains("revisit this"), body)
         assertFalse(body.contains("epochs"), body)
     }
@@ -145,7 +147,7 @@ class ReaderSignalsTest {
             qaMarkdown = "**Q:** why?\n\n**A:** because\n\n---\n",
         )
         requireNotNull(body)
-        assertTrue(body.contains("Asked 1 question:"), body)
+        assertTrue(body.contains("Asked about:"), body)
     }
 
     @Test

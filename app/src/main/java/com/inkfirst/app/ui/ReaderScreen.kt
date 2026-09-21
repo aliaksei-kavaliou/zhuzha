@@ -243,6 +243,7 @@ fun ReaderScreen(
     startBlockIndex: Int = 0,
     onBack: () -> Unit,
     onOpenContents: () -> Unit,
+    onOpenReaderNotes: () -> Unit,
     onOpenChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val context = LocalContext.current
@@ -952,6 +953,10 @@ fun ReaderScreen(
                 onAskAboutChapter = {
                     showFormatMenu = false
                     chatSelection = ""  // open with no selection = general Q&A
+                },
+                onOpenReaderNotes = {
+                    showFormatMenu = false
+                    onOpenReaderNotes()
                 },
                 pendingFigures = pendingFigures,
                 figureStatus = figureStatus,
@@ -1827,6 +1832,7 @@ private fun FormatMenu(
     canBookmark: Boolean,
     onOpenContents: () -> Unit,
     onAskAboutChapter: () -> Unit,
+    onOpenReaderNotes: () -> Unit,
     pendingFigures: Int,
     pendingBadges: Int,
     hasCover: Boolean,
@@ -1867,6 +1873,25 @@ private fun FormatMenu(
             ) {
                 Text(
                     text = "Contents",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkColor,
+                )
+            }
+        }
+
+        // What the book has noticed about this reader, and the means to
+        // cross a line out. Reachable from the page as well as from Contents
+        // on purpose: the moment you want to argue with an observation is the
+        // moment you are reading the chapter it shaped.
+        MenuRow(label = "Reading") {
+            Box(
+                modifier = Modifier
+                    .clickable { onOpenReaderNotes() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "How it has gone",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkColor,
@@ -2042,7 +2067,11 @@ private fun MenuRow(label: String, content: @Composable () -> Unit) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium.copy(color = InkColor),
-            modifier = Modifier.width(70.dp),
+            // 70dp broke "Reading" across two lines — "Readin" over a lone
+            // "g" — and left "Chapter" a hair from the same fate. The column
+            // is a label gutter, so it costs the controls beside it nothing
+            // to be wide enough for the longest word in it.
+            modifier = Modifier.width(82.dp),
         )
         content()
     }
