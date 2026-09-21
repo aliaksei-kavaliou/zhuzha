@@ -1,6 +1,8 @@
 package com.inkfirst.app.ui
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -53,102 +56,126 @@ fun SettingsScreen(
         if (showKey) apiKeyDraft = storedKey.orEmpty()
     }
 
+    // Scrolls, and the actions do not scroll with it.
+    //
+    // This screen was a plain fillMaxSize Column with neither pagination nor
+    // a scroll container — the only one in the app that was neither, which is
+    // why it survived until someone opened it on a 320x640 emulator. Its
+    // content is roughly twice that tall, and Save/Done are the LAST thing in
+    // the column, so on a phone they were not merely below the fold but
+    // unreachable: there was no way to save an API key at all.
+    //
+    // Same shape as the outline review page: content scrolls in the weighted
+    // half, the actions are pinned outside it. imePadding on the root keeps
+    // that row above the keyboard, which matters on a screen that is mostly
+    // text fields.
     Column(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { focusManager.clearFocus() })
             }
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .imePadding(),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Settings", style = MaterialTheme.typography.headlineMedium)
 
-        Text(
-            text = "Your Gemini API key stays on this device (encrypted). Get one at ai.google.dev.",
-            style = MaterialTheme.typography.bodySmall,
-        )
+            Text(
+                text = "Your Gemini API key stays on this device (encrypted). Get one at ai.google.dev.",
+                style = MaterialTheme.typography.bodySmall,
+            )
 
-        if (!storedKey.isNullOrBlank() && !showKey) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Current: ${maskApiKey(storedKey)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(end = 8.dp),
+            if (!storedKey.isNullOrBlank() && !showKey) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Current: ${maskApiKey(storedKey)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    TextButton(onClick = { showKey = true }) { Text("Change") }
+                }
+            } else {
+                OutlinedTextField(
+                    value = apiKeyDraft,
+                    onValueChange = { apiKeyDraft = it },
+                    label = { Text("Gemini API key") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                TextButton(onClick = { showKey = true }) { Text("Change") }
             }
-        } else {
+
             OutlinedTextField(
-                value = apiKeyDraft,
-                onValueChange = { apiKeyDraft = it },
-                label = { Text("Gemini API key") },
+                value = modelDraft,
+                onValueChange = { modelDraft = it },
+                label = { Text("Model") },
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
 
-        OutlinedTextField(
-            value = modelDraft,
-            onValueChange = { modelDraft = it },
-            label = { Text("Model") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = imageModelDraft,
-            onValueChange = { imageModelDraft = it },
-            label = { Text("Figure model") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            text = "Draws chapter figures. Must be an image-capable model — " +
-                "roughly 3 cents a picture on the default.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        LanguagePicker(
-            label = "Preferred language",
-            value = languageDraft,
-            onValueChange = { languageDraft = it },
-        )
-        Text(
-            text = "Used to pre-fill the language on new courses. Existing courses keep the language they were created with.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        // Dev toggle: on a device without a stylus (emulator), let finger
-        // input draw ink so the capture path can be exercised. On the Boox
-        // this stays off — finger keeps page-turn / text-selection duties.
-        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = imageModelDraft,
+                onValueChange = { imageModelDraft = it },
+                label = { Text("Figure model") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text(
-                text = "Finger draws ink (dev)",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(end = 12.dp),
+                text = "Draws chapter figures. Must be an image-capable model — " +
+                    "roughly 3 cents a picture on the default.",
+                style = MaterialTheme.typography.bodySmall,
             )
-            androidx.compose.material3.Switch(
-                checked = fingerDraws,
-                onCheckedChange = {
-                    fingerDraws = it
-                    readerPrefs.setFingerDraws(it)
-                },
+
+            LanguagePicker(
+                label = "Preferred language",
+                value = languageDraft,
+                onValueChange = { languageDraft = it },
             )
+            Text(
+                text = "Used to pre-fill the language on new courses. Existing courses keep the language they were created with.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            // Dev toggle: on a device without a stylus (emulator), let finger
+            // input draw ink so the capture path can be exercised. On the Boox
+            // this stays off — finger keeps page-turn / text-selection duties.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Finger draws ink (dev)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(end = 12.dp),
+                )
+                androidx.compose.material3.Switch(
+                    checked = fingerDraws,
+                    onCheckedChange = {
+                        fingerDraws = it
+                        readerPrefs.setFingerDraws(it)
+                    },
+                )
+            }
+            Text(
+                text = "Off: stylus draws, finger navigates. On: finger draws too (for testing on non-stylus devices).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            savedNote?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+
         }
-        Text(
-            text = "Off: stylus draws, finger navigates. On: finger draws too (for testing on non-stylus devices).",
-            style = MaterialTheme.typography.bodySmall,
-        )
 
-        savedNote?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Button(
                 // Enable if we're either setting a new key OR one is already stored
                 // (so the model field alone can be updated without re-entering the key).
