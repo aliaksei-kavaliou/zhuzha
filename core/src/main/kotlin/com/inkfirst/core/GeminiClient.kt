@@ -6,6 +6,7 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -14,8 +15,12 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import java.net.ConnectException
+import java.net.UnknownHostException
+import java.nio.channels.UnresolvedAddressException
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -269,7 +274,7 @@ class KtorGeminiClient(
             generationConfig = generationConfig,
         )
 
-        val response: HttpResponse = http.post(url) {
+        val response: HttpResponse = postWithRetry(url) {
             headers.append("x-goog-api-key", apiKey)
             contentType(ContentType.Application.Json)
             setBody(request)
@@ -293,6 +298,66 @@ class KtorGeminiClient(
         }
     }
 
+    /**
+     * POSTs, retrying the handful of failures that mean "the connection did
+     * not get made" rather than "the server said no".
+     *
+     * The first request a process makes can lose the DNS race: on 2026-09-21
+     * the first "Compile chapter" of a session died in 80ms with
+     * `UnresolvedAddressException` — thrown by `Net.checkAddress`, so the
+     * socket was handed an address that never resolved — while WiFi was
+     * validated and the API host answered a ping in 19ms. Tapping the button
+     * a second time worked, because CIO caches the endpoint once it resolves.
+     * A transient miss should not cost a tap, and it certainly should not
+     * report itself as a network problem the reader then goes and checks.
+     *
+     * Only connect-level failures are retried. An HTTP error never lands here
+     * ([expectSuccess] is false, so the status is inspected by the caller),
+     * and a socket timeout is deliberately excluded: the request timeout is
+     * three minutes, and quietly spending another three is worse than saying
+     * so. Cancellation falls through untouched — it is not a transient
+     * failure, it is the reader leaving.
+     */
+    private suspend fun postWithRetry(
+        url: String,
+        build: HttpRequestBuilder.() -> Unit,
+    ): HttpResponse {
+        var attempt = 0
+        while (true) {
+            try {
+                return http.post(url, build)
+            } catch (e: Exception) {
+                if (attempt >= CONNECT_RETRY_DELAYS_MS.size || !isTransientConnectFailure(e)) throw e
+                val wait = CONNECT_RETRY_DELAYS_MS[attempt]
+                System.err.println(
+                    "Gemini connect attempt ${attempt + 1} failed " +
+                        "(${e::class.simpleName}); retrying in ${wait}ms",
+                )
+                delay(wait)
+                attempt++
+            }
+        }
+    }
+
+    /**
+     * Whether this is "could not reach the host", as opposed to anything the
+     * host actually said. Walks the cause chain because CIO wraps its
+     * low-level throwables.
+     */
+    private fun isTransientConnectFailure(e: Throwable): Boolean {
+        var current: Throwable? = e
+        while (current != null) {
+            when (current) {
+                is UnresolvedAddressException,
+                is UnknownHostException,
+                is ConnectException,
+                -> return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
     override fun close() {
         http.close()
     }
@@ -300,5 +365,14 @@ class KtorGeminiClient(
     private companion object {
         const val REQUEST_TIMEOUT_MS = 180_000L
         const val CONNECT_TIMEOUT_MS = 20_000L
+
+        /**
+         * Waits before each retry of a failed CONNECTION, in order. Two
+         * retries, so a request is attempted three times in all and gives up
+         * after about 1.2s of waiting — nothing against a three-minute
+         * request timeout, and long enough for a DNS lookup that lost its
+         * first race to win the next one.
+         */
+        val CONNECT_RETRY_DELAYS_MS = longArrayOf(300L, 900L)
     }
 }
