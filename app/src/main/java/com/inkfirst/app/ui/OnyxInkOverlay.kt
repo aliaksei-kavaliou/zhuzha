@@ -240,6 +240,24 @@ internal fun OnyxInkOverlay(
      */
     val repaintRectRef = remember { mutableStateOf<AndroidRect?>(null) }
 
+    /**
+     * A SECOND region to repaint in the same unlock, kept separate from
+     * [repaintRectRef] rather than merged with it.
+     *
+     * Deleting a stroke from its chip changes two far-apart places — the ink,
+     * wherever it was on the page, and the chip pill at the bottom — and the
+     * first version unioned them into one rectangle. Their bounding box is
+     * everything in between, so a GC over it blinked most of the page to
+     * delete one underline: the September lesson exactly, that the flash is
+     * the SCOPE and not the mode. Two small rects cost two invalidates and
+     * flash only what actually changed.
+     *
+     * Cleared when consumed, because unlike [repaintRectRef] — whose null
+     * case means "repaint everything" and must therefore persist — an
+     * absent second region simply means there is not one.
+     */
+    val extraRepaintRectRef = remember { mutableStateOf<AndroidRect?>(null) }
+
     // A chip both APPEARING and DISAPPEARING changes the panel, and neither
     // was being paid for. While raw drawing is live the driver owns the
     // panel and Compose's output sits unseen in the framebuffer, so the
@@ -310,12 +328,25 @@ internal fun OnyxInkOverlay(
         lastStrokesRef.value = pageStrokes
         lastRangeRef.value = pageBlockRange
         if (gone.isEmpty()) return@LaunchedEffect
+        // An erase reaches here too, and has already scoped a repaint over
+        // its sweep AND the strokes it took. Doing it again would be a
+        // second flash for the same removal.
+        if (SystemClock.uptimeMillis() - eraseEndedAtRef.value < ERASE_COMMIT_GRACE_MS) {
+            return@LaunchedEffect
+        }
         val region = inkRegion(gone, blockTopYRef.value) ?: return@LaunchedEffect
-        // Unioned, never replaced: an erase has already set the rect covering
-        // its sweep, and this effect fires for the same removal a moment
-        // later. Narrowing to the stroke alone would leave the sweep's own
-        // driver ink on the glass.
-        repaintRectRef.value = union(repaintRectRef.value, region)
+        // The PRIMARY rect when it is free, the second one when it is not.
+        //
+        // Which matters more than it looks: a null primary means "repaint the
+        // whole panel", and the rect is consumed by whichever unlock runs
+        // first. Deleting a stroke from its chip schedules two — one for the
+        // chip leaving, one for the ink — so leaving the primary null here is
+        // how one of them turns into a full-page flash.
+        if (repaintRectRef.value == null) {
+            repaintRectRef.value = region
+        } else {
+            extraRepaintRectRef.value = region
+        }
         unlockRequestRef.value?.invoke("inkRemoved")
     }
 
@@ -846,6 +877,7 @@ internal fun OnyxInkOverlay(
                                     if (clearPendingRef.value) {
                                         clearPendingRef.value = false
                                         clearSurface(repaintRectRef.value)
+                                        extraRepaintRectRef.value?.let(::clearSurface)
                                     }
                                     // Not unconditional: an unlock that
                                     // fires while a dialog is open must not
@@ -899,6 +931,18 @@ internal fun OnyxInkOverlay(
                                             TAG,
                                             "repaint($reason, $mode, rect=$r +${loc[0]},${loc[1]})",
                                         )
+                                        // The second region, if this unlock
+                                        // carries one. Its own invalidate, not
+                                        // a bounding box with the first.
+                                        extraRepaintRectRef.value?.let { x ->
+                                            EpdController.invalidate(
+                                                target,
+                                                x.left + loc[0], x.top + loc[1],
+                                                x.right + loc[0], x.bottom + loc[1],
+                                                mode,
+                                            )
+                                            Log.d(TAG, "repaint($reason, $mode, extra=$x)")
+                                        }
                                     } else {
                                         // Nothing to scope it to: refresh the
                                         // panel outright. repaintEveryThing
@@ -909,6 +953,7 @@ internal fun OnyxInkOverlay(
                                         Log.d(TAG, "repaint($reason, $mode, everything)")
                                     }
                                     repaintRectRef.value = null
+                                    extraRepaintRectRef.value = null
                                 }
                             } catch (t: Throwable) {
                                 Log.w(TAG, "unlock($reason) failed", t)
@@ -1503,18 +1548,6 @@ private fun hitTestForErase(
  * Shares [eraseRegion]'s geometry because it is the same question — which
  * pixels does this ink occupy — asked with no eraser trail.
  */
-/** Smallest rect covering both, or whichever one exists. */
-private fun union(a: AndroidRect?, b: AndroidRect?): AndroidRect? {
-    if (a == null) return b
-    if (b == null) return a
-    return AndroidRect(
-        minOf(a.left, b.left),
-        minOf(a.top, b.top),
-        maxOf(a.right, b.right),
-        maxOf(a.bottom, b.bottom),
-    )
-}
-
 private fun inkRegion(
     strokes: List<Stroke>,
     blockTopY: (Int) -> Float?,
