@@ -111,6 +111,18 @@ internal fun OnyxInkOverlay(
      */
     blockVisibleTop: (globalIdx: Int) -> Float? = { null },
     pageBlockRange: IntRange,
+    /**
+     * Distance from this overlay's left edge to the left edge of the TEXT.
+     *
+     * The overlay spans the whole page so the margins can be written in; the
+     * text column is inset from it by the reader's margin setting. Stroke
+     * coordinates stay relative to the TEXT, not to the overlay — which keeps
+     * the on-disk format unchanged (ink drawn before the overlay grew still
+     * lands where it was drawn) and lets [extractStrokeText] keep comparing
+     * stroke x against a text layout directly. Ink in the left margin simply
+     * has a negative x, which is the honest description of where it is.
+     */
+    textInsetPx: Float = 0f,
     onStrokeAdded: (Stroke) -> Unit,
     onStrokeErased: (Stroke?) -> Unit,
     /**
@@ -181,6 +193,7 @@ internal fun OnyxInkOverlay(
     val blockTopYRef = rememberUpdatedState(blockTopY)
     val blockVisibleTopRef = rememberUpdatedState(blockVisibleTop)
     val rangeRef = rememberUpdatedState(pageBlockRange)
+    val insetRef = rememberUpdatedState(textInsetPx)
 
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val touchHelperRef = remember { mutableStateOf<TouchHelper?>(null) }
@@ -229,6 +242,17 @@ internal fun OnyxInkOverlay(
     val repaintPendingRef = remember { mutableStateOf(false) }
     /** Whether the driver's ink layer is owed a wipe. See [CLEAR_REASONS]. */
     val clearPendingRef = remember { mutableStateOf(false) }
+    /**
+     * Whether that wipe has to take the WHOLE layer rather than the repaint
+     * rect.
+     *
+     * A page turn is the case that needs them separated. The layer must go
+     * entirely — every stroke on it belongs to the page being left — while
+     * the panel refresh wants to be scoped to just the pixels that ink
+     * occupied, or turning a page flashes the screen. One rect cannot answer
+     * both questions, and before this it was answering the wipe's.
+     */
+    val clearWholeRef = remember { mutableStateOf(false) }
     /** Overlay size in px, so a repaint can be scoped from outside a gesture. */
     val overlaySizeRef = remember { mutableStateOf(0 to 0) }
     /** Previous value of [chipOpen], to notice the transitions. */
@@ -238,25 +262,39 @@ internal fun OnyxInkOverlay(
      * The region to repaint, or null for the whole view. Set by the erase
      * path, which knows exactly which pixels it changed.
      */
-    val repaintRectRef = remember { mutableStateOf<AndroidRect?>(null) }
+    val repaintRectsRef = remember { mutableStateOf<List<AndroidRect>>(emptyList()) }
 
     /**
-     * A SECOND region to repaint in the same unlock, kept separate from
-     * [repaintRectRef] rather than merged with it.
+     * Add a region to the next repaint. Never replaces one already queued.
      *
-     * Deleting a stroke from its chip changes two far-apart places — the ink,
-     * wherever it was on the page, and the chip pill at the bottom — and the
-     * first version unioned them into one rectangle. Their bounding box is
-     * everything in between, so a GC over it blinked most of the page to
-     * delete one underline: the September lesson exactly, that the flash is
-     * the SCOPE and not the mode. Two small rects cost two invalidates and
-     * flash only what actually changed.
+     * One action routinely changes two far-apart places: deleting a stroke
+     * from its chip removes the ink, wherever it sits on the page, AND the
+     * chip pill at the bottom. Two earlier shapes of this both failed, in
+     * opposite directions. Merging them into one rectangle gave a bounding
+     * box of everything in between, so deleting one underline blinked most of
+     * the page — the September lesson, that the flash is the SCOPE and not
+     * the mode. Then a single rect with a second slot: the chip's effect
+     * wrote the slot unconditionally and OVERWROTE the ink's region, so the
+     * pill was refreshed and the ink was left on the glass. That is the
+     * stroke ghost, and it survived a page turn because by then the stroke
+     * was gone from the model and nothing knew where it had been.
      *
-     * Cleared when consumed, because unlike [repaintRectRef] — whose null
-     * case means "repaint everything" and must therefore persist — an
-     * absent second region simply means there is not one.
+     * A queue has neither failure: every region that asks gets its own
+     * invalidate, at its own size, and no writer can silently displace
+     * another's.
      */
-    val extraRepaintRectRef = remember { mutableStateOf<AndroidRect?>(null) }
+    fun queueRepaint(rect: AndroidRect?) {
+        if (rect == null) return
+        val queued = repaintRectsRef.value
+        if (queued.size >= MAX_REPAINT_RECTS) {
+            // Pathological, but a runaway queue of invalidates would be
+            // worse than one box: merge into the last rather than grow.
+            val merged = union(queued.last(), rect) ?: rect
+            repaintRectsRef.value = queued.dropLast(1) + merged
+        } else if (rect !in queued) {
+            repaintRectsRef.value = queued + rect
+        }
+    }
 
     // A chip both APPEARING and DISAPPEARING changes the panel, and neither
     // was being paid for. While raw drawing is live the driver owns the
@@ -288,7 +326,7 @@ internal fun OnyxInkOverlay(
             // September: the flash was never the GC mode, it was the SCOPE.
             // A page with no ink on it — the common case when the format menu
             // opens — now costs nothing at all.
-            val region = inkRegion(strokesRef.value, blockTopYRef.value)
+            val region = inkRegion(strokesRef.value, blockTopYRef.value, insetRef.value)
             if (region == null) {
                 try {
                     touchHelperRef.value?.setRawDrawingEnabled(false)
@@ -297,7 +335,7 @@ internal fun OnyxInkOverlay(
                 }
                 Log.d(TAG, "overlay opened over a clean page — no repaint")
             } else {
-                repaintRectRef.value = region
+                queueRepaint(region)
                 unlockRequestRef.value?.invoke("overlay")
             }
         }
@@ -319,14 +357,40 @@ internal fun OnyxInkOverlay(
      */
     val lastStrokesRef = remember { mutableStateOf<List<Stroke>>(emptyList()) }
     val lastRangeRef = remember { mutableStateOf<IntRange?>(null) }
+    /**
+     * Where this page's ink sits, measured once the page has settled, and
+     * kept so the NEXT page turn knows which pixels to repaint.
+     *
+     * It has to be captured in advance: by the time a page change is
+     * observed, the block tops have already moved to the new page and the
+     * departed ink can no longer be located.
+     */
+    val lastInkRegionRef = remember { mutableStateOf<AndroidRect?>(null) }
     LaunchedEffect(pageStrokes, pageBlockRange) {
         // Only within one page. Turning the page changes this list wholesale
         // and the departed strokes belong to blocks that have moved, so their
         // region is meaningless — and a page turn already wipes the layer.
         val samePage = lastRangeRef.value == pageBlockRange
         val gone = if (samePage) lastStrokesRef.value.filter { it !in pageStrokes } else emptyList()
+        // The page we just left, and the ink that was on it.
+        val leftBehind = if (samePage) null else lastInkRegionRef.value
         lastStrokesRef.value = pageStrokes
         lastRangeRef.value = pageBlockRange
+
+        if (leftBehind != null) {
+            // A page turn wipes the driver's layer but does not refresh the
+            // panel — deliberately, because a GC on every turn is unreadable.
+            // The assumption was that the new page's own content redraws over
+            // the old ink. It does where the new page has text there and does
+            // NOT where it does not, which is why marks from earlier pages
+            // reappear as ghosts over blank space.
+            //
+            // Scoped to where that ink actually was, so the flash is the size
+            // of the marks rather than the size of the page, and a page with
+            // no ink on it still costs nothing.
+            queueRepaint(leftBehind)
+            unlockRequestRef.value?.invoke("pageInk")
+        }
         if (gone.isEmpty()) return@LaunchedEffect
         // An erase reaches here too, and has already scoped a repaint over
         // its sweep AND the strokes it took. Doing it again would be a
@@ -334,20 +398,23 @@ internal fun OnyxInkOverlay(
         if (SystemClock.uptimeMillis() - eraseEndedAtRef.value < ERASE_COMMIT_GRACE_MS) {
             return@LaunchedEffect
         }
-        val region = inkRegion(gone, blockTopYRef.value) ?: return@LaunchedEffect
-        // The PRIMARY rect when it is free, the second one when it is not.
-        //
-        // Which matters more than it looks: a null primary means "repaint the
-        // whole panel", and the rect is consumed by whichever unlock runs
-        // first. Deleting a stroke from its chip schedules two — one for the
-        // chip leaving, one for the ink — so leaving the primary null here is
-        // how one of them turns into a full-page flash.
-        if (repaintRectRef.value == null) {
-            repaintRectRef.value = region
-        } else {
-            extraRepaintRectRef.value = region
-        }
+        val region = inkRegion(gone, blockTopYRef.value, insetRef.value)
+            ?: return@LaunchedEffect
+        queueRepaint(region)
+        // A backstop for the same pixels: once the stroke is out of the model
+        // nothing else can say where it used to be, so if this repaint is
+        // somehow missed the page turn after it has no way to clean up.
+        lastInkRegionRef.value = union(lastInkRegionRef.value, region)
         unlockRequestRef.value?.invoke("inkRemoved")
+    }
+
+    // Measured after the page has laid out, because a block's top is not
+    // known before it. Runs on every pass rather than only on page change:
+    // ink added or removed moves the region too.
+    LaunchedEffect(pageStrokes, pageBlockRange) {
+        withFrameNanos {}
+        withFrameNanos {}
+        lastInkRegionRef.value = inkRegion(pageStrokes, blockTopYRef.value, insetRef.value)
     }
 
     LaunchedEffect(chipOpen) {
@@ -364,19 +431,23 @@ internal fun OnyxInkOverlay(
             val known = chipRectRef.value
             if (known != null) {
                 // The pill itself, padded the same as an erase rect.
-                repaintRectRef.value = AndroidRect(
-                    (known.left - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
-                    (known.top - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
-                    known.right + REPAINT_PAD_PX.toInt(),
-                    known.bottom + REPAINT_PAD_PX.toInt(),
+                queueRepaint(
+                    AndroidRect(
+                        (known.left - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
+                        (known.top - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
+                        known.right + REPAINT_PAD_PX.toInt(),
+                        known.bottom + REPAINT_PAD_PX.toInt(),
+                    ),
                 )
             } else if (w > 0 && h > 0) {
                 // Nothing measured yet — fall back to the band.
-                repaintRectRef.value = AndroidRect(
-                    0,
-                    (h * (1f - CHIP_BAND_FRACTION)).toInt().coerceAtLeast(0),
-                    w,
-                    h,
+                queueRepaint(
+                    AndroidRect(
+                        0,
+                        (h * (1f - CHIP_BAND_FRACTION)).toInt().coerceAtLeast(0),
+                        w,
+                        h,
+                    ),
                 )
             }
             unlockRequestRef.value?.invoke(if (chipOpen) "chipShow" else "chipClose")
@@ -427,6 +498,12 @@ internal fun OnyxInkOverlay(
                         val erasing = tool == MotionEvent.TOOL_TYPE_ERASER ||
                             (isStylus &&
                                 (event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0)
+                        // Logged on every contact, not only on the ones we
+                        // reject. "Ink only from the pen" is decided entirely
+                        // by this number, so a report of a stroke that turned
+                        // a page instead of drawing is answerable in one line
+                        // — and unanswerable without it.
+                        Log.d(TAG, "contact down tool=$tool button=${event.buttonState}")
                         eraseModeRef.value = erasing
                         eraseTrail.clear()
                         if (erasing) {
@@ -454,7 +531,7 @@ internal fun OnyxInkOverlay(
                             val doomed = LinkedHashSet<Stroke>()
                             eraseTrail.forEach { (x, y) ->
                                 hitTestForErase(
-                                    strokesRef.value, x, y, getTop,
+                                    strokesRef.value, x - insetRef.value, y, getTop,
                                     blockVisibleTop = blockVisibleTopRef.value,
                                 )?.let(doomed::add)
                             }
@@ -464,7 +541,9 @@ internal fun OnyxInkOverlay(
                             // the strokes it removed. Repainting the region
                             // instead of the view is what keeps an erase from
                             // blinking the whole page black and back.
-                            repaintRectRef.value = eraseRegion(eraseTrail, doomed, getTop)
+                            queueRepaint(
+                                eraseRegion(eraseTrail, doomed, getTop, insetRef.value),
+                            )
                             eraseTrail.clear()
                             eraseModeRef.value = false
                             eraseEndedAtRef.value = SystemClock.uptimeMillis()
@@ -548,7 +627,8 @@ internal fun OnyxInkOverlay(
                             fingerUpAtRef.value = System.currentTimeMillis()
                             val at = down.position
                             val hit = hitTestForErase(
-                                strokesRef.value, at.x, at.y, blockTopYRef.value,
+                                strokesRef.value, at.x - insetRef.value, at.y,
+                                blockTopYRef.value,
                                 TAP_SLOP_PX,
                                 blockVisibleTopRef.value,
                             )
@@ -681,19 +761,23 @@ internal fun OnyxInkOverlay(
                                         // a page-wide GC to put one chip away is
                                         // the flash we just spent the morning
                                         // removing.
-                                        repaintRectRef.value = chipRectRef.value?.let { r ->
-                                            AndroidRect(
-                                                (r.left - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
-                                                (r.top - REPAINT_PAD_PX.toInt()).coerceAtLeast(0),
-                                                r.right + REPAINT_PAD_PX.toInt(),
-                                                r.bottom + REPAINT_PAD_PX.toInt(),
-                                            )
-                                        } ?: AndroidRect(
-                                            0,
-                                            (size.height * (1f - CHIP_BAND_FRACTION)).toInt()
-                                                .coerceAtLeast(0),
-                                            size.width,
-                                            size.height,
+                                        queueRepaint(
+                                            chipRectRef.value?.let { r ->
+                                                AndroidRect(
+                                                    (r.left - REPAINT_PAD_PX.toInt())
+                                                        .coerceAtLeast(0),
+                                                    (r.top - REPAINT_PAD_PX.toInt())
+                                                        .coerceAtLeast(0),
+                                                    r.right + REPAINT_PAD_PX.toInt(),
+                                                    r.bottom + REPAINT_PAD_PX.toInt(),
+                                                )
+                                            } ?: AndroidRect(
+                                                0,
+                                                (size.height * (1f - CHIP_BAND_FRACTION)).toInt()
+                                                    .coerceAtLeast(0),
+                                                size.width,
+                                                size.height,
+                                            ),
                                         )
                                         unlockRequestRef.value?.invoke("chipClose")
                                     }
@@ -841,8 +925,12 @@ internal fun OnyxInkOverlay(
                             clearPendingRef.value = true
                             // A page turn replaces the whole page, so the
                             // whole layer goes — never a leftover rect from
-                            // some earlier erase.
-                            if (reason == "pageTurn") repaintRectRef.value = null
+                            // some earlier erase. The REPAINT that follows is
+                            // scoped separately; see [clearWholeRef].
+                            if (reason == "pageTurn") {
+                                repaintRectsRef.value = emptyList()
+                                clearWholeRef.value = true
+                            }
                             Log.d(TAG, "clear armed($reason)")
                         }
                         unlockJobRef.value?.cancel()
@@ -876,8 +964,13 @@ internal fun OnyxInkOverlay(
                                     // whatever text arrives next.
                                     if (clearPendingRef.value) {
                                         clearPendingRef.value = false
-                                        clearSurface(repaintRectRef.value)
-                                        extraRepaintRectRef.value?.let(::clearSurface)
+                                        val queued = repaintRectsRef.value
+                                        if (clearWholeRef.value || queued.isEmpty()) {
+                                            clearWholeRef.value = false
+                                            clearSurface(null)
+                                        } else {
+                                            queued.forEach(::clearSurface)
+                                        }
                                     }
                                     // Not unconditional: an unlock that
                                     // fires while a dialog is open must not
@@ -914,35 +1007,29 @@ internal fun OnyxInkOverlay(
                                     // logs showed GC firing over sane rects
                                     // while the ghosts sat there untouched.
                                     val target = surface.rootView ?: surface
-                                    val r = repaintRectRef.value
-                                    if (r != null) {
+                                    val queued = repaintRectsRef.value
+                                    if (queued.isNotEmpty()) {
                                         // Overlay-local → root-local: the
-                                        // rect was measured against this view.
+                                        // rects were measured against this
+                                        // view. One invalidate each, never a
+                                        // bounding box over the set — see
+                                        // queueRepaint for what merging them
+                                        // cost.
                                         val loc = IntArray(2)
                                         surface.getLocationInWindow(loc)
                                         val mode = REPAINT_MODE
-                                        EpdController.invalidate(
-                                            target,
-                                            r.left + loc[0], r.top + loc[1],
-                                            r.right + loc[0], r.bottom + loc[1],
-                                            mode,
-                                        )
-                                        Log.d(
-                                            TAG,
-                                            "repaint($reason, $mode, rect=$r +${loc[0]},${loc[1]})",
-                                        )
-                                        // The second region, if this unlock
-                                        // carries one. Its own invalidate, not
-                                        // a bounding box with the first.
-                                        extraRepaintRectRef.value?.let { x ->
+                                        queued.forEach { r ->
                                             EpdController.invalidate(
                                                 target,
-                                                x.left + loc[0], x.top + loc[1],
-                                                x.right + loc[0], x.bottom + loc[1],
+                                                r.left + loc[0], r.top + loc[1],
+                                                r.right + loc[0], r.bottom + loc[1],
                                                 mode,
                                             )
-                                            Log.d(TAG, "repaint($reason, $mode, extra=$x)")
                                         }
+                                        Log.d(
+                                            TAG,
+                                            "repaint($reason, $mode, rects=$queued +${loc[0]},${loc[1]})",
+                                        )
                                     } else {
                                         // Nothing to scope it to: refresh the
                                         // panel outright. repaintEveryThing
@@ -952,8 +1039,7 @@ internal fun OnyxInkOverlay(
                                         EpdController.repaintEveryThing(mode)
                                         Log.d(TAG, "repaint($reason, $mode, everything)")
                                     }
-                                    repaintRectRef.value = null
-                                    extraRepaintRectRef.value = null
+                                    repaintRectsRef.value = emptyList()
                                 }
                             } catch (t: Throwable) {
                                 Log.w(TAG, "unlock($reason) failed", t)
@@ -1000,8 +1086,10 @@ internal fun OnyxInkOverlay(
                             val getTopErase = blockTopYRef.value
                             val doomed = LinkedHashSet<Stroke>()
                             pts.forEach { p ->
-                                hitTestForErase(strokesRef.value, p.x, p.y, getTopErase)
-                                    ?.let(doomed::add)
+                                hitTestForErase(
+                                    strokesRef.value,
+                                    p.x - insetRef.value, p.y, getTopErase,
+                                )?.let(doomed::add)
                             }
                             // Why nothing matched, in numbers: where the sweep
                             // actually went versus where the strokes actually
@@ -1074,7 +1162,7 @@ internal fun OnyxInkOverlay(
                             blockIndex = anchorIdx,
                             points = source2.map {
                                 InkPoint(
-                                    x = it.x - ox,
+                                    x = it.x - ox - insetRef.value,
                                     y = (it.y - oy) - anchorY,
                                     pressure = it.pressure,
                                 )
@@ -1281,10 +1369,10 @@ internal fun OnyxInkOverlay(
                 if (!belongsToThisPage(s, top, blockVisibleTop)) return@forEach
                 val path = Path().apply {
                     val first = s.points.first()
-                    moveTo(first.x, first.y + top)
+                    moveTo(first.x + textInsetPx, first.y + top)
                     for (i in 1 until s.points.size) {
                         val p = s.points[i]
-                        lineTo(p.x, p.y + top)
+                        lineTo(p.x + textInsetPx, p.y + top)
                     }
                 }
                 drawPath(
@@ -1383,10 +1471,34 @@ private const val ERASE_COMMIT_GRACE_MS = 150L
  * waiting to see or to see gone, rather than ink being committed.
  */
 private val IMMEDIATE_REASONS =
-    setOf("chip", "chipShow", "chipClose", "overlay", "inkRemoved")
+    setOf("chip", "chipShow", "overlay", "inkRemoved")
+
+/*
+ * "chipClose" was in that set and has been taken out.
+ *
+ * A chip APPEARING wants to be immediate — it is UI the reader is waiting to
+ * see, and the two frames are enough because the thing being refreshed is the
+ * thing being drawn. A chip LEAVING is the opposite case: the refresh has to
+ * land after the panel has actually stopped showing a solid black pill, and
+ * two frames only guarantee that Compose has drawn the frame, not that the
+ * controller has taken it. Measured on device: the GC fired over exactly the
+ * right rectangle, 82ms after the dismiss, and the pill still ghosted — a
+ * full-quality refresh issued against panel content that still had the chip
+ * in it re-asserts the chip, and the removal then arrives as an ordinary
+ * partial update, which is what leaves residue.
+ *
+ * The reason chips were made immediate in the first place no longer applies
+ * to the close. It was that a later unlock cancels the pending job, so a
+ * chip's repaint could be cancelled outright and never happen; since the
+ * repaint debt and the rect queue both outlive the job that asked for them,
+ * whichever unlock runs next pays it.
+ */
 
 private val REPAINT_REASONS =
-    setOf("eraseTrail", "eraseSweep", "erase", "chipClose", "chipShow", "overlay", "inkRemoved")
+    setOf(
+        "eraseTrail", "eraseSweep", "erase", "chipClose", "chipShow", "overlay",
+        "inkRemoved", "pageInk",
+    )
 
 /**
  * Reasons that need the driver's ink layer WIPED — a different question from
@@ -1438,6 +1550,15 @@ private val REPAINT_MODE = UpdateMode.GC
 
 /** Slop around an erased region, so antialiased edges are repainted too. */
 private const val REPAINT_PAD_PX = 12f
+
+/**
+ * How many separate regions one unlock will refresh before merging.
+ *
+ * Two is the number real actions ask for — deleting a stroke refreshes the
+ * ink and the chip that deleted it. The cap exists only so a queue cannot run
+ * away into a storm of invalidates.
+ */
+private const val MAX_REPAINT_RECTS = 4
 
 /** An eraser sweep is placed by a pen, to within about a millimetre. */
 private const val ERASE_SLOP_PX = 24f
@@ -1548,15 +1669,34 @@ private fun hitTestForErase(
  * Shares [eraseRegion]'s geometry because it is the same question — which
  * pixels does this ink occupy — asked with no eraser trail.
  */
+/** Smallest rect covering both, or whichever one exists. */
+private fun union(a: AndroidRect?, b: AndroidRect?): AndroidRect? {
+    if (a == null) return b
+    if (b == null) return a
+    return AndroidRect(
+        minOf(a.left, b.left),
+        minOf(a.top, b.top),
+        maxOf(a.right, b.right),
+        maxOf(a.bottom, b.bottom),
+    )
+}
+
 private fun inkRegion(
     strokes: List<Stroke>,
     blockTopY: (Int) -> Float?,
-): AndroidRect? = eraseRegion(emptyList(), strokes, blockTopY)
+    textInsetPx: Float = 0f,
+): AndroidRect? = eraseRegion(emptyList(), strokes, blockTopY, textInsetPx)
 
+/**
+ * [trail] arrives in overlay space (it comes from MotionEvents) and [removed]
+ * in text space (that is how strokes are stored), so the two are brought into
+ * overlay space here — which is the space a repaint rect is measured in.
+ */
 private fun eraseRegion(
     trail: List<Pair<Float, Float>>,
     removed: Collection<Stroke>,
     blockTopY: (Int) -> Float?,
+    textInsetPx: Float = 0f,
 ): AndroidRect? {
     var minX = Float.MAX_VALUE
     var minY = Float.MAX_VALUE
@@ -1575,7 +1715,7 @@ private fun eraseRegion(
     trail.forEach { (x, y) -> add(x, y) }
     removed.forEach { s ->
         val top = blockTopY(s.blockIndex) ?: return@forEach
-        s.points.forEach { p -> add(p.x, p.y + top) }
+        s.points.forEach { p -> add(p.x + textInsetPx, p.y + top) }
     }
     if (!any) return null
     return AndroidRect(
@@ -1604,8 +1744,27 @@ private fun belongsToThisPage(
 ): Boolean {
     val visibleTop = blockVisibleTop(s.blockIndex) ?: return true
     if (visibleTop <= virtualTop) return true  // not a continuation
-    val strokeTop = (s.points.minOfOrNull { it.y } ?: return true) + virtualTop
-    return strokeTop >= visibleTop - PAGE_OWNERSHIP_SLOP_PX
+    // Judged by the stroke's MIDDLE, not its top.
+    //
+    // The top is the wrong end for every mark that is not a straight
+    // underline. A circle round a word stands taller than its line and an
+    // underline of the page's first visible line is started from the blank
+    // margin above it — the margin that exists precisely so the first line
+    // can be stroked like any other. Both put the stroke's top well above
+    // the line it marks, so this read them as belonging to the previous
+    // page and refused to draw them: measured on device, a stroke whose top
+    // was 4px into the overlay against a visible top of 53px, drawn on the
+    // first line of a continued paragraph. The mark was saved, the chip for
+    // it opened, and the page stayed blank.
+    //
+    // The middle is the same end anchoring already picks, and for the same
+    // reason. A mark genuinely made on a line now shown on the previous page
+    // has its middle up there too, so it is still excluded.
+    val points = s.points
+    val minY = points.minOfOrNull { it.y } ?: return true
+    val maxY = points.maxOfOrNull { it.y } ?: return true
+    val strokeMiddle = (minY + maxY) / 2f + virtualTop
+    return strokeMiddle >= visibleTop - PAGE_OWNERSHIP_SLOP_PX
 }
 
 private fun distSq(x1: Float, y1: Float, x2: Float, y2: Float): Float {

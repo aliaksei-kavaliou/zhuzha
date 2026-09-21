@@ -66,6 +66,8 @@ fun InkOverlay(
      */
     blockVisibleTop: (globalIdx: Int) -> Float? = { null },
     pageBlockRange: IntRange,
+    /** See the note on OnyxInkOverlay: strokes are stored relative to the TEXT. */
+    textInsetPx: Float = 0f,
     allowFingerDraw: Boolean,
     onStrokeAdded: (Stroke) -> Unit,
     /**
@@ -111,7 +113,7 @@ fun InkOverlay(
                         // gesture. Trade-off: swipes that start ON a drawing
                         // won't page-turn — drawings are small, so this is
                         // rare in practice.
-                        val hitOnDown = hitTestStroke(pageStrokes, at, blockTopY)
+                        val hitOnDown = hitTestStroke(pageStrokes, at.copy(x = at.x - textInsetPx), blockTopY)
                         if (!shouldHandle && hitOnDown == null) {
                             ownsStream = false
                             return@pointerInteropFilter false
@@ -155,12 +157,12 @@ fun InkOverlay(
                         if (isErasing) {
                             // Fire even on miss so the caller can dismiss
                             // an open chip via barrel-button-tap-anywhere.
-                            val hit = hitTestStroke(pageStrokes, at, blockTopY)
+                            val hit = hitTestStroke(pageStrokes, at.copy(x = at.x - textInsetPx), blockTopY)
                             onStrokeErased(hit)
                         } else if (movedLikeATap) {
                             // Tap on (or very near) a stroke → chip. Works
                             // for finger too since we claimed the down above.
-                            val hit = hitTestStroke(pageStrokes, at, blockTopY)
+                            val hit = hitTestStroke(pageStrokes, at.copy(x = at.x - textInsetPx), blockTopY)
                             if (hit != null) onStrokeTapped(hit)
                         } else if (shouldHandle && current.size >= 2) {
                             // New stroke — draw mode only; a finger drag over
@@ -171,7 +173,7 @@ fun InkOverlay(
                                 val stroke = Stroke(
                                     blockIndex = anchorIdx,
                                     points = current.map { p ->
-                                        InkPoint(x = p.x, y = p.y - anchorY)
+                                        InkPoint(x = p.x - textInsetPx, y = p.y - anchorY)
                                     },
                                     brush = "pen",
                                     created = LocalDate.now().toString(),
@@ -195,10 +197,10 @@ fun InkOverlay(
                 if (s.points.size < 2) return@forEach
                 val path = Path().apply {
                     val first = s.points.first()
-                    moveTo(first.x, first.y + top)
+                    moveTo(first.x + textInsetPx, first.y + top)
                     for (i in 1 until s.points.size) {
                         val p = s.points[i]
-                        lineTo(p.x, p.y + top)
+                        lineTo(p.x + textInsetPx, p.y + top)
                     }
                 }
                 drawPath(

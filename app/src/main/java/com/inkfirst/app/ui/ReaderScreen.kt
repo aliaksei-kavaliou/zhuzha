@@ -578,7 +578,16 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(PaperColor),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding.dp)) {
+        // No horizontal padding here any more. The ink overlay lives inside
+        // this column, so padding it was what stopped the pen at the text
+        // edge: the margins could not be written in, the last word of a line
+        // could not be underlined without running off the drawable area, and
+        // a stroke that ran off it came back as a contact the tap ladder
+        // resolved into a page turn. Widening the margin made the drawable
+        // area SMALLER, which is the exact opposite of what the Wide setting
+        // is for. The inset moves onto the text, the header and the footer;
+        // the page itself, and the pen, get the whole width.
+        Column(modifier = Modifier.fillMaxSize()) {
             if (isPending) {
                 val pendingChapterIndex = course?.chapters?.indexOfFirst { it.slug == chapterSlug } ?: -1
                 val pendingPrev = course?.chapters?.getOrNull(pendingChapterIndex - 1)
@@ -587,6 +596,7 @@ fun ReaderScreen(
                     courseDaySchedule(c).firstOrNull { it.chapterN == chapter!!.n }?.label
                 }
                 CompilePrompt(
+                    modifier = Modifier.padding(horizontal = horizontalPadding.dp),
                     chapter = chapter!!,
                     chapterCount = course?.chapters?.size ?: 0,
                     dayLabel = pendingDayLabel,
@@ -637,6 +647,7 @@ fun ReaderScreen(
             // Header at ReaderScreen scope so it can read/toggle bookmarks
             // via the hoisted headerFirstBlock / headerBookmarked state.
             ReaderHeader(
+                modifier = Modifier.padding(horizontal = horizontalPadding.dp),
                 chapterN = chapter?.n,
                 chapterCount = course?.chapters?.size,
                 isBookmarked = headerBookmarked,
@@ -656,6 +667,7 @@ fun ReaderScreen(
 
             CompositionLocalProvider(LocalTextToolbar provides askToolbar) {
                 PagedContent(
+                    horizontalPadding = horizontalPadding,
                     blocks = blocks,
                     annotations = chapterAnnotations,
                     course = course,
@@ -1063,6 +1075,12 @@ fun ReaderScreen(
 
 @Composable
 private fun PagedContent(
+    /**
+     * The reader's margin setting, in dp. Applied to the TEXT rather than to
+     * the page, so the ink overlay can span the full width and the margins
+     * are somewhere to write.
+     */
+    horizontalPadding: Float,
     blocks: List<Block>,
     annotations: List<Annotation>,
     course: Course?,
@@ -1174,7 +1192,13 @@ private fun PagedContent(
 
     Column(modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val widthPx = with(density) { maxWidth.toPx().toInt() }
+            // The TEXT column's width — the page minus its margins. Every
+            // measurement downstream (pagination, stroke-to-word extraction)
+            // is against the text, not against the page the pen can reach.
+            val widthPx = with(density) {
+                (maxWidth - horizontalPadding.dp * 2).toPx().toInt().coerceAtLeast(1)
+            }
+            val textInsetPx = with(density) { horizontalPadding.dp.toPx() }
             val availableHeightPx = with(density) { (maxHeight - 40.dp).toPx().toInt() }
 
             val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing, badgeVersion) {
@@ -1441,7 +1465,11 @@ private fun PagedContent(
                     // for whatever gets selected.
                     key(selectionEpoch) {
                     SelectionContainer {
-                        Column(modifier = Modifier.fillMaxSize()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = horizontalPadding.dp),
+                        ) {
                             // Drawable margin above the first block. Marking
                             // the first line means stroking slightly ABOVE it —
                             // an underline sits below its baseline, a circle
@@ -1608,6 +1636,7 @@ private fun PagedContent(
                     }
                     if (USE_ONYX_PEN) {
                         OnyxInkOverlay(
+                            textInsetPx = textInsetPx,
                             pageStrokes = pageStrokes,
                             blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
                             blockVisibleTop = { idx ->
@@ -1668,6 +1697,7 @@ private fun PagedContent(
                         )
                     } else {
                         InkOverlay(
+                            textInsetPx = textInsetPx,
                             pageStrokes = pageStrokes,
                             blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
                             blockVisibleTop = { idx ->
@@ -1707,7 +1737,7 @@ private fun PagedContent(
                         // the rule the band already followed. Passing the
                         // row's own height as the band makes every y in it
                         // "bottom", so only x decides.
-                        .pointerInput(menuOpen, chipOpen, selectionActive) {
+                        .pointerInput(menuOpen, chipOpen, selectionActive, horizontalPadding) {
                             detectTapGestures { at ->
                                 performTap(
                                     resolveTap(
@@ -1722,7 +1752,11 @@ private fun PagedContent(
                                     )
                                 )
                             }
-                        },
+                        }
+                        // AFTER the tap node, so the node still measures the
+                        // full page and its turn bands line up with the ones
+                        // in the band above. Only the type is inset.
+                        .padding(horizontal = horizontalPadding.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -1756,6 +1790,7 @@ private fun PagedContent(
 
 @Composable
 private fun ReaderHeader(
+    modifier: Modifier = Modifier,
     chapterN: Int?,
     chapterCount: Int?,
     isBookmarked: Boolean,
@@ -1772,7 +1807,7 @@ private fun ReaderHeader(
         // attached to it. Costs a line of body text per page and is worth it.
         // The content box below measures whatever is left, so pagination
         // follows this automatically.
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
+        modifier = modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
     ) {
         // Explicit-destination nav rather than popBackStack — the auto-resume
         // cold-start pushes Reader directly on top of Library with no
@@ -3456,6 +3491,7 @@ private fun findBlockContainingQuote(blocks: List<Block>, quote: String): Int? {
 
 @Composable
 private fun CompilePrompt(
+    modifier: Modifier = Modifier,
     chapter: PersistedChapter,
     chapterCount: Int,
     dayLabel: String?,
