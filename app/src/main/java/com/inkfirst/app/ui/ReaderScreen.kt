@@ -2164,87 +2164,6 @@ private fun FormatMenu(
             }
         }
 
-        // The picture rows below REPORT before they offer. Each one used to
-        // disappear the moment its work finished, which reads as "not done
-        // yet" exactly as easily as "done" — so a reader whose figures and
-        // badges had already been drawn went looking for something to tap
-        // and redrew what he already had (2026-09-21). A finished row says
-        // so and is not clickable; only genuinely outstanding work is.
-        if (figureSlots > 0) {
-            MenuRow(label = "Figures") {
-                MenuAction(
-                    text = figureStatus ?: when {
-                        pendingFigures == 0 ->
-                            "all $figureSlots drawn"
-                        else ->
-                            "Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"
-                    },
-                    enabled = !busyDrawing && pendingFigures > 0 && figureStatus == null,
-                    onClick = onIllustrate,
-                )
-            }
-        }
-
-        // "Opening" rather than "Chapter": now that the row no longer
-        // disappears when drawn, it sits permanently above Rewrite, which is
-        // also a chapter-level action — two rows labelled "Chapter" doing
-        // unrelated things. Opening/Closing reads as the pair it is.
-        MenuRow(label = "Opening") {
-            MenuAction(
-                text = if (hasCover) "picture drawn" else "Draw opening picture",
-                enabled = !busyDrawing && !hasCover,
-                onClick = onDrawCover,
-            )
-        }
-
-        // The closing picture is the cover's scene resolved rather than a
-        // picture in its own right, so it cannot be drawn first. Saying that
-        // beats offering nothing and leaving the gap unexplained.
-        MenuRow(label = "Closing") {
-            MenuAction(
-                text = when {
-                    hasTail -> "picture drawn"
-                    !hasCover -> "needs the chapter picture first"
-                    else -> "Draw closing picture"
-                },
-                enabled = !busyDrawing && hasCover && !hasTail,
-                onClick = onDrawTail,
-            )
-        }
-
-        // The book's mascot badges — the small marks on exercise and recap
-        // blocks. Drawn once for the whole course, so after the first chapter
-        // this row is a report rather than an offer.
-        MenuRow(label = "Badges") {
-            MenuAction(
-                text = if (pendingBadges == 0) {
-                    "all drawn"
-                } else {
-                    "Draw $pendingBadges book badge" + if (pendingBadges == 1) "" else "s"
-                },
-                enabled = !busyDrawing && pendingBadges > 0,
-                onClick = onDrawBadges,
-            )
-        }
-
-        // The repair mechanism the generate-a-book premise needs: the model
-        // will occasionally write a dud, and without this the reader's only
-        // option is to live with it for the rest of the course.
-        MenuRow(label = "Chapter") {
-            Box(
-                modifier = Modifier
-                    .clickable(enabled = !busyDrawing) { onRewriteChapter() }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    text = "Rewrite this chapter",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (busyDrawing) MutedColor else InkColor,
-                )
-            }
-        }
-
         // Bookmark toggle for the current page.
         MenuRow(label = "Mark") {
             Box(
@@ -2260,6 +2179,9 @@ private fun FormatMenu(
                 )
             }
         }
+
+
+        MenuDivider()
 
         // Font size
         MenuRow(label = "Font") {
@@ -2310,7 +2232,131 @@ private fun FormatMenu(
                 )
             }
         }
+        MenuDivider()
+
+        // The repair mechanism the generate-a-book premise needs: the model
+        // will occasionally write a dud, and without this the reader's only
+        // option is to live with it for the rest of the course.
+        MenuRow(label = "Chapter") {
+            Box(
+                modifier = Modifier
+                    .clickable(enabled = !busyDrawing) { onRewriteChapter() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Rewrite this chapter",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (busyDrawing) MutedColor else InkColor,
+                )
+            }
+        }
+
+        // Four rows for what is, nine times out of ten, one sentence. The
+        // picture rows had to stop hiding when their work finished — absence
+        // read as "not done yet" just as easily as "done", which is how a
+        // reader redrew art he already had — but saying that four times over
+        // is most of the reason this menu grew too tall to read.
+        //
+        // So: one line while there is nothing to do, which is the common
+        // state, and the individual rows only when something is genuinely
+        // outstanding — which is exactly when you need them separately
+        // anyway, because each one is a different action.
+        val picturesSettled = figureStatus == null &&
+            pendingFigures == 0 &&
+            hasCover &&
+            hasTail &&
+            pendingBadges == 0
+        if (picturesSettled) {
+            MenuRow(label = "Pictures") {
+                MenuAction(text = "all drawn", enabled = false, onClick = {})
+            }
+        } else {
+            // The picture rows below REPORT before they offer. Each one used to
+            // disappear the moment its work finished, which reads as "not done
+            // yet" exactly as easily as "done" — so a reader whose figures and
+            // badges had already been drawn went looking for something to tap
+            // and redrew what he already had (2026-09-21). A finished row says
+            // so and is not clickable; only genuinely outstanding work is.
+            if (figureSlots > 0) {
+                MenuRow(label = "Figures") {
+                    MenuAction(
+                        text = figureStatus ?: when {
+                            pendingFigures == 0 ->
+                                "all $figureSlots drawn"
+                            else ->
+                                "Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"
+                        },
+                        enabled = !busyDrawing && pendingFigures > 0 && figureStatus == null,
+                        onClick = onIllustrate,
+                    )
+                }
+            }
+
+            // "Opening" rather than "Chapter": now that the row no longer
+            // disappears when drawn, it sits permanently above Rewrite, which is
+            // also a chapter-level action — two rows labelled "Chapter" doing
+            // unrelated things. Opening/Closing reads as the pair it is.
+            MenuRow(label = "Opening") {
+                MenuAction(
+                    text = if (hasCover) "picture drawn" else "Draw opening picture",
+                    enabled = !busyDrawing && !hasCover,
+                    onClick = onDrawCover,
+                )
+            }
+
+            // The closing picture is the cover's scene resolved rather than a
+            // picture in its own right, so it cannot be drawn first. Saying that
+            // beats offering nothing and leaving the gap unexplained.
+            MenuRow(label = "Closing") {
+                MenuAction(
+                    text = when {
+                        hasTail -> "picture drawn"
+                        !hasCover -> "needs the chapter picture first"
+                        else -> "Draw closing picture"
+                    },
+                    enabled = !busyDrawing && hasCover && !hasTail,
+                    onClick = onDrawTail,
+                )
+            }
+
+            // The book's mascot badges — the small marks on exercise and recap
+            // blocks. Drawn once for the whole course, so after the first chapter
+            // this row is a report rather than an offer.
+            MenuRow(label = "Badges") {
+                MenuAction(
+                    text = if (pendingBadges == 0) {
+                        "all drawn"
+                    } else {
+                        "Draw $pendingBadges book badge" + if (pendingBadges == 1) "" else "s"
+                    },
+                    enabled = !busyDrawing && pendingBadges > 0,
+                    onClick = onDrawBadges,
+                )
+            }
+        }
     }
+}
+
+/**
+ * A hairline between groups of menu rows.
+ *
+ * The menu had grown to thirteen rows in one flat list, mixing "what do I
+ * want to do" (contents, search, ask, bookmark) with "how should this look"
+ * (font, spacing, align, margin) and with things touched twice a year
+ * (rewrite). Every row carried equal weight in the same label gutter, so
+ * finding either meant reading all thirteen. Two rules cost two pixels and
+ * turn one list into three short ones; headings would have cost back the
+ * height this is trying to save, and the rows are already labelled.
+ */
+@Composable
+private fun MenuDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(BorderColor),
+    )
 }
 
 /**
