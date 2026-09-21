@@ -150,6 +150,30 @@ object ReaderNotes {
     }
 
     /**
+     * The file with one chapter's whole section removed — heading, lead-ins
+     * and every observation under it.
+     *
+     * Used when a chapter is rewritten. Two reasons, and the second is the
+     * one that forces it: the observations quote passages that no longer
+     * exist, AND [CourseStore.appendReaderNotes] refuses a chapter it has
+     * already recorded. Left in place, the section would freeze — the old
+     * reading's observations kept forever and the new reading of the same
+     * chapter never recorded at all.
+     */
+    fun removeChapter(markdown: String, chapterN: Int): String {
+        val section = parse(markdown).firstOrNull { it.chapterN == chapterN } ?: return markdown
+        val lines = buildSet {
+            addAll(section.headingLines)
+            section.groups.forEach { group ->
+                group.labelLineIndex?.let(::add)
+                group.observations.forEach { add(it.lineIndex) }
+            }
+        }
+        if (lines.isEmpty()) return markdown
+        return removeObservations(markdown, lines)
+    }
+
+    /**
      * Collapses the blank lines a removal leaves behind. Two in a row is a
      * paragraph break and stays; three is a hole where something used to be.
      */

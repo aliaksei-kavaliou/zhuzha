@@ -1,6 +1,7 @@
 package com.inkfirst.core
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -116,5 +117,62 @@ class ReaderNotesTest {
     fun `nothing to parse is no sections, not a blank one`() {
         assertEquals(emptyList<ReaderNotes.Section>(), ReaderNotes.parse(""))
         assertEquals(emptyList<ReaderNotes.Section>(), ReaderNotes.parse("   \n\n  "))
+    }
+
+    // --- removing a chapter's whole section -------------------------------
+
+    @Test
+    fun `removeChapter takes the heading and everything under it`() {
+        val md = """
+            ## Chapter 1 — how the reading went
+            <!-- Beginnings -->
+
+            Asked about:
+            - On "a passage" — asked: why?
+
+            ## Chapter 2 — how the reading went
+            <!-- Middles -->
+
+            Wrote these notes:
+            - something worth keeping
+        """.trimIndent()
+
+        val out = ReaderNotes.removeChapter(md, 1)
+
+        assertFalse(out.contains("Chapter 1"))
+        assertFalse(out.contains("a passage"))
+        assertTrue(out.contains("Chapter 2"))
+        assertTrue(out.contains("something worth keeping"))
+    }
+
+    @Test
+    fun `removing the only chapter empties the file`() {
+        // An empty reader.md is deleted by the store rather than left as a
+        // file full of nothing.
+        val md = """
+            ## Chapter 1 — how the reading went
+            <!-- Beginnings -->
+
+            Asked about:
+            - On "a passage" — asked: why?
+        """.trimIndent()
+
+        assertEquals("", ReaderNotes.removeChapter(md, 1).trim())
+    }
+
+    @Test
+    fun `removing a chapter that is not there changes nothing`() {
+        val md = "## Chapter 2 — how the reading went\n\n- an observation\n"
+        assertEquals(md, ReaderNotes.removeChapter(md, 1))
+    }
+
+    @Test
+    fun `a rewritten chapter can be recorded again afterwards`() {
+        // The reason this exists at all: appendReaderNotes refuses a chapter
+        // it has already recorded, so a section left in place would freeze —
+        // the old reading kept forever, the new reading never written.
+        val md = "## Chapter 1 — how the reading went\n\n- the old reading\n"
+        val after = ReaderNotes.removeChapter(md, 1)
+        assertTrue(ReaderNotes.parse(after).none { it.chapterN == 1 })
     }
 }

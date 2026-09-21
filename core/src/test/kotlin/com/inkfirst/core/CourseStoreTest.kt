@@ -96,18 +96,64 @@ class CourseStoreTest {
     }
 
     @Test
-    fun `clearChapterMarks keeps the Q and A, which is a record of what happened`(
-        @TempDir tmp: File,
-    ) {
-        // The conversation really took place and is still true about the
-        // reader, even once the passage it was about has been rewritten.
+    fun `clearChapterMarks takes the reading history with it`(@TempDir tmp: File) {
+        // Every exchange in the transcript quotes a passage, so it is a
+        // pointer like any other. Keeping it while dropping the marked-but-
+        // never-asked annotations left half a history behind, chosen by
+        // nothing but which file it happened to live in.
         val store = CourseStore(tmp)
         store.createTest("book")
         store.appendQa("book", "01-intro", "a passage", "what is this?", "this is that", "2026-09-20")
+        store.appendReaderNotes("book", 1, "Why Kotlin feels weird", "Asked about:\n- On \"a passage\" — asked: what is this?")
 
         store.clearChapterMarks("book", "01-intro")
 
-        assertTrue(store.readQa("book", "01-intro").contains("what is this?"))
+        assertEquals("", store.readQa("book", "01-intro"))
+        assertTrue(ReaderNotes.parse(store.readReaderNotes("book")).none { it.chapterN == 1 })
+    }
+
+    @Test
+    fun `clearChapterMarks leaves another chapter's reading history alone`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.appendQa("book", "02-null", "elsewhere", "and this?", "that", "2026-09-20")
+        store.appendReaderNotes("book", 2, "Null safety", "Wrote these notes:\n- keep me")
+
+        store.clearChapterMarks("book", "01-intro")
+
+        assertTrue(store.readQa("book", "02-null").contains("and this?"))
+        assertTrue(store.readReaderNotes("book").contains("keep me"))
+    }
+
+    @Test
+    fun `a rewritten chapter can record its reading again`(@TempDir tmp: File) {
+        // appendReaderNotes refuses a chapter it has already recorded, so a
+        // section left behind would freeze the old reading in place forever.
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.appendReaderNotes("book", 1, "Why Kotlin feels weird", "- the old reading")
+
+        store.clearChapterMarks("book", "01-intro")
+
+        assertTrue(store.appendReaderNotes("book", 1, "Why Kotlin feels weird", "- the new reading"))
+        assertTrue(store.readReaderNotes("book").contains("the new reading"))
+    }
+
+    @Test
+    fun `archiveChapter files the transcript away beside the chapter`(@TempDir tmp: File) {
+        // The transcript only means anything next to the prose it quotes, so
+        // it travels under the same revision number.
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.saveChapter("book", "01-intro", "first attempt")
+        store.appendQa("book", "01-intro", "a passage", "what is this?", "this is that", "2026-09-20")
+
+        store.archiveChapter("book", "01-intro")
+
+        assertEquals("", store.readQa("book", "01-intro"))
+        assertTrue(
+            File(tmp, "book/notes/01-intro.r1.qa.md").readText().contains("what is this?"),
+        )
     }
 
     @Test

@@ -122,6 +122,7 @@ import com.inkfirst.core.Inline
 import com.inkfirst.core.GeminiClient
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.MemoryUpdater
+import com.inkfirst.core.QaTranscript
 import com.inkfirst.core.ReaderSignals
 import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.Stroke as InkStroke
@@ -4296,23 +4297,30 @@ private fun RewriteChapterDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "The chapter is written again from its objectives. Your " +
-                        "questions and answers are kept, the cover and closing pictures " +
-                        "are kept, and the old text stays on disk as a file.",
+                    text = "The chapter is written again from its objectives, and this " +
+                        "chapter starts over: everything you did in it goes with the " +
+                        "old text.",
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
                 )
                 if (marksLost.isNotEmpty()) {
-                    // Marks point INTO the prose being replaced, so they
-                    // cannot survive it. Saying which ones, and how many, is
-                    // what makes this a decision rather than a surprise.
+                    // Everything here points INTO the prose being replaced —
+                    // a mark at a block index, a question quoting a sentence.
+                    // Naming it, and counting it, is what makes this a
+                    // decision rather than a surprise.
                     Text(
-                        text = "This chapter's $marksLost will be lost — they point at " +
-                            "sentences that are about to be replaced.",
+                        text = "That means losing $marksLost.",
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                     )
                 }
+                Text(
+                    text = "The old chapter and its questions stay on disk as files, " +
+                        "and the chapter's pictures are kept.",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = MutedColor,
+                )
                 if (laterChapters.isNotEmpty()) {
                     // Not blocked, just said out loud: cascading the rewrite
                     // forward would spend real money on chapters the reader
@@ -4373,17 +4381,27 @@ private fun describeChapterMarks(
     chapterSlug: String,
 ): String {
     val mine = course.annotations.filter { it.chapterSlug == chapterSlug }
-    val questions = mine.count { it.kind == "ask" }
-    val notes = mine.size - questions
+    val marked = mine.count { it.kind == "ask" }
+    val notes = mine.size - marked
     val bookmarks = course.bookmarks.count { it.chapterSlug == chapterSlug }
     val hasInk = store.readStrokes(course.slug, chapterSlug).isNotEmpty()
+    // Counted from the transcript rather than from the markers, because the
+    // two disagree: a passage can be marked and never asked about, and one
+    // passage asked about twice carries a single marker.
+    val answered = QaTranscript.parse(store.readQa(course.slug, chapterSlug)).size
     val parts = buildList {
         if (notes > 0) add(if (notes == 1) "1 note" else "$notes notes")
-        // A question's ANSWER survives in the Q&A history; what goes is the
-        // ? in the margin pointing at a sentence that will not be there.
-        if (questions > 0) add(if (questions == 1) "1 question mark" else "$questions question marks")
+        if (answered > 0) {
+            add(if (answered == 1) "1 answered question" else "$answered answered questions")
+        }
+        // A passage marked with Ask where no question was ever typed. Worth
+        // counting separately: it is the only trace of a place they stopped.
+        val unasked = (marked - answered).coerceAtLeast(0)
+        if (unasked > 0) {
+            add(if (unasked == 1) "1 marked passage" else "$unasked marked passages")
+        }
         if (bookmarks > 0) add(if (bookmarks == 1) "1 bookmark" else "$bookmarks bookmarks")
-        if (hasInk) add("handwriting")
+        if (hasInk) add("the handwriting on it")
     }
     return when (parts.size) {
         0 -> ""

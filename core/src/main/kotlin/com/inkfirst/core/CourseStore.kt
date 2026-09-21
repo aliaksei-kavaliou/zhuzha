@@ -94,16 +94,21 @@ class CourseStore(private val root: File) {
     }
 
     /**
-     * Moves a chapter's current body aside to `chapters/<slug>.r<n>.md` and
-     * returns the name it was filed under, or null if there was nothing to
-     * archive.
+     * Files a chapter's current body and its Q&A transcript away as revision
+     * `n`: `chapters/<slug>.r<n>.md` and `notes/<slug>.r<n>.qa.md`. Returns
+     * the chapter file's new name, or null if there was nothing to archive.
      *
      * Called before a rewrite. The app never shows these files and nothing
      * reads them back — they exist because the whole premise of this project
      * is that the study material is plain, inspectable files that outlive the
-     * app (CLAUDE.md, decision 2). A chapter someone read and annotated is
-     * not something to delete on a confirm dialog when keeping it costs a
-     * rename.
+     * app (CLAUDE.md, decision 2). A chapter someone read, annotated and
+     * asked questions about is not something to delete on a confirm dialog
+     * when keeping it costs a rename.
+     *
+     * The transcript travels WITH the chapter, under the same revision
+     * number, because it is only meaningful next to the prose it quotes: every
+     * exchange in it names a passage, and on its own those are quotations from
+     * a text nobody can read any more.
      */
     fun archiveChapter(courseSlug: String, chapterSlug: String): String? {
         val dir = File(root, "$courseSlug/chapters")
@@ -111,7 +116,11 @@ class CourseStore(private val root: File) {
         var n = 1
         while (File(dir, "$chapterSlug.r$n.md").exists()) n++
         val archived = File(dir, "$chapterSlug.r$n.md")
-        return if (live.renameTo(archived)) archived.name else null
+        if (!live.renameTo(archived)) return null
+        File(root, "$courseSlug/notes/$chapterSlug.qa.md")
+            .takeIf { it.isFile }
+            ?.renameTo(File(root, "$courseSlug/notes/$chapterSlug.r$n.qa.md"))
+        return archived.name
     }
 
     /** Reads chapters/&lt;chapterSlug&gt;.md, or null if it hasn't been generated yet. */
@@ -167,13 +176,25 @@ class CourseStore(private val root: File) {
      * slot ordinal, so the new chapter's third figure slot would silently
      * show the old chapter's third picture.
      *
-     * Three things deliberately SURVIVE a rewrite:
-     *  - the Q&A transcript, which is a record of a conversation that really
-     *    happened and is still true about the reader,
-     *  - reader.md, for the same reason,
-     *  - the cover and closing pictures, which illustrate the chapter's
-     *    title and objectives — and those come from the outline, which a
-     *    rewrite does not touch.
+     * The chapter's reading history goes too — the Q&A transcript and this
+     * chapter's section of reader.md. An earlier version of this kept the
+     * transcript, on the theory that a conversation that really happened is a
+     * record rather than a pointer. That was wrong twice over. Every exchange
+     * in it quotes a PASSAGE, so it is a pointer like any other; and the
+     * reader's question history is split across two files — answered
+     * questions in the transcript, marked-without-asking in the annotations —
+     * so keeping one and dropping the other left half a history behind,
+     * chosen by nothing but which file it happened to live in.
+     * [ReaderNotes.removeChapter] explains why reader.md cannot simply be
+     * left alone either.
+     *
+     * The cover and closing pictures DO survive: they illustrate the
+     * chapter's title and objectives, and those come from the outline, which
+     * a rewrite does not touch.
+     *
+     * Nothing here is lost from disk when [archiveChapter] runs first, which
+     * is what the rewrite path does — the chapter body and its transcript are
+     * filed away under a revision number instead.
      *
      * Returns the updated Course, or null if the course is gone.
      */
@@ -185,7 +206,14 @@ class CourseStore(private val root: File) {
         )
         writeCourse(courseSlug, updated)
         File(root, "$courseSlug/ink/$chapterSlug.ink.json").delete()
+        File(root, "$courseSlug/notes/$chapterSlug.qa.md").delete()
         deleteChapterFigures(courseSlug, chapterSlug)
+        course.chapters.firstOrNull { it.slug == chapterSlug }?.let { chapter ->
+            val notes = readReaderNotes(courseSlug)
+            if (notes.isNotBlank()) {
+                writeReaderNotes(courseSlug, ReaderNotes.removeChapter(notes, chapter.n))
+            }
+        }
         return updated
     }
 

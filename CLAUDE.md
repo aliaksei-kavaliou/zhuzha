@@ -129,9 +129,12 @@ yet" note that used to live here was two months stale.
       course directory directly under the root. Search runs over parsed BLOCKS, so a hit
       opens at the right page whatever the font size; it searches chapters, notes and the
       passages that were asked about. Rewriting a chapter archives the old body as
-      `<slug>.r1.md`, drops only what anchors INTO the replaced prose (annotations,
-      bookmarks, ink, inline figures), and keeps what is a record rather than a pointer
-      (Q&A, reader.md, cover, closing picture). See design.md §14 and §1.
+      `<slug>.r1.md` and its Q&A as `<slug>.r1.qa.md`, then starts the chapter over:
+      annotations, bookmarks, ink, inline figures, the transcript and that chapter's
+      reader.md section all go. Only the cover and closing pictures stay, because they
+      come from the outline. A first attempt at keeping "records" while dropping
+      "pointers" was wrong — the transcript quotes passages, and the question history is
+      split across two files, so keeping one left half a record behind. See design.md §1.
 - [x] **Questions have their own section in the Contents (2026-09-21)** — they used to
       render under "Notes" with the write-glyph and an empty body, because an ask carries
       no note text. The split is about volume, not taxonomy: a question is one gesture and

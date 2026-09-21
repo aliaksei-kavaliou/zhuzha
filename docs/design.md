@@ -130,13 +130,40 @@ by its slug, so a revision pointer would have added an indirection to all of the
 feature with no UI for reading an old revision. Archiving costs a rename and keeps the promise
 that matters — the text is still on disk, greppable, for a reader who wants it back.
 
-Nothing is silent. `RewriteChapterDialog` names what will be lost before anything happens:
-annotations, bookmarks and ink for that chapter, which anchor by block index into prose that
-is about to be replaced. What survives is anything that is a RECORD rather than a POINTER —
-the Q&A transcript, `reader.md`, and the cover and closing pictures, which illustrate the
-chapter's title and objectives and those come from the outline, which a rewrite does not
-touch. Inline figures do NOT survive: they are stored as `<chapter>-<ordinal>` and matched by
-slot ordinal, so a stale one would silently illustrate an unrelated paragraph.
+**A rewritten chapter starts over.** Everything the reader did in it goes: annotations,
+bookmarks, ink, inline figures, the Q&A transcript, and that chapter's section of `reader.md`.
+One rule, stated in one sentence in `RewriteChapterDialog` before anything happens, with a
+count of what that means in this particular chapter.
+
+The first version of this tried to be cleverer — keep what is a RECORD, drop what is a
+POINTER — and kept the Q&A on the grounds that a conversation which really happened is still
+true about the reader. That was wrong twice over, and the second reason is the decisive one:
+
+1. Every exchange in the transcript quotes a **passage**. It is a pointer like any other, and
+   on its own it is a set of quotations from a text nobody can read any more.
+2. The reader's question history is **split across two files** — answered questions in
+   `<slug>.qa.md`, marked-without-ever-asking in `course.json`'s annotations. Keeping one and
+   clearing the other left half a history behind, and which half was decided by nothing but
+   where it happened to be stored. Both `QaTranscript.feed` and `ReaderSignals.notesForChapter`
+   read both sources, so both would have shown a partial record and called it complete.
+
+`reader.md` could not simply be left alone either, for a mechanical reason:
+`appendReaderNotes` refuses a chapter it has already recorded, so a section left in place
+would freeze — the old reading's observations kept forever, the new reading of the same
+chapter never recorded at all. `ReaderNotes.removeChapter` takes the section out so the
+rewritten chapter can be read afresh.
+
+Nothing is actually destroyed on disk. `archiveChapter` files both the body and the transcript
+away under the same revision number — `<slug>.r1.md` and `<slug>.r1.qa.md` — precisely because
+the transcript only means anything next to the prose it quotes. The cover and closing pictures
+survive in place: they illustrate the chapter's title and objectives, and those come from the
+outline, which a rewrite does not touch. Inline figures do not: they are stored as
+`<chapter>-<ordinal>` and matched by slot ordinal, so a stale one would silently illustrate an
+unrelated paragraph.
+
+The general form of the rule, for whenever whole-book regeneration arrives: **a regenerated
+thing starts over, and what it replaces is archived rather than deleted.** Deleting the course
+is already the way to start a book over, and it says what it destroys too.
 
 The order in `compileChapter` is load-bearing: generate first, destroy second. A rewrite that
 fails at the API must leave the book exactly as it was.
