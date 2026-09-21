@@ -322,6 +322,58 @@ fun anchorForPage(page: List<PageItem>?): Int =
         ?: 0
 
 /**
+ * How many synthetic blocks the reader puts in FRONT of a chapter's parsed
+ * Markdown before paginating it.
+ *
+ * Exactly one: the italic byline block ("Chapter 3 · ~30 min · Day 4"),
+ * which also carries the chapter title when the model forgot to write one.
+ * Everything else the reader synthesises is appended at the END — the
+ * closing picture — precisely so it shifts no index.
+ *
+ * It matters because a block index is the app's unit of position, and this
+ * offset is the difference between two index spaces that otherwise look
+ * identical: [com.inkfirst.core.parseMarkdown] numbers the chapter as
+ * written, while bookmarks, annotations, ink and the reader's own pager all
+ * number it as displayed. Anything crossing that line — a search hit, say —
+ * has to be converted or it lands a block early, which near a page boundary
+ * means the page before the one you asked for.
+ */
+const val READER_LEADING_BLOCKS: Int = 1
+
+/**
+ * Converts an index into [com.inkfirst.core.parseMarkdown]'s list into the
+ * reader's own index space. See [READER_LEADING_BLOCKS].
+ */
+fun readerBlockIndex(parsedIndex: Int): Int = parsedIndex + READER_LEADING_BLOCKS
+
+/**
+ * Which of this chapter's bookmarks lands on [pageIndex], as the block index
+ * it was stored under — or null if none does.
+ *
+ * Resolved rather than compared, and that is the point. Setting a bookmark
+ * stores [anchorForPage]: the first block that BEGINS on the page. Going to
+ * one calls [findPageContainingBlock]: the first page CONTAINING that block.
+ * The two agree only while the pagination that produced them is still in
+ * force — change the margin, the font size or the line spacing and a stored
+ * anchor can stop being any page's first-beginning block. The bookmark then
+ * still OPENS its page, because the jump uses containment, while the ribbon
+ * and the menu compared against the anchor and saw nothing: a page you could
+ * navigate to that offered to bookmark itself all over again.
+ *
+ * Asking the question the same way the jump asks it is what keeps them from
+ * drifting apart. A bookmark resolves to exactly one page, so at most one
+ * page ever shows its ribbon.
+ */
+fun bookmarkOnPage(
+    pages: List<List<PageItem>>,
+    blocks: List<Block>,
+    pageIndex: Int,
+    bookmarkedBlocks: List<Int>,
+): Int? = bookmarkedBlocks.firstOrNull {
+    findPageContainingBlock(pages, blocks, it) == pageIndex
+}
+
+/**
  * Heights match the ReaderScreen renderer as closely as feasible without
  * doing a full off-screen SubcomposeLayout pass. Close enough for spike v2.0;
  * we can tighten if pages regularly under- or over-fill by more than ~10%.

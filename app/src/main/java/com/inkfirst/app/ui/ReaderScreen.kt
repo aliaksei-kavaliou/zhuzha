@@ -20,14 +20,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -108,6 +112,7 @@ import com.inkfirst.core.BookBadger
 import com.inkfirst.core.ChapterIllustrator
 import com.inkfirst.core.GeneratedImage
 import com.inkfirst.core.ChapterGenerator
+import com.inkfirst.core.CourseMemory
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Annotation
 import com.inkfirst.core.Course
@@ -244,6 +249,7 @@ fun ReaderScreen(
     onBack: () -> Unit,
     onOpenContents: () -> Unit,
     onOpenReaderNotes: () -> Unit,
+    onSearch: () -> Unit,
     onOpenChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val context = LocalContext.current
@@ -264,9 +270,20 @@ fun ReaderScreen(
     // Hoisted here so both the header (bookmark ribbon indicator) and the
     // format menu (Bookmark this page row) can read/toggle without prop-drilling.
     var headerFirstBlock by remember(chapterSlug) { mutableStateOf(-1) }
-    val headerBookmarked = course?.bookmarks?.any {
-        it.chapterSlug == chapterSlug && it.blockIndex == headerFirstBlock
-    } == true
+    // The bookmark THIS page carries, as its stored block index, or null.
+    //
+    // Resolved by the pager rather than compared here, and that distinction
+    // is the whole fix for orphaned bookmarks. Setting one stores the first
+    // block that BEGINS on the page; going to one lands on the first page
+    // CONTAINING that block. Those two relations agree only while the
+    // pagination that made them is still in force — change the margin, the
+    // font or the line spacing and they part company, leaving a bookmark
+    // that opens its page but shows no ribbon there and offers "Bookmark
+    // this page" instead of "Remove". Asking the pager which bookmark lands
+    // here uses the same relation as the jump does, so the two cannot drift
+    // apart again.
+    var headerBookmarkBlock by remember(chapterSlug) { mutableStateOf<Int?>(null) }
+    val headerBookmarked = headerBookmarkBlock != null
     var fontScale by remember { mutableStateOf(readerPrefs.getFontScale()) }
     var lineSpacing by remember { mutableStateOf(readerPrefs.getLineSpacing()) }
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
@@ -378,6 +395,8 @@ fun ReaderScreen(
      */
     var anchorMoved by remember(chapterSlug) { mutableStateOf(false) }
     var compileState by remember(chapterSlug) { mutableStateOf<CompileState>(CompileState.Idle) }
+    // Up while the reader is deciding whether to throw this chapter away.
+    var confirmingRewrite by remember(chapterSlug) { mutableStateOf(false) }
 
     LaunchedEffect(courseSlug, chapterSlug) {
         course = store.load(courseSlug)
@@ -490,6 +509,9 @@ fun ReaderScreen(
             val tail = tailName?.let {
                 Block.CustomFence(kind = "tail", params = mapOf("src" to it), body = "")
             }
+            // One leading block, and exactly one — see [READER_LEADING_BLOCKS],
+            // which anything converting a parsed index into this space relies
+            // on. Add a second and search results land a block early.
             listOf(meta) + rest + listOfNotNull(tail)
         }
     }
@@ -656,8 +678,10 @@ fun ReaderScreen(
                 onBookmarkToggle = {
                     val c = course ?: return@ReaderHeader
                     if (headerFirstBlock < 0) return@ReaderHeader
-                    val updated = if (headerBookmarked) {
-                        store.removeBookmark(c.slug, chapterSlug, headerFirstBlock)
+                    val updated = if (headerBookmarkBlock != null) {
+                        // Its own stored index — which after a reflow is not
+                        // necessarily this page's anchor.
+                        store.removeBookmark(c.slug, chapterSlug, headerBookmarkBlock!!)
                     } else {
                         store.addBookmark(c.slug, chapterSlug, headerFirstBlock, LocalDate.now().toString())
                     }
@@ -716,6 +740,11 @@ fun ReaderScreen(
                         pendingGestureStroke = null
                     },
                     onFirstBlockChange = { headerFirstBlock = it },
+                    bookmarkedBlocks = course?.bookmarks
+                        ?.filter { it.chapterSlug == chapterSlug }
+                        ?.map { it.blockIndex }
+                        .orEmpty(),
+                    onPageBookmarkChange = { headerBookmarkBlock = it },
                     onOpenAnnotation = { a ->
                         // A question mark is a way back into the conversation
                         // it came from; a note opens the note. Reusing the
@@ -950,6 +979,49 @@ fun ReaderScreen(
             )
         }
 
+        if (confirmingRewrite) {
+            val c = course
+            val ch = chapter
+            if (c == null || ch == null) {
+                confirmingRewrite = false
+            } else {
+                RewriteChapterDialog(
+                    chapterTitle = ch.title,
+                    marksLost = describeChapterMarks(store, c, chapterSlug),
+                    laterChapters = c.chapters
+                        .filter { it.n > ch.n && it.status != ChapterStatus.PENDING }
+                        .map { it.n },
+                    onDismiss = { confirmingRewrite = false },
+                    onConfirm = { feedback ->
+                        confirmingRewrite = false
+                        compileChapter(
+                            course = c,
+                            chapterN = ch.n,
+                            scope = scope,
+                            store = store,
+                            apiKeyStore = apiKeyStore,
+                            onState = { compileState = it },
+                            isRewrite = true,
+                            rewriteFeedback = feedback,
+                            onDone = { updatedCourse, newMarkdown ->
+                                if (updatedCourse != null && newMarkdown != null) {
+                                    course = updatedCourse
+                                    markdown = newMarkdown
+                                    // The ink file is gone from disk; this is
+                                    // the in-memory copy of it, which is keyed
+                                    // on the chapter and so will not reload.
+                                    strokes = emptyList()
+                                    // New prose means new pages; the pager
+                                    // re-seeks to this anchor on its own.
+                                    anchorBlockIndex = 0
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
         if (showFormatMenu) {
             FormatMenu(
                 fontScale = fontScale,
@@ -969,6 +1041,10 @@ fun ReaderScreen(
                 onOpenReaderNotes = {
                     showFormatMenu = false
                     onOpenReaderNotes()
+                },
+                onSearch = {
+                    showFormatMenu = false
+                    onSearch()
                 },
                 pendingFigures = pendingFigures,
                 figureStatus = figureStatus,
@@ -1002,6 +1078,10 @@ fun ReaderScreen(
                         onDone = { badgeVersion++ },
                     )
                 },
+                onRewriteChapter = {
+                    showFormatMenu = false
+                    confirmingRewrite = true
+                },
                 onDrawBadges = {
                     val c = course ?: return@FormatMenu
                     drawCourseBadges(
@@ -1034,8 +1114,8 @@ fun ReaderScreen(
                     showFormatMenu = false
                     val c = course ?: return@FormatMenu
                     if (headerFirstBlock < 0) return@FormatMenu
-                    val updated = if (headerBookmarked) {
-                        store.removeBookmark(c.slug, chapterSlug, headerFirstBlock)
+                    val updated = if (headerBookmarkBlock != null) {
+                        store.removeBookmark(c.slug, chapterSlug, headerBookmarkBlock!!)
                     } else {
                         store.addBookmark(c.slug, chapterSlug, headerFirstBlock, LocalDate.now().toString())
                     }
@@ -1127,6 +1207,10 @@ private fun PagedContent(
     onDismissChip: () -> Unit,
     onToggleMenu: () -> Unit,
     onFirstBlockChange: (Int) -> Unit,
+    /** Block indices of this chapter's bookmarks, for resolving against pages. */
+    bookmarkedBlocks: List<Int>,
+    /** The stored block index of the bookmark that lands on the current page, or null. */
+    onPageBookmarkChange: (Int?) -> Unit,
     onOpenPrevChapter: (() -> Unit)?,
     onOpenNextChapter: (() -> Unit)?,
     onOpenAnnotation: (Annotation) -> Unit,
@@ -1303,6 +1387,16 @@ private fun PagedContent(
             // as the first block: see [anchorForPage].
             val pageAnchorIndex = anchorForPage(pages.getOrNull(pageIndex))
             LaunchedEffect(pageAnchorIndex) { onFirstBlockChange(pageAnchorIndex) }
+
+            // Which bookmark, if any, this page is the destination of —
+            // asked exactly the way the jump asks it, so a bookmark shows its
+            // ribbon on the page it actually opens. A split paragraph spans
+            // two pages, and findPageContainingBlock answers with the first,
+            // so a bookmark can only ever resolve to one of them.
+            val pageBookmark = remember(pages, blocks, pageIndex, bookmarkedBlocks) {
+                bookmarkOnPage(pages, blocks, pageIndex, bookmarkedBlocks)
+            }
+            LaunchedEffect(pageBookmark) { onPageBookmarkChange(pageBookmark) }
 
             // What the ink overlay is allowed to touch on this page: the
             // global block-index range and the subset of persisted strokes
@@ -1868,6 +1962,7 @@ private fun FormatMenu(
     onOpenContents: () -> Unit,
     onAskAboutChapter: () -> Unit,
     onOpenReaderNotes: () -> Unit,
+    onSearch: () -> Unit,
     pendingFigures: Int,
     pendingBadges: Int,
     hasCover: Boolean,
@@ -1878,6 +1973,7 @@ private fun FormatMenu(
     onDrawBadges: () -> Unit,
     onDrawCover: () -> Unit,
     onDrawTail: () -> Unit,
+    onRewriteChapter: () -> Unit,
     onToggleBookmark: () -> Unit,
     onFontSmaller: () -> Unit,
     onFontLarger: () -> Unit,
@@ -1908,6 +2004,20 @@ private fun FormatMenu(
             ) {
                 Text(
                     text = "Contents",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkColor,
+                )
+            }
+            // From the page too, not only from Contents: "where did it say
+            // that" is a thought you have mid-paragraph.
+            Box(
+                modifier = Modifier
+                    .clickable { onSearch() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Search",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkColor,
@@ -2025,6 +2135,24 @@ private fun FormatMenu(
                         color = if (busyDrawing) MutedColor else InkColor,
                     )
                 }
+            }
+        }
+
+        // The repair mechanism the generate-a-book premise needs: the model
+        // will occasionally write a dud, and without this the reader's only
+        // option is to live with it for the rest of the course.
+        MenuRow(label = "Chapter") {
+            Box(
+                modifier = Modifier
+                    .clickable(enabled = !busyDrawing) { onRewriteChapter() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Rewrite this chapter",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (busyDrawing) MutedColor else InkColor,
+                )
             }
         }
 
@@ -3978,6 +4106,15 @@ private fun drawChapterTail(
     }
 }
 
+/**
+ * Writes a chapter and everything that hangs off it — memory, figures,
+ * badges.
+ *
+ * [isRewrite] replaces a chapter that already exists because the reader
+ * rejected it. The order below matters: nothing of theirs is destroyed until
+ * a replacement chapter is actually in hand, because a rewrite that fails at
+ * the API must leave the book exactly as it was.
+ */
 private fun compileChapter(
     course: Course,
     chapterN: Int,
@@ -3986,6 +4123,8 @@ private fun compileChapter(
     apiKeyStore: ApiKeyStore,
     onState: (CompileState) -> Unit,
     onDone: (Course?, String?) -> Unit,
+    isRewrite: Boolean = false,
+    rewriteFeedback: String = "",
 ) {
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     val model = apiKeyStore.getModelName()
@@ -3997,7 +4136,13 @@ private fun compileChapter(
     scope.launch {
         try {
             KtorGeminiClient().use { client ->
-                val memory = store.readMemory(course.slug)
+                // On a rewrite, hide this chapter's own memory block from
+                // the model: it summarises the draft being thrown away, and
+                // reading it back is the surest way to get the same chapter
+                // again.
+                val memory = store.readMemory(course.slug).let {
+                    if (isRewrite) CourseMemory.withoutChapter(it, chapterN) else it
+                }
                 // Record how the already-read chapters went before writing
                 // the next one. Compile time is the natural moment: it is
                 // "feed forward only" by construction, needs no new trigger,
@@ -4008,13 +4153,40 @@ private fun compileChapter(
                 recordReaderNotes(store, course, upTo = chapterN - 1)
                 val readerNotes = store.readReaderNotes(course.slug)
                 val markdown = ChapterGenerator(client, model)
-                    .generate(course, chapterN, memory, apiKey, readerNotes)
+                    .generate(
+                        course = course,
+                        n = chapterN,
+                        memory = memory,
+                        apiKey = apiKey,
+                        readerNotes = readerNotes,
+                        isRewrite = isRewrite,
+                        rewriteFeedback = rewriteFeedback,
+                    )
                 val chapter = course.chapters.first { it.n == chapterN }
+                // Only now, with the new chapter in hand, throw away what was
+                // anchored into the old one.
+                if (isRewrite) {
+                    // The old body is filed beside the new one rather than
+                    // overwritten. Nothing in the app reads it back; it is
+                    // there so a chapter someone annotated is still on disk.
+                    store.archiveChapter(course.slug, chapter.slug)
+                    store.clearChapterMarks(course.slug, chapter.slug)
+                    // The saved reading position is a block index into prose
+                    // that no longer exists.
+                    store.updateChapterProgress(course.slug, chapterN, 0)
+                }
                 store.saveChapter(course.slug, chapter.slug, markdown)
                 val updated = store.updateChapterStatus(course.slug, chapterN, ChapterStatus.GENERATED)
                 try {
                     val summary = MemoryUpdater(client, model).summarize(course, chapterN, markdown, apiKey)
-                    store.appendMemory(course.slug, chapterN, chapter.title, summary)
+                    // Replace rather than append on a rewrite: memory.md is
+                    // read whole by every later chapter, so leaving the old
+                    // summary in it teaches the book prose nobody will read.
+                    if (isRewrite) {
+                        store.replaceMemory(course.slug, chapterN, chapter.title, summary)
+                    } else {
+                        store.appendMemory(course.slug, chapterN, chapter.title, summary)
+                    }
                 } catch (e: Exception) {
                     System.err.println("memory update failed for chapter $chapterN: ${e.message}")
                 }
@@ -4097,5 +4269,125 @@ private fun recordReaderNotes(store: CourseStore, course: Course, upTo: Int) {
         } catch (e: Exception) {
             System.err.println("reader notes failed for chapter $n: ${e.message}")
         }
+    }
+}
+
+/**
+ * The confirm step before a chapter is thrown away and written again.
+ *
+ * It asks for a reason, because that reason is the whole difference between
+ * this and a blind re-roll — the model cannot see the draft being replaced,
+ * so what the reader says about it is the only thing steering the new one.
+ * Leaving it empty is allowed and means "just try again", which is a fair
+ * request of a model that is stochastic anyway.
+ */
+@Composable
+private fun RewriteChapterDialog(
+    chapterTitle: String,
+    marksLost: String,
+    laterChapters: List<Int>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var feedback by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rewrite “$chapterTitle”") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "The chapter is written again from its objectives. Your " +
+                        "questions and answers are kept, the cover and closing pictures " +
+                        "are kept, and the old text stays on disk as a file.",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+                if (marksLost.isNotEmpty()) {
+                    // Marks point INTO the prose being replaced, so they
+                    // cannot survive it. Saying which ones, and how many, is
+                    // what makes this a decision rather than a surprise.
+                    Text(
+                        text = "This chapter's $marksLost will be lost — they point at " +
+                            "sentences that are about to be replaced.",
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                    )
+                }
+                if (laterChapters.isNotEmpty()) {
+                    // Not blocked, just said out loud: cascading the rewrite
+                    // forward would spend real money on chapters the reader
+                    // has not complained about.
+                    val list = laterChapters.joinToString(", ")
+                    Text(
+                        text = "Chapter${if (laterChapters.size == 1) "" else "s"} $list " +
+                            "already exist and were written against the old version of " +
+                            "this one. They are left alone.",
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = MutedColor,
+                    )
+                }
+                OutlinedTextField(
+                    value = feedback,
+                    onValueChange = { feedback = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp),
+                    placeholder = {
+                        Text(
+                            text = "What didn't work? (optional)",
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 14.sp,
+                            color = MutedColor,
+                        )
+                    },
+                    textStyle = TextStyle(
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        color = InkColor,
+                    ),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = PaperColor,
+                        unfocusedContainerColor = PaperColor,
+                        cursorColor = InkColor,
+                    ),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(feedback) }) { Text("Rewrite") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Keep it") }
+        },
+    )
+}
+
+/**
+ * A plain-English inventory of what one chapter's rewrite destroys, for the
+ * confirm dialog. Empty when the chapter carries no marks, so a chapter that
+ * was skimmed and disliked asks no scary question.
+ */
+private fun describeChapterMarks(
+    store: com.inkfirst.core.CourseStore,
+    course: Course,
+    chapterSlug: String,
+): String {
+    val mine = course.annotations.filter { it.chapterSlug == chapterSlug }
+    val questions = mine.count { it.kind == "ask" }
+    val notes = mine.size - questions
+    val bookmarks = course.bookmarks.count { it.chapterSlug == chapterSlug }
+    val hasInk = store.readStrokes(course.slug, chapterSlug).isNotEmpty()
+    val parts = buildList {
+        if (notes > 0) add(if (notes == 1) "1 note" else "$notes notes")
+        // A question's ANSWER survives in the Q&A history; what goes is the
+        // ? in the margin pointing at a sentence that will not be there.
+        if (questions > 0) add(if (questions == 1) "1 question mark" else "$questions question marks")
+        if (bookmarks > 0) add(if (bookmarks == 1) "1 bookmark" else "$bookmarks bookmarks")
+        if (hasInk) add("handwriting")
+    }
+    return when (parts.size) {
+        0 -> ""
+        1 -> parts.first()
+        else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
     }
 }

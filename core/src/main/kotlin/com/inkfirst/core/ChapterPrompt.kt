@@ -9,12 +9,21 @@ package com.inkfirst.core
  * [readerNotes] is reader.md: what the READING looked like, where memory.md
  * is what the book TAUGHT (docs/design.md §13). Blank until a chapter has
  * been read and left some trace, and blank is the normal case for chapter 1.
+ *
+ * [rewriteFeedback] is non-blank only when this chapter is being written a
+ * second time because the first attempt did not land. The old chapter is
+ * deliberately NOT included: the point is a fresh attempt at the same
+ * objectives, and a model shown its own previous draft edits it instead of
+ * rethinking it. Blank feedback is legitimate — it means "just try again",
+ * which is a real request of a stochastic model.
  */
 internal fun buildChapterPrompt(
     course: Course,
     chapter: PersistedChapter,
     memory: String,
     readerNotes: String = "",
+    rewriteFeedback: String = "",
+    isRewrite: Boolean = false,
 ): String = buildString {
     appendLine("Write chapter ${chapter.n} of this course.")
     appendLine()
@@ -43,6 +52,22 @@ internal fun buildChapterPrompt(
     appendLine("Objectives:")
     chapter.objectives.forEach { appendLine("- $it") }
     appendLine()
+    if (isRewrite) {
+        appendLine("THIS IS A REWRITE")
+        appendLine("A previous version of this chapter was written and the reader rejected it.")
+        if (rewriteFeedback.isNotBlank()) {
+            appendLine("What they said about it:")
+            appendLine(rewriteFeedback.trim())
+        } else {
+            appendLine("They gave no reason — so the previous attempt simply did not work.")
+        }
+        appendLine("Write a genuinely different chapter, not a polish of the last one. Same")
+        appendLine("objectives, different route to them: change the metaphors, the examples,")
+        appendLine("the order things are introduced in. Do not mention that this is a rewrite,")
+        appendLine("do not apologise, and do not refer to a previous version — as far as the")
+        appendLine("reader is concerned this is simply the chapter.")
+        appendLine()
+    }
     appendLine("FORMAT RULES")
     appendLine("- Return Markdown. Do NOT wrap the whole output in a code fence.")
     appendLine("- ${measurementRule(course.units)}")

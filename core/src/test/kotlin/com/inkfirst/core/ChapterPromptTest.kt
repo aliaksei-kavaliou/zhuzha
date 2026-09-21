@@ -22,6 +22,52 @@ class ChapterPromptTest {
         ),
     )
 
+    // --- rewrites ---------------------------------------------------------
+
+    @Test
+    fun `an ordinary chapter says nothing about rewriting`() {
+        val prompt = buildChapterPrompt(course, course.chapters[1], memory = "")
+        assertFalse(prompt.contains("THIS IS A REWRITE"))
+        assertFalse(prompt.contains("rejected"))
+    }
+
+    @Test
+    fun `a rewrite carries the reader's reason and asks for a different route`() {
+        val prompt = buildChapterPrompt(
+            course, course.chapters[1], memory = "",
+            isRewrite = true,
+            rewriteFeedback = "Too abstract, I never saw a real number.",
+        )
+        assertTrue(prompt.contains("THIS IS A REWRITE"))
+        assertTrue(prompt.contains("Too abstract, I never saw a real number."))
+        // Same destination, different road — the objectives come from the
+        // outline and a rewrite does not touch those.
+        assertTrue(prompt.contains("Same"))
+        assertTrue(prompt.contains("objectives"))
+        assertTrue(prompt.contains("weighted sums"))
+    }
+
+    @Test
+    fun `a rewrite with no reason given still says the last one failed`() {
+        // "Just try again" is a legitimate request of a stochastic model, and
+        // the prompt has to survive it without a dangling empty section.
+        val prompt = buildChapterPrompt(
+            course, course.chapters[1], memory = "", isRewrite = true, rewriteFeedback = "",
+        )
+        assertTrue(prompt.contains("THIS IS A REWRITE"))
+        assertTrue(prompt.contains("gave no reason"))
+    }
+
+    @Test
+    fun `the rewritten chapter must not mention that it is a rewrite`() {
+        // The reader asked for a chapter, not an apology from a book.
+        val prompt = buildChapterPrompt(
+            course, course.chapters[1], memory = "", isRewrite = true, rewriteFeedback = "dull",
+        )
+        assertTrue(prompt.contains("do not apologise"))
+        assertTrue(prompt.contains("as far as the"))
+    }
+
     @Test
     fun `chapter prompt includes course context, full outline, and chapter spec`() {
         val prompt = buildChapterPrompt(course, course.chapters[1], memory = "")

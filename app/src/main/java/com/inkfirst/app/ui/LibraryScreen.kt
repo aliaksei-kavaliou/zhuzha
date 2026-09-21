@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -25,7 +26,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.rememberCourseStore
+import com.inkfirst.core.ChapterStatus
+import com.inkfirst.core.CourseStore
 import com.inkfirst.core.CourseSummary
 
 @Composable
@@ -36,6 +41,9 @@ fun LibraryScreen(
 ) {
     val store = rememberCourseStore()
     var summaries by remember { mutableStateOf<List<CourseSummary>>(emptyList()) }
+    // The book the reader has asked to remove, held until they confirm. Null
+    // means no dialog is up.
+    var pendingDelete by remember { mutableStateOf<CourseSummary?>(null) }
 
     LaunchedEffect(Unit) { summaries = store.list() }
 
@@ -69,20 +77,93 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 items(summaries) { summary ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onOpenCourse(summary.slug) }
-                            .padding(vertical = 8.dp),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(summary.title, style = MaterialTheme.typography.titleMedium)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onOpenCourse(summary.slug) }
+                                .padding(vertical = 8.dp),
+                        ) {
+                            Text(summary.title, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = "${summary.chapterCount} chapters · ${summary.created}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        // Its own clickable, so aiming for the × never opens
+                        // the book instead. Same shape as the note delete in
+                        // the Contents.
                         Text(
-                            text = "${summary.chapterCount} chapters · ${summary.created}",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "×",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            modifier = Modifier
+                                .clickable { pendingDelete = summary }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                         )
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { doomed ->
+        // A confirm step rather than an undo, because there is nothing to
+        // undo from: the files ARE the book. Naming what is about to go —
+        // the chapters that cost API calls, the notes nobody can regenerate —
+        // is the part that makes the decision an informed one.
+        val loss = remember(doomed.slug) { describeLoss(store, doomed.slug) }
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(doomed.title) },
+            text = {
+                Text(
+                    "Remove this book and everything in it" +
+                        (if (loss.isEmpty()) "" else " — $loss") +
+                        ". This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    store.deleteCourse(doomed.slug)
+                    summaries = store.list()
+                    pendingDelete = null
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Keep") }
+            },
+        )
+    }
+}
+
+/**
+ * A plain-English inventory of what deleting a course destroys, for the
+ * confirm dialog. Only counts what actually exists — a course with nothing in
+ * it yet reads as an empty string rather than a row of zeroes.
+ */
+private fun describeLoss(store: CourseStore, slug: String): String {
+    val course = store.load(slug) ?: return ""
+    val written = course.chapters.count { it.status != ChapterStatus.PENDING }
+    val questions = course.annotations.count { it.kind == "ask" }
+    val notes = course.annotations.size - questions
+    val inked = store.chaptersWithInk(slug).size
+    val parts = buildList {
+        if (written > 0) add(if (written == 1) "1 written chapter" else "$written written chapters")
+        if (notes > 0) add(if (notes == 1) "1 note" else "$notes notes")
+        if (questions > 0) add(if (questions == 1) "1 question" else "$questions questions")
+        if (course.bookmarks.isNotEmpty()) {
+            val n = course.bookmarks.size
+            add(if (n == 1) "1 bookmark" else "$n bookmarks")
+        }
+        if (inked > 0) add(if (inked == 1) "ink on 1 chapter" else "ink on $inked chapters")
+    }
+    return when (parts.size) {
+        0 -> ""
+        1 -> parts.first()
+        else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
     }
 }

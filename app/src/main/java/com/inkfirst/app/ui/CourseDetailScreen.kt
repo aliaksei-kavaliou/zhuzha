@@ -59,6 +59,7 @@ import com.inkfirst.core.Bookmark
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
 import com.inkfirst.core.PersistedChapter
+import com.inkfirst.core.QaTranscript
 import com.inkfirst.core.ReaderNotes
 import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.totalCourseDays
@@ -67,7 +68,9 @@ private val InkColor = Color(0xFF000000)
 private val PaperColor = Color(0xFFFFFFFF)
 private val MutedColor = Color(0xFF555555)
 
-private sealed interface TocBlock {
+// internal, not private: buildTocBlocks below is a pure function over a
+// Course and is unit-tested. Everything that draws these stays private.
+internal sealed interface TocBlock {
     data class BookTitle(val title: String, val subtitle: String) : TocBlock
     data class SectionHeader(val text: String) : TocBlock
     data class ChapterEntry(
@@ -81,6 +84,25 @@ private sealed interface TocBlock {
     data class NoteEntry(val annotation: Annotation, val chapterLabel: String) : TocBlock
 
     /**
+     * A passage the reader asked the AI about.
+     *
+     * Its own block rather than a [NoteEntry] with a different glyph, because
+     * the two are different acts and they arrive at very different rates: a
+     * question is one gesture, a note is typed on an e-ink keyboard. Merged
+     * into one list the notes drown, and the notes are the scarcer thing.
+     *
+     * [question] is the text of what was asked, which does NOT live on the
+     * annotation — the annotation is only the mark that puts a ? in the
+     * margin. It comes from the chapter's Q&A transcript, matched by passage,
+     * and is null when the passage was marked and no question ever typed.
+     */
+    data class QuestionEntry(
+        val annotation: Annotation,
+        val chapterLabel: String,
+        val question: String?,
+    ) : TocBlock
+
+    /**
      * The way into `reader.md` — what the book has noticed about this reader.
      *
      * Shown whether or not anything has been recorded yet, unlike the
@@ -90,6 +112,9 @@ private sealed interface TocBlock {
      * wrong way round.
      */
     data class ReaderNotesEntry(val count: Int) : TocBlock
+
+    /** The way into whole-book search. */
+    data object SearchEntry : TocBlock
 }
 
 @Composable
@@ -98,6 +123,7 @@ fun CourseDetailScreen(
     currentChapterSlug: String? = null,
     onBack: () -> Unit,
     onOpenReaderNotes: () -> Unit,
+    onSearch: () -> Unit,
     onReadChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val courseStore = rememberCourseStore()
@@ -155,8 +181,29 @@ fun CourseDetailScreen(
                     it.observations.size
                 }
             }
-            val tocBlocks = remember(c, effectiveCurrentSlug, readerNoteCount) {
-                buildTocBlocks(c, effectiveCurrentSlug, readerNoteCount)
+            // What a question ASKED is lives in the chapter's own Q&A file,
+            // keyed by the passage — the annotation carries only the mark.
+            // Read it for the chapters that actually hold one, so a book with
+            // no questions in it opens no files.
+            val questionsByChapter = remember(c) {
+                c.annotations.asSequence()
+                    .filter { it.kind == "ask" }
+                    .map { it.chapterSlug }
+                    .distinct()
+                    .associateWith { chapterSlug ->
+                        QaTranscript.parse(courseStore.readQa(c.slug, chapterSlug))
+                            .mapNotNull { asked ->
+                                val passage = asked.passage?.trim()
+                                if (passage.isNullOrEmpty()) null else passage to asked.question
+                            }
+                            // Asked twice about one passage: the later
+                            // question wins, which is the one they are
+                            // likelier to be looking for.
+                            .toMap()
+                    }
+            }
+            val tocBlocks = remember(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter) {
+                buildTocBlocks(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter)
             }
 
             PagedContents(
@@ -175,15 +222,17 @@ fun CourseDetailScreen(
                 onNoteTap = { note -> onReadChapter(note.chapterSlug, note.blockIndex) },
                 onNoteDelete = onDeleteAnnotation,
                 onReaderNotesTap = onOpenReaderNotes,
+                onSearchTap = onSearch,
             )
         }
     }
 }
 
-private fun buildTocBlocks(
+internal fun buildTocBlocks(
     course: Course,
     currentChapterSlug: String?,
     readerNoteCount: Int,
+    questionsByChapter: Map<String, Map<String, String>> = emptyMap(),
 ): List<TocBlock> {
     val blocks = mutableListOf<TocBlock>()
     val totalDays = totalCourseDays(course)
@@ -191,6 +240,7 @@ private fun buildTocBlocks(
         title = course.title,
         subtitle = "${course.chapters.size} chapters · ${course.dailyMinutes} min/day · ~$totalDays days",
     )
+    blocks += TocBlock.SearchEntry
     blocks += TocBlock.ReaderNotesEntry(readerNoteCount)
     blocks += TocBlock.SectionHeader("Contents")
     val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
@@ -209,18 +259,37 @@ private fun buildTocBlocks(
             dayLabel = schedule[chapter.n]?.label.orEmpty(),
         )
     }
-    if (course.annotations.isNotEmpty()) {
+    // Group by chapter order; within a chapter, by when it was made. `at` is
+    // to the second and `created` only to the day, so pre-timestamp entries
+    // fall back to the date and keep their persisted order (sortedWith is
+    // stable) — which is the order they were added in anyway.
+    val chapterOrder = course.chapters.mapIndexed { i, ch -> ch.slug to i }.toMap()
+    fun inReadingOrder(list: List<Annotation>) = list.sortedWith(
+        compareBy(
+            { chapterOrder[it.chapterSlug] ?: Int.MAX_VALUE },
+            { it.at.ifBlank { it.created } },
+        ),
+    )
+    fun chapterLabel(a: Annotation): String =
+        course.chapters.firstOrNull { it.slug == a.chapterSlug }
+            ?.let { "Ch ${it.n}" } ?: a.chapterSlug
+
+    // Notes first: they are the scarce ones, and they are the reader's own
+    // words rather than a passage they pointed at.
+    val notes = inReadingOrder(course.annotations.filter { it.kind != "ask" })
+    if (notes.isNotEmpty()) {
         blocks += TocBlock.SectionHeader("Notes")
-        // Group by chapter order — annotations within a chapter appear in
-        // creation order (order they were added), which is the persisted order.
-        val chapterOrder = course.chapters.mapIndexed { i, ch -> ch.slug to i }.toMap()
-        val sorted = course.annotations.sortedWith(
-            compareBy({ chapterOrder[it.chapterSlug] ?: Int.MAX_VALUE }, { it.created }),
-        )
-        sorted.forEach { a ->
-            val label = course.chapters.firstOrNull { it.slug == a.chapterSlug }
-                ?.let { "Ch ${it.n}" } ?: a.chapterSlug
-            blocks += TocBlock.NoteEntry(a, label)
+        notes.forEach { blocks += TocBlock.NoteEntry(it, chapterLabel(it)) }
+    }
+    val questions = inReadingOrder(course.annotations.filter { it.kind == "ask" })
+    if (questions.isNotEmpty()) {
+        blocks += TocBlock.SectionHeader("Questions")
+        questions.forEach { a ->
+            blocks += TocBlock.QuestionEntry(
+                annotation = a,
+                chapterLabel = chapterLabel(a),
+                question = questionsByChapter[a.chapterSlug]?.get(a.quote.trim()),
+            )
         }
     }
     if (course.bookmarks.isNotEmpty()) {
@@ -245,6 +314,7 @@ private fun PagedContents(
     onNoteTap: (Annotation) -> Unit,
     onNoteDelete: (Annotation) -> Unit,
     onReaderNotesTap: () -> Unit,
+    onSearchTap: () -> Unit,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -348,6 +418,7 @@ private fun PagedContents(
                             onNoteTap = onNoteTap,
                             onNoteDelete = onNoteDelete,
                             onReaderNotesTap = onReaderNotesTap,
+                            onSearchTap = onSearchTap,
                         )
                     }
                 }
@@ -390,6 +461,7 @@ private fun RenderTocBlock(
     onNoteTap: (Annotation) -> Unit,
     onNoteDelete: (Annotation) -> Unit,
     onReaderNotesTap: () -> Unit,
+    onSearchTap: () -> Unit,
 ) {
     when (block) {
         is TocBlock.BookTitle -> BookTitleBlock(block)
@@ -397,7 +469,37 @@ private fun RenderTocBlock(
         is TocBlock.ChapterEntry -> ChapterEntryBlock(block, onChapterTap)
         is TocBlock.BookmarkEntry -> BookmarkEntryBlock(block, onBookmarkTap)
         is TocBlock.NoteEntry -> NoteEntryBlock(block, onNoteTap, onNoteDelete)
+        is TocBlock.QuestionEntry -> QuestionEntryBlock(block, onNoteTap, onNoteDelete)
         is TocBlock.ReaderNotesEntry -> ReaderNotesEntryBlock(block, onReaderNotesTap)
+        is TocBlock.SearchEntry -> SearchEntryBlock(onSearchTap)
+    }
+}
+
+@Composable
+private fun SearchEntryBlock(onTap: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTap() }
+            .padding(vertical = 10.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Search this book",
+                fontFamily = FontFamily.Serif,
+                fontSize = 16.sp,
+                color = InkColor,
+            )
+            Text(
+                text = "chapters, notes and questions",
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                fontSize = 12.sp,
+                color = MutedColor,
+            )
+        }
+        Text(text = "›", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = MutedColor)
     }
 }
 
@@ -524,16 +626,74 @@ private fun NoteEntryBlock(
     onDelete: (Annotation) -> Unit,
 ) {
     val a = entry.annotation
-    val quotePreview = a.quote.let { if (it.length > 80) it.take(77) + "…" else it }
+    MarkEntryRow(
+        // The same glyph the margin draws for a note, so the index and the
+        // page agree about what a mark is.
+        glyph = "✎",
+        quote = a.quote,
+        body = a.note.trim().replace('\n', ' '),
+        bodyIsPlaceholder = false,
+        chapterLabel = entry.chapterLabel,
+        onTap = { onTap(a) },
+        onDelete = { onDelete(a) },
+    )
+}
+
+@Composable
+private fun QuestionEntryBlock(
+    entry: TocBlock.QuestionEntry,
+    onTap: (Annotation) -> Unit,
+    onDelete: (Annotation) -> Unit,
+) {
+    val a = entry.annotation
+    val asked = entry.question?.trim()?.replace('\n', ' ').orEmpty()
+    MarkEntryRow(
+        glyph = "?",
+        quote = a.quote,
+        // A passage marked with no question typed is a real state, not an
+        // empty one — ReaderSignals reads it as "stopped here but could not
+        // put the difficulty into words". Say so plainly, and say it in a way
+        // that leaves the door open: they can still ask.
+        body = asked.ifEmpty { "no question yet" },
+        bodyIsPlaceholder = asked.isEmpty(),
+        chapterLabel = entry.chapterLabel,
+        onTap = { onTap(a) },
+        onDelete = { onDelete(a) },
+    )
+}
+
+/**
+ * One marked passage in the Contents: a margin glyph, the passage, what the
+ * reader made of it, the chapter it is in, and a way to remove it.
+ *
+ * Shared by notes and questions so the two stay visually siblings — they are
+ * listed apart because they arrive at different rates, not because they are
+ * different furniture.
+ */
+@Composable
+private fun MarkEntryRow(
+    glyph: String,
+    quote: String,
+    body: String,
+    bodyIsPlaceholder: Boolean,
+    chapterLabel: String,
+    onTap: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    // Both previews are capped: estimateTocBlockHeight budgets two lines for
+    // this row, and an uncapped note would wrap past that and overflow the
+    // page it was paginated onto.
+    val quotePreview = if (quote.length > 80) quote.take(77) + "…" else quote
+    val bodyPreview = if (body.length > 100) body.take(97) + "…" else body
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onTap(a) }
+            .clickable { onTap() }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Text(
-            text = "✎ ",
+            text = "$glyph ",
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
             color = InkColor,
@@ -548,17 +708,20 @@ private fun NoteEntryBlock(
                 lineHeight = 20.sp,
                 color = InkColor,
             )
-            Text(
-                text = a.note.trim().replace('\n', ' '),
-                fontFamily = FontFamily.Serif,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                color = MutedColor,
-                modifier = Modifier.padding(top = 2.dp, start = 8.dp),
-            )
+            if (bodyPreview.isNotEmpty()) {
+                Text(
+                    text = bodyPreview,
+                    fontFamily = FontFamily.Serif,
+                    fontStyle = if (bodyIsPlaceholder) FontStyle.Italic else FontStyle.Normal,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = MutedColor,
+                    modifier = Modifier.padding(top = 2.dp, start = 8.dp),
+                )
+            }
         }
         Text(
-            text = entry.chapterLabel,
+            text = chapterLabel,
             fontFamily = FontFamily.Serif,
             fontStyle = FontStyle.Italic,
             fontSize = 12.sp,
@@ -574,7 +737,7 @@ private fun NoteEntryBlock(
             fontSize = 18.sp,
             color = MutedColor,
             modifier = Modifier
-                .clickable { onDelete(a) }
+                .clickable { onDelete() }
                 .padding(horizontal = 8.dp),
         )
     }
@@ -689,13 +852,13 @@ private fun estimateTocBlockHeight(
             val padding = 8.dp.toPx().toInt() * 2
             titleResult.size.height + padding
         }
-        is TocBlock.ReaderNotesEntry ->
+        is TocBlock.ReaderNotesEntry, is TocBlock.SearchEntry ->
             (16.sp.toPx() * 1.3f).toInt() + (12.sp.toPx() * 1.3f).toInt() +
                 10.dp.toPx().toInt() * 2
         is TocBlock.BookmarkEntry -> {
             (14.sp.toPx() * 1.3f).toInt() + 4.dp.toPx().toInt() * 2
         }
-        is TocBlock.NoteEntry -> {
+        is TocBlock.NoteEntry, is TocBlock.QuestionEntry -> {
             // Approx: two lines (quote + note preview), each ~20sp line-height,
             // plus vertical padding. We don't measure exact wrap here — the
             // preview strings are capped and the 15% budget shave in

@@ -123,6 +123,25 @@ yet" note that used to live here was two months stale.
       page" is a page turn, and the overlay used to resolve a finger contact on its
       ACTION_DOWN. Fixed as a side effect of making swipes work. Evidence and the remaining
       latent risk are in `docs/onyx-pen-thread.md` §T7.
+- [x] **Delete, search, rewrite (2026-09-21)** — the three gaps that read as "unfinished"
+      to anyone who is not Aliaksei, named on 2026-09-15 and built together. Deleting a
+      course is the only destructive op in `:core` and refuses anything that is not a
+      course directory directly under the root. Search runs over parsed BLOCKS, so a hit
+      opens at the right page whatever the font size; it searches chapters, notes and the
+      passages that were asked about. Rewriting a chapter archives the old body as
+      `<slug>.r1.md`, drops only what anchors INTO the replaced prose (annotations,
+      bookmarks, ink, inline figures), and keeps what is a record rather than a pointer
+      (Q&A, reader.md, cover, closing picture). See design.md §14 and §1.
+- [x] **Questions have their own section in the Contents (2026-09-21)** — they used to
+      render under "Notes" with the write-glyph and an empty body, because an ask carries
+      no note text. The split is about volume, not taxonomy: a question is one gesture and
+      a note is typed, so merged lists drown the scarcer thing.
+- [x] **Orphaned bookmarks (2026-09-21)** — a bookmark was SET as a page's first-beginning
+      block and RESOLVED by containment, and those two relations part company as soon as
+      the margin or font changes. It opened its page and showed no ribbon there, offering
+      "Bookmark this page" for a page that already was. `bookmarkOnPage` now asks the
+      question the same way the jump asks it. Stored indices are never rewritten to heal —
+      silently editing a saved position on a font change is worse than the bug.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

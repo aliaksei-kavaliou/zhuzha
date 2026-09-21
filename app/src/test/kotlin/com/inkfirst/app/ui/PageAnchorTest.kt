@@ -3,6 +3,7 @@ package com.inkfirst.app.ui
 import com.inkfirst.core.Block
 import com.inkfirst.core.Inline
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 /**
@@ -43,6 +44,61 @@ class PageAnchorTest {
         // the reader to the front of the chapter.
         val p = page(PageItem(para("middle of a very long one"), 12, skippedPx = 600))
         assertEquals(12, anchorForPage(p))
+    }
+
+    // --- which page wears the ribbon -------------------------------------
+
+    @Test
+    fun `a bookmark shows on the page it opens, and on no other`() {
+        val blocks = (0..14).map { para("block $it") }
+        val pages = listOf(
+            page(PageItem(blocks[10], 10), PageItem(blocks[11], 11)),
+            page(PageItem(blocks[12], 12), PageItem(blocks[13], 13)),
+            page(PageItem(blocks[14], 14)),
+        )
+        assertEquals(12, bookmarkOnPage(pages, blocks, 1, listOf(12)))
+        assertNull(bookmarkOnPage(pages, blocks, 0, listOf(12)))
+        assertNull(bookmarkOnPage(pages, blocks, 2, listOf(12)))
+    }
+
+    @Test
+    fun `a bookmark survives the reflow that orphaned it`() {
+        // The reported bug. The bookmark was set when block 12 began a page;
+        // widening the margins pushed it into the middle of one. It still
+        // OPENED that page — the jump asks "which page contains 12" — while
+        // the ribbon asked "is 12 this page's anchor" and got 11. No dog-ear,
+        // and the menu offered to bookmark a page that already was.
+        val blocks = (0..14).map { para("block $it") }
+        val reflowed = listOf(
+            page(PageItem(blocks[10], 10)),
+            page(PageItem(blocks[11], 11), PageItem(blocks[12], 12), PageItem(blocks[13], 13)),
+        )
+        assertEquals(11, anchorForPage(reflowed[1]))
+        // The page the bookmark opens…
+        assertEquals(1, findPageContainingBlock(reflowed, blocks, 12))
+        // …is the page that shows it.
+        assertEquals(12, bookmarkOnPage(reflowed, blocks, 1, listOf(12)))
+    }
+
+    @Test
+    fun `a bookmark on a split paragraph claims only the page it opens`() {
+        // Block 12 appears on two pages. The jump resolves to the first, so
+        // the ribbon must appear there and nowhere else — otherwise one
+        // bookmark wears two dog-ears.
+        val blocks = (0..14).map { para("block $it") }
+        val pages = listOf(
+            page(PageItem(blocks[11], 11), PageItem(blocks[12], 12)),
+            page(PageItem(blocks[12], 12, skippedPx = 300), PageItem(blocks[13], 13)),
+        )
+        assertEquals(12, bookmarkOnPage(pages, blocks, 0, listOf(12)))
+        assertNull(bookmarkOnPage(pages, blocks, 1, listOf(12)))
+    }
+
+    @Test
+    fun `no bookmarks means no ribbon anywhere`() {
+        val blocks = listOf(para("only"))
+        val pages = listOf(page(PageItem(blocks[0], 0)))
+        assertNull(bookmarkOnPage(pages, blocks, 0, emptyList()))
     }
 
     @Test

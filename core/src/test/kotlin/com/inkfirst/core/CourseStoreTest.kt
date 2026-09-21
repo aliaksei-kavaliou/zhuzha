@@ -37,6 +37,174 @@ class CourseStoreTest {
     )
 
     @Test
+    fun `archiveChapter files the old body beside the new one`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.saveChapter("book", "01-intro", "first attempt")
+
+        assertEquals("01-intro.r1.md", store.archiveChapter("book", "01-intro"))
+        assertNull(store.readChapter("book", "01-intro"))
+        assertEquals("first attempt", File(tmp, "book/chapters/01-intro.r1.md").readText())
+
+        // A second rewrite must not clobber the first archive.
+        store.saveChapter("book", "01-intro", "second attempt")
+        assertEquals("01-intro.r2.md", store.archiveChapter("book", "01-intro"))
+        assertEquals("first attempt", File(tmp, "book/chapters/01-intro.r1.md").readText())
+    }
+
+    @Test
+    fun `archiveChapter on a chapter that was never written does nothing`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        assertNull(store.archiveChapter("book", "01-intro"))
+    }
+
+    // --- clearChapterMarks -----------------------------------------------
+
+    @Test
+    fun `clearChapterMarks drops what points into the chapter's prose`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.addAnnotation("book", "01-intro", 3, "a sentence", "my note", "2026-09-20")
+        store.addBookmark("book", "01-intro", 5, "2026-09-20")
+        store.saveStrokes(
+            "book", "01-intro",
+            listOf(Stroke(blockIndex = 2, points = emptyList(), created = "2026-09-20")),
+        )
+
+        store.clearChapterMarks("book", "01-intro")
+
+        val after = store.load("book")!!
+        assertTrue(after.annotations.isEmpty())
+        assertTrue(after.bookmarks.isEmpty())
+        assertTrue(store.readStrokes("book", "01-intro").isEmpty())
+    }
+
+    @Test
+    fun `clearChapterMarks leaves the other chapters alone`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.addAnnotation("book", "01-intro", 1, "doomed", "n", "2026-09-20")
+        store.addAnnotation("book", "02-null", 1, "spared", "n", "2026-09-20")
+        store.addBookmark("book", "02-null", 4, "2026-09-20")
+
+        store.clearChapterMarks("book", "01-intro")
+
+        val after = store.load("book")!!
+        assertEquals(listOf("spared"), after.annotations.map { it.quote })
+        assertEquals(1, after.bookmarks.size)
+    }
+
+    @Test
+    fun `clearChapterMarks keeps the Q and A, which is a record of what happened`(
+        @TempDir tmp: File,
+    ) {
+        // The conversation really took place and is still true about the
+        // reader, even once the passage it was about has been rewritten.
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.appendQa("book", "01-intro", "a passage", "what is this?", "this is that", "2026-09-20")
+
+        store.clearChapterMarks("book", "01-intro")
+
+        assertTrue(store.readQa("book", "01-intro").contains("what is this?"))
+    }
+
+    @Test
+    fun `clearChapterMarks removes inline figures but keeps cover and tail`(@TempDir tmp: File) {
+        // Inline figures are addressed by slot ORDINAL, so a stale one would
+        // silently illustrate an unrelated paragraph in the new chapter. The
+        // cover and tail are drawn from the title and objectives, which a
+        // rewrite does not touch.
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.saveFigure("book", "01-intro-0.png", byteArrayOf(1))
+        store.saveFigure("book", "01-intro-1.png", byteArrayOf(1))
+        store.saveFigure("book", chapterCoverName("01-intro", "png"), byteArrayOf(1))
+        store.saveFigure("book", chapterTailName("01-intro", "png"), byteArrayOf(1))
+        store.saveFigure("book", "02-null-0.png", byteArrayOf(1))
+
+        store.clearChapterMarks("book", "01-intro")
+
+        assertNull(store.figureFile("book", "01-intro-0.png"))
+        assertNull(store.figureFile("book", "01-intro-1.png"))
+        assertNotNull(store.coverFile("book", "01-intro"))
+        assertNotNull(store.tailFile("book", "01-intro"))
+        assertNotNull(store.figureFile("book", "02-null-0.png"))
+    }
+
+    // --- deleteCourse ----------------------------------------------------
+    //
+    // The only destructive operation in the store. These are less about the
+    // happy path than about what it REFUSES, because the failure mode is
+    // "recursively deleted the wrong directory".
+
+    @Test
+    fun `deleteCourse removes the course and everything under it`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("doomed")
+        store.saveChapter("doomed", "01-intro", "# body")
+        store.appendQa("doomed", "01-intro", "passage", "q", "a", "2026-09-20")
+        store.saveFigure("doomed", "fig.png", byteArrayOf(1, 2, 3))
+
+        assertTrue(store.deleteCourse("doomed"))
+        assertNull(store.load("doomed"))
+        assertTrue(!File(tmp, "doomed").exists())
+    }
+
+    @Test
+    fun `deleteCourse leaves the other books alone`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("keep")
+        store.createTest("doomed")
+
+        store.deleteCourse("doomed")
+
+        assertEquals(listOf("keep"), store.list().map { it.slug })
+    }
+
+    @Test
+    fun `deleteCourse clears the cold-start pointer only when it pointed there`(
+        @TempDir tmp: File,
+    ) {
+        val store = CourseStore(tmp)
+        store.createTest("keep")
+        store.createTest("doomed")
+
+        store.writeLastRead("doomed", "01-intro")
+        store.deleteCourse("doomed")
+        // Otherwise the next launch opens a book that is not on disk.
+        assertNull(store.readLastRead())
+
+        store.writeLastRead("keep", "01-intro")
+        store.deleteCourse("keep-not-a-course")
+        assertEquals("keep", store.readLastRead()?.courseSlug)
+    }
+
+    @Test
+    fun `deleteCourse refuses anything that is not a course directory`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("real")
+        File(tmp, "stray").mkdirs()
+        File(tmp, "stray/notes.txt").writeText("not a course")
+
+        assertTrue(!store.deleteCourse("stray"))
+        assertTrue(!store.deleteCourse("never-existed"))
+        assertTrue(File(tmp, "stray/notes.txt").exists())
+    }
+
+    @Test
+    fun `deleteCourse refuses to climb out of the courses root`(@TempDir tmp: File) {
+        val outside = File(tmp, "outside").apply { mkdirs() }
+        File(outside, "course.json").writeText("{}")
+        val root = File(tmp, "courses").apply { mkdirs() }
+        val store = CourseStore(root)
+
+        assertTrue(!store.deleteCourse("../outside"))
+        assertTrue(File(outside, "course.json").exists())
+    }
+
+    @Test
     fun `create persists course_json with snake_case fields and returns the Course`(@TempDir tmp: File) {
         val store = CourseStore(tmp)
 

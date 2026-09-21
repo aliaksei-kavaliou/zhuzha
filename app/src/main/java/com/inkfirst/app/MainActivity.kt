@@ -22,6 +22,7 @@ import com.inkfirst.app.ui.NewCourseScreen
 import com.inkfirst.app.ui.PageKeys
 import com.inkfirst.app.ui.ReaderNotesScreen
 import com.inkfirst.app.ui.ReaderScreen
+import com.inkfirst.app.ui.SearchScreen
 import com.inkfirst.app.ui.SettingsScreen
 
 private object Routes {
@@ -35,6 +36,8 @@ private object Routes {
     const val READER = "reader/{courseSlug}/{chapterSlug}/{blockIndex}"
     const val READER_NOTES = "reader-notes/{slug}"
     fun readerNotes(slug: String) = "reader-notes/$slug"
+    const val SEARCH = "search/{slug}"
+    fun search(slug: String) = "search/$slug"
     fun courseDetail(slug: String, currentChapter: String? = null) =
         "course/$slug/${currentChapter?.takeIf { it.isNotBlank() } ?: "-"}"
     fun reader(courseSlug: String, chapterSlug: String, blockIndex: Int = 0) =
@@ -154,7 +157,26 @@ private fun InkFirstApp() {
                     }
                 },
                 onOpenReaderNotes = { nav.navigate(Routes.readerNotes(slug)) },
+                onSearch = { nav.navigate(Routes.search(slug)) },
                 onReadChapter = { chapterSlug, blockIndex ->
+                    nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
+                },
+            )
+        }
+        composable(Routes.SEARCH) { entry ->
+            val slug = entry.arguments?.getString("slug").orEmpty()
+            SearchScreen(
+                slug = slug,
+                // Same rule as the reader-notes screen: name the destination
+                // rather than popping, so arriving here from anywhere leaves
+                // the reader where the label said they would be.
+                onBack = {
+                    nav.navigate(Routes.courseDetail(slug)) {
+                        popUpTo(Routes.COURSE_DETAIL) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onOpenHit = { chapterSlug, blockIndex ->
                     nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
                 },
             )
@@ -195,6 +217,7 @@ private fun InkFirstApp() {
                     }
                 },
                 onOpenReaderNotes = { nav.navigate(Routes.readerNotes(courseSlug)) },
+                onSearch = { nav.navigate(Routes.search(courseSlug)) },
                 onOpenChapter = { newChapterSlug, newBlockIndex ->
                     nav.navigate(Routes.reader(courseSlug, newChapterSlug, newBlockIndex)) {
                         popUpTo(Routes.READER) { inclusive = true }

@@ -93,6 +93,27 @@ class CourseStore(private val root: File) {
         File(chaptersDir, "$chapterSlug.md").writeText(markdown)
     }
 
+    /**
+     * Moves a chapter's current body aside to `chapters/<slug>.r<n>.md` and
+     * returns the name it was filed under, or null if there was nothing to
+     * archive.
+     *
+     * Called before a rewrite. The app never shows these files and nothing
+     * reads them back — they exist because the whole premise of this project
+     * is that the study material is plain, inspectable files that outlive the
+     * app (CLAUDE.md, decision 2). A chapter someone read and annotated is
+     * not something to delete on a confirm dialog when keeping it costs a
+     * rename.
+     */
+    fun archiveChapter(courseSlug: String, chapterSlug: String): String? {
+        val dir = File(root, "$courseSlug/chapters")
+        val live = File(dir, "$chapterSlug.md").takeIf { it.isFile } ?: return null
+        var n = 1
+        while (File(dir, "$chapterSlug.r$n.md").exists()) n++
+        val archived = File(dir, "$chapterSlug.r$n.md")
+        return if (live.renameTo(archived)) archived.name else null
+    }
+
     /** Reads chapters/&lt;chapterSlug&gt;.md, or null if it hasn't been generated yet. */
     fun readChapter(courseSlug: String, chapterSlug: String): String? {
         val file = File(root, "$courseSlug/chapters/$chapterSlug.md")
@@ -118,6 +139,71 @@ class CourseStore(private val root: File) {
             appendLine()
         }
         memoryFile.writeText(existing + block)
+    }
+
+    /**
+     * Replaces chapter [chapterN]'s block in memory.md, keeping its position
+     * among the others — see [CourseMemory].
+     *
+     * Used when a chapter is rewritten. Appending the new summary instead
+     * would leave the old one in the file, and memory.md is read whole by
+     * every later chapter: the book would go on building on prose that no
+     * longer exists.
+     */
+    fun replaceMemory(courseSlug: String, chapterN: Int, chapterTitle: String, summary: String) {
+        val memoryFile = File(root, "$courseSlug/memory.md").apply { parentFile?.mkdirs() }
+        val existing = if (memoryFile.exists()) memoryFile.readText() else ""
+        memoryFile.writeText(CourseMemory.replaceChapter(existing, chapterN, chapterTitle, summary))
+    }
+
+    /**
+     * Drops everything anchored by POSITION into one chapter's text —
+     * annotations, bookmarks and ink — and the inline figures drawn for its
+     * figure slots. For use immediately before rewriting that chapter.
+     *
+     * The rule is what a mark POINTS AT. An annotation names a block index in
+     * prose that is about to be replaced, so it would land on an unrelated
+     * paragraph; a figure is stored as `<chapter>-<ordinal>` and matched by
+     * slot ordinal, so the new chapter's third figure slot would silently
+     * show the old chapter's third picture.
+     *
+     * Three things deliberately SURVIVE a rewrite:
+     *  - the Q&A transcript, which is a record of a conversation that really
+     *    happened and is still true about the reader,
+     *  - reader.md, for the same reason,
+     *  - the cover and closing pictures, which illustrate the chapter's
+     *    title and objectives — and those come from the outline, which a
+     *    rewrite does not touch.
+     *
+     * Returns the updated Course, or null if the course is gone.
+     */
+    fun clearChapterMarks(courseSlug: String, chapterSlug: String): Course? {
+        val course = load(courseSlug) ?: return null
+        val updated = course.copy(
+            annotations = course.annotations.filterNot { it.chapterSlug == chapterSlug },
+            bookmarks = course.bookmarks.filterNot { it.chapterSlug == chapterSlug },
+        )
+        writeCourse(courseSlug, updated)
+        File(root, "$courseSlug/ink/$chapterSlug.ink.json").delete()
+        deleteChapterFigures(courseSlug, chapterSlug)
+        return updated
+    }
+
+    /**
+     * Removes a chapter's inline figures, leaving its cover and closing
+     * picture in place. Matches the `<chapterSlug>-<ordinal>.<ext>` names
+     * written by [ChapterIllustrator] — and only those, so `-cover` and
+     * `-tail` survive by not being numbers.
+     */
+    private fun deleteChapterFigures(courseSlug: String, chapterSlug: String) {
+        val dir = File(root, "$courseSlug/figures")
+        if (!dir.isDirectory) return
+        dir.listFiles().orEmpty().forEach { file ->
+            val suffix = file.nameWithoutExtension.removePrefix("$chapterSlug-")
+            if (suffix != file.nameWithoutExtension && suffix.toIntOrNull() != null) {
+                file.delete()
+            }
+        }
     }
 
     /** Reads memory.md, or empty string if never written. Never null — callers pass it as prompt input. */
@@ -539,6 +625,31 @@ class CourseStore(private val root: File) {
     /** Removes the pointer (used when it references a course/chapter that no longer exists). */
     fun clearLastRead() {
         File(root, "last_read.json").delete()
+    }
+
+    /**
+     * Removes a course and everything under it — chapters, notes, Q&A,
+     * figures, badges, ink. Irreversible, and there is no trash to fish it
+     * back out of: the files ARE the course.
+     *
+     * This is the only destructive operation in the store, so it is
+     * deliberately fussy about what it will accept. The directory has to sit
+     * directly under the courses root and it has to contain a course.json —
+     * a recursive delete aimed at the wrong path is not a bug you get to
+     * apologise for afterwards.
+     *
+     * Returns false when there was no such course to remove.
+     */
+    fun deleteCourse(slug: String): Boolean {
+        val dir = File(root, slug)
+        if (!dir.isDirectory) return false
+        if (dir.canonicalFile.parentFile != root.canonicalFile) return false
+        if (!File(dir, "course.json").exists()) return false
+        val removed = dir.deleteRecursively()
+        // Otherwise the next cold start reads this pointer and opens a book
+        // that is no longer on disk.
+        if (removed && readLastRead()?.courseSlug == slug) clearLastRead()
+        return removed
     }
 
     private fun writeCourse(courseSlug: String, course: Course) {

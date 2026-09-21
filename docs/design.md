@@ -98,7 +98,56 @@ A page is identified by **the first block that BEGINS on it**, not simply its fi
 so "which page holds block 12" has two answers — and a bookmark set on the second of them
 resolved back to the first. The first block that starts on a page appears on no earlier one.
 
-Rules: `course.json` is the only file the app mutates on ordinary progress updates. Chapters are immutable once generated (regeneration writes a new revision, e.g. `01-intro.r2.md`, and updates the slug pointer — never silently overwrite something the user annotated).
+**A mark is RESOLVED against the current pagination, never compared to it** (`bookmarkOnPage`,
+2026-09-21). Setting a bookmark stores `anchorForPage`; going to one calls
+`findPageContainingBlock`. Those two relations agree only while the pagination that produced
+them is still in force — increase the margin, the font size or the line spacing and a stored
+anchor can stop being any page's first-beginning block. The bookmark then still opened its
+page, because the jump uses containment, while the ribbon and the menu compared against the
+anchor and saw nothing: a page you could navigate to that offered to bookmark itself all over
+again. Asking the question the same way the jump asks it is what stops the two drifting apart.
+The stored index is never rewritten to heal it — resolving correctly makes healing
+unnecessary, and silently editing a reader's saved position on a font change is worse than the
+bug.
+
+**Two index spaces, one block index.** `parseMarkdown` numbers a chapter as WRITTEN; the
+reader numbers it as DISPLAYED, and prepends exactly one synthetic block — the italic byline,
+which also carries the title when the model forgot to write one. Bookmarks, annotations, ink
+and the pager all live in the displayed space, because the reader is what created them.
+Anything crossing the line converts through `readerBlockIndex` (`READER_LEADING_BLOCKS`).
+Search hits are the first thing that ever had to: they come from the file. The closing picture
+is appended at the END for exactly this reason — adding to the tail shifts no existing index.
+
+Rules: `course.json` is the only file the app mutates on ordinary progress updates. Chapters
+are immutable once generated — never silently overwrite something the user annotated.
+
+**Rewriting a chapter (built 2026-09-21)** keeps the second half of that rule and inverts the
+first. The live file stays at `<slug>.md` and the previous body is renamed to `<slug>.r1.md`,
+`.r2.md` and so on (`CourseStore.archiveChapter`), rather than the new revision taking the
+numbered name and a pointer moving. The pointer version was specced first and dropped on
+contact with the rest of the app: every reader, paginator and anchor path resolves a chapter
+by its slug, so a revision pointer would have added an indirection to all of them to serve a
+feature with no UI for reading an old revision. Archiving costs a rename and keeps the promise
+that matters — the text is still on disk, greppable, for a reader who wants it back.
+
+Nothing is silent. `RewriteChapterDialog` names what will be lost before anything happens:
+annotations, bookmarks and ink for that chapter, which anchor by block index into prose that
+is about to be replaced. What survives is anything that is a RECORD rather than a POINTER —
+the Q&A transcript, `reader.md`, and the cover and closing pictures, which illustrate the
+chapter's title and objectives and those come from the outline, which a rewrite does not
+touch. Inline figures do NOT survive: they are stored as `<chapter>-<ordinal>` and matched by
+slot ordinal, so a stale one would silently illustrate an unrelated paragraph.
+
+The order in `compileChapter` is load-bearing: generate first, destroy second. A rewrite that
+fails at the API must leave the book exactly as it was.
+
+`memory.md` is rewritten in place too (`CourseMemory.replaceChapter`), not appended to. It is
+read whole by every later chapter, so an old summary left in it teaches the book prose nobody
+will ever read. The prompt for a rewrite also hides that chapter's own memory block from the
+model — reading back a summary of the draft being thrown away is the surest way to get the
+same chapter again — and deliberately does NOT include the old text: the aim is a fresh route
+to the same objectives, and a model shown its own previous draft edits it instead of
+rethinking it.
 
 ## 2. Chapter format
 
@@ -447,9 +496,46 @@ Written by the same cheap follow-up call that already appends to `memory.md` at 
 - Should the reader be *told* the next chapter was adapted? Leaning yes, in one line — silent
   adaptation is where this starts to feel like surveillance rather than teaching.
 
+## 14. Library housekeeping (built 2026-09-21)
+
+The three gaps that made the app read as a prototype to anyone who was not its author —
+named on 2026-09-15, built together.
+
+**Delete a course.** `CourseStore.deleteCourse` is the only destructive operation in the
+store, and it is deliberately fussy: the directory has to sit directly under the courses root
+and contain a `course.json`, so a recursive delete can never be aimed at something else. It
+also clears `last_read.json` when that pointed at the doomed course, or the next cold start
+opens a book that is not on disk. The confirm dialog counts what is about to go — written
+chapters, notes, questions, bookmarks, inked chapters — because the files ARE the book and
+there is no trash to fish it back out of.
+
+**Search.** `CourseSearch`, over the same BLOCKS the reader paginates rather than raw file
+offsets, so a hit carries a block index and opens at the right page whatever the current font
+size. Case-insensitive substring of the whole query: not stemming, not fuzzy, not
+all-terms-anywhere — a reader typing "gradient descent" means those two words in that order,
+and a search that quietly broadens the question is one you cannot predict or narrow. Fence
+bodies are searched, because a recap is often where a concept got its clearest one-line
+statement. The reader's own marks lead the results: there are few of them and they are their
+own words, so a note about the thing you are looking for beats the paragraph that prompted it.
+No index is built — reading every chapter of one book off disk per keystroke is milliseconds,
+and an index is a thing that can fall out of step with the files.
+
+Results scroll, unlike the Contents. The no-scrolling rule is about the reading surface: a
+page of a book has a fixed extent and pretending otherwise is what makes e-readers feel wrong.
+A result list has no such nature; it is machinery, like the Library.
+
+**Questions split from notes in the Contents.** They shared a "Notes" section, which meant a
+question rendered with the write-glyph and an empty body — asks carry no note text, their
+words live in the chapter's Q&A file. The split is not taxonomy, it is volume: a question is
+one gesture and a note is typed on an e-ink keyboard, so over a book the questions vastly
+outnumber the notes and merged lists drown the scarcer, more valuable thing. Notes lead;
+questions follow, each showing the question it asked, matched to the transcript by passage.
+A passage marked with no question typed says "no question yet" — a real state, which
+`ReaderSignals` reads as "stopped here but could not put the difficulty into words".
+
 ## 12. Open questions (revisit while building)
 
 - Exercise answers: reveal-in-place vs. end-of-chapter answer pages?
 - Should daily pacing split chapters into "sessions" (reading positions with time estimates), or is chapter granularity enough for v1? (Lean: chapter granularity is enough.)
-- Regeneration UX: "this chapter didn't land, redo it with feedback" — where does user feedback slot into the prompt? (Probably appended to the chapter spec + noted in memory.md.)
+- ~~Regeneration UX: "this chapter didn't land, redo it with feedback" — where does user feedback slot into the prompt?~~ **Settled 2026-09-21**: its own `THIS IS A REWRITE` section after the chapter spec, carrying the reader's reason verbatim and asking for a different route to the same objectives. Not noted in `memory.md` — that file records what the book taught, and a rejected draft taught nothing.
 - Gemini structured-output mode for outline JSON vs. parse-from-text? (Lean: structured output.)
