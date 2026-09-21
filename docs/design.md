@@ -110,6 +110,20 @@ The stored index is never rewritten to heal it — resolving correctly makes hea
 unnecessary, and silently editing a reader's saved position on a font change is worse than the
 bug.
 
+**Who writes the chapter title.** The byline block always prints "Chapter N"; the title itself
+comes from whichever heading the chapter opens with, or from the outline if it opens with
+none. "Opens with a heading" means **level 1 or 2**, not level 1 alone — the model writes the
+title as `##` often enough, and reading that as "no title here" made the app inject one from
+the outline and then render the model's heading below it: the same chapter titled twice, the
+second time carrying "Chapter 6:" (seen on the first real rewrite, 2026-09-21). Level 3 and
+deeper are section headings, and a chapter opening straight into one genuinely has no title.
+
+The opening heading is normalised to level 1 and has any leading "Chapter N:" stripped
+(`stripChapterNumber`), so a title is set in title type and numbered once, whatever the model
+typed. Normalising happens by COPYING the block in place — never by inserting or removing one,
+which would slide every annotation and ink anchor after it. The prompt also asks for `#` and
+for the number to be left out, but that is variance reduction, not the fix.
+
 **Two index spaces, one block index.** `parseMarkdown` numbers a chapter as WRITTEN; the
 reader numbers it as DISPLAYED, and prepends exactly one synthetic block — the italic byline,
 which also carries the title when the model forgot to write one. Bookmarks, annotations, ink

@@ -447,6 +447,23 @@ fun ReaderScreen(
         is CompileState.Failed -> state.message
         else -> null
     }
+    // The same state said out loud on the page itself. A rewrite replaces a
+    // chapter the reader is looking at, and until it lands the page is
+    // unchanged — so without this, tapping Rewrite does nothing visible for
+    // the best part of a minute and the only honest reading is that it
+    // failed. It goes in the footer because that is the one strip of the
+    // page that is already chrome, and it is a LABEL rather than a spinner:
+    // an animation on e-ink is a repaint every frame.
+    val readerStatus = when (val state = compileState) {
+        CompileState.Running -> "Rewriting this chapter…"
+        is CompileState.Illustrating -> "Drawing pictures… ${state.done}/${state.total}"
+        is CompileState.Failed -> state.message
+        CompileState.Idle -> null
+    }
+    // Anything that spends an API call is off while one is in flight. Failed
+    // is deliberately not busy — the way to recover is to try again.
+    val compileBusy = compileState is CompileState.Running ||
+        compileState is CompileState.Illustrating
     val blocks = remember(markdown, chapter, course) {
         val parsed = markdown?.let { parseMarkdown(it) } ?: emptyList()
         if (chapter == null || parsed.isEmpty()) parsed
@@ -476,7 +493,17 @@ fun ReaderScreen(
             // own Heading on purpose: annotations and ink are anchored by
             // block index, and inserting a block would slide every anchor in
             // exactly the chapters that lack a title.
-            val opensWithTitle = (parsed.firstOrNull() as? Block.Heading)?.level == 1
+            // A chapter opens with its own title if its first block is a
+            // heading at title depth. LEVEL 1 OR 2, not level 1 alone: the
+            // model writes the title as "##" often enough, and reading that
+            // as "no title here" made the app inject one from the outline and
+            // then render the model's heading underneath it — the same
+            // chapter titled twice, the second time carrying "Chapter 6:".
+            // Level 3 and deeper are section headings; a chapter that opens
+            // straight into one genuinely has no title of its own.
+            val openingHeading = (parsed.firstOrNull() as? Block.Heading)
+                ?.takeIf { it.level <= 2 }
+            val opensWithTitle = openingHeading != null
             val coverName = course?.slug?.let { slug ->
                 store.coverFile(slug, chapter.slug)?.name
             }
@@ -490,12 +517,22 @@ fun ReaderScreen(
                 if (coverName != null && !opensWithTitle) put("cover", coverName)
             }
             val meta = Block.CustomFence(kind = "meta", params = metaParams, body = metaBody)
-            val rest = if (coverName != null && opensWithTitle) {
-                // Attach the cover to the model's own h1 by tagging that
-                // heading — no block is added or removed, so every annotation
-                // and ink anchor keeps its index.
+            val rest = if (openingHeading != null) {
+                // Tag the model's own heading rather than adding a block, so
+                // every annotation and ink anchor keeps its index. Normalised
+                // to level 1 while we are here: whether a chapter title is
+                // set in title type or section type should not depend on how
+                // many hashes the model happened to type.
                 parsed.mapIndexed { i, b ->
-                    if (i == 0 && b is Block.Heading) b.copy(coverSrc = coverName) else b
+                    if (i == 0 && b is Block.Heading) {
+                        b.copy(
+                            level = 1,
+                            inlines = stripChapterNumber(b.inlines),
+                            coverSrc = coverName,
+                        )
+                    } else {
+                        b
+                    }
                 }
             } else {
                 parsed
@@ -741,6 +778,7 @@ fun ReaderScreen(
                         pendingGestureStroke = null
                     },
                     onFirstBlockChange = { headerFirstBlock = it },
+                    status = readerStatus,
                     bookmarkedBlocks = course?.bookmarks
                         ?.filter { it.chapterSlug == chapterSlug }
                         ?.map { it.blockIndex }
@@ -1049,7 +1087,7 @@ fun ReaderScreen(
                 },
                 pendingFigures = pendingFigures,
                 figureStatus = figureStatus,
-                busyDrawing = compileState is CompileState.Illustrating,
+                busyDrawing = compileBusy,
                 pendingBadges = pendingBadges,
                 hasCover = hasCover,
                 hasTail = hasTail,
@@ -1208,6 +1246,8 @@ private fun PagedContent(
     onDismissChip: () -> Unit,
     onToggleMenu: () -> Unit,
     onFirstBlockChange: (Int) -> Unit,
+    /** A line of chrome for the footer — what the app is doing, or null. */
+    status: String?,
     /** Block indices of this chapter's bookmarks, for resolving against pages. */
     bookmarkedBlocks: List<Int>,
     /** The stored block index of the bookmark that lands on the current page, or null. */
@@ -1859,10 +1899,17 @@ private fun PagedContent(
                         style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
                         modifier = Modifier.weight(1f),
                     )
-                    // Instructional chrome, so it is temporary by design: once
-                    // the tap zones are learned the hint is just noise on every
-                    // page of the book. Retires itself after a dozen turns.
-                    if (showTapHint) {
+                    // What the app is doing outranks the hint: the hint is
+                    // there to teach a gesture, and being told a chapter is
+                    // being rewritten matters more than that, for the minute
+                    // it takes.
+                    if (status != null) {
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.bodySmall.copy(color = InkColor),
+                            textAlign = TextAlign.End,
+                        )
+                    } else if (showTapHint) {
                         Text(
                             // Describes the zones as they now are: narrow
                             // bands at the two EDGES turn the page, the menu
@@ -4292,17 +4339,22 @@ private fun RewriteChapterDialog(
     onConfirm: (String) -> Unit,
 ) {
     var feedback by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Rewrite “$chapterTitle”") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    InkDialog(
+        title = "Rewrite “$chapterTitle”",
+        onDismiss = onDismiss,
+        confirmLabel = "Rewrite",
+        onConfirm = { onConfirm(feedback) },
+        dismissLabel = "Keep it",
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = "The chapter is written again from its objectives, and this " +
                         "chapter starts over: everything you did in it goes with the " +
                         "old text.",
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = InkColor,
                 )
                 if (marksLost.isNotEmpty()) {
                     // Everything here points INTO the prose being replaced —
@@ -4311,13 +4363,16 @@ private fun RewriteChapterDialog(
                     // decision rather than a surprise.
                     Text(
                         text = "That means losing $marksLost.",
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        color = InkColor,
                     )
                 }
                 Text(
                     text = "The old chapter and its questions stay on disk as files, " +
                         "and the chapter's pictures are kept.",
+                    fontFamily = FontFamily.Serif,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = MutedColor,
@@ -4331,6 +4386,7 @@ private fun RewriteChapterDialog(
                         text = "Chapter${if (laterChapters.size == 1) "" else "s"} $list " +
                             "already exist and were written against the old version of " +
                             "this one. They are left alone.",
+                        fontFamily = FontFamily.Serif,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         color = MutedColor,
@@ -4358,17 +4414,13 @@ private fun RewriteChapterDialog(
                         focusedContainerColor = PaperColor,
                         unfocusedContainerColor = PaperColor,
                         cursorColor = InkColor,
+                        // The default indicator is the theme's purple.
+                        focusedIndicatorColor = InkColor,
+                        unfocusedIndicatorColor = MutedColor,
                     ),
                 )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(feedback) }) { Text("Rewrite") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Keep it") }
-        },
-    )
+        }
+    }
 }
 
 /**
@@ -4409,4 +4461,27 @@ private fun describeChapterMarks(
         1 -> parts.first()
         else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
     }
+}
+
+/** "Chapter 6: ", "Chapter 6 — ", "Chapter 6." at the head of a title. */
+internal val CHAPTER_NUMBER_PREFIX = Regex("""^\s*chapter\s+\d+\s*[:.–—-]\s*""", RegexOption.IGNORE_CASE)
+
+/**
+ * Drops a leading "Chapter N:" from a chapter's own title heading.
+ *
+ * The byline directly above it already reads "Chapter 6 · ~30 min · Day 8",
+ * and it is there precisely so every chapter is numbered the same way
+ * whatever the model wrote. Leaving the model's prefix in place puts the
+ * number twice on two adjacent lines.
+ *
+ * Only the first inline is touched, and only if something is left afterwards
+ * — a heading that is nothing but "Chapter 6" is the title, badly written,
+ * and blanking it would be worse than repeating the number.
+ */
+internal fun stripChapterNumber(inlines: List<Inline>): List<Inline> {
+    val first = inlines.firstOrNull() as? Inline.Text ?: return inlines
+    val stripped = first.text.replaceFirst(CHAPTER_NUMBER_PREFIX, "")
+    if (stripped == first.text) return inlines
+    if (stripped.isBlank() && inlines.size == 1) return inlines
+    return listOf(Inline.Text(stripped)) + inlines.drop(1)
 }
