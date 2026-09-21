@@ -18,23 +18,63 @@ package com.inkfirst.core
 const val FIGURE_ASPECT_RATIO: String = "4:3"
 
 /**
- * The single string that decides whether a course looks like a book or like
- * a pile of stock AI art. Appended verbatim to every image request, so all
- * figures in all courses share one visual voice. Tune here and nowhere else.
+ * The rules every figure obeys whatever its job — the ones that decide
+ * whether a course looks like a book or like a pile of stock AI art. Tune
+ * here and nowhere else.
  */
-internal val SKETCH_HOUSE_STYLE: String = listOf(
+private val SHARED_STYLE: List<String> = listOf(
     "Medium: a loose hand-drawn ink sketch, the kind someone doodles in the margin of a notebook with a felt-tip pen. Visible hand wobble in the lines. Output a flat drawing, not a photograph of one — no paper texture, no sketchbook page, no binding, no page edges, no camera lighting. Not a 3D render, not clip art, not vector art.",
     "Colour: pure greyscale. Black ink on a pure white background — #FFFFFF, the same white as the page it sits on. No colour anywhere.",
     "Line and tone: PURE LINE ART. Bold confident black outlines that survive being shrunk, on white. Shading only ever as hatching or cross-hatching — visible separate pen strokes. Absolutely no filled grey areas, no grey wash, no marker tone, no soft shading, no gradients, no drop shadows and no large solid black areas. If a shape needs to look darker, hatch it with more lines; never fill it with tone.",
-    "Composition: ZOOM IN CLOSE. The subject must fill the frame edge to edge, taking up at least three quarters of the image — crop into it if that helps. No wide empty margins, no distant wide shot, no small figure lost in a large scene. Draw one clear subject only.",
     "Detail level: keep it simple and bold. This is reduced to a few centimetres on a low-resolution grey screen, so fine detail, thin lines and small elements disappear entirely.",
-    "Text, if any: at most a handful of words — a short speech bubble or one big label. A character saying something in a speech bubble is welcome and encouraged. Keep it to three or four SHORT everyday words; a long word is a long word to hand-letter and comes back mangled.",
     "SPELLING IS PART OF THE DRAWING: write each word once, spelled correctly, complete. Do not print a word twice, do not start a word and restart it beside itself, do not leave one half-finished or trailing off. Read the lettering back before finishing — a picture that says \"LEAR LEARNING\" is a spoiled picture however good the drawing is. If a word is hard to letter, choose a shorter one.",
     "TEXT SIZE IS CRITICAL: hand-letter every word ENORMOUS. Each capital letter must be at least one twelfth of the whole image height, and a speech bubble must span at least a third of the image width — comic-book lettering, absurdly oversized, as if shouted. Write text straight and horizontal, never rotated, curved or along a slope. The whole picture is reduced to a few centimetres on a small grey screen, so normal-sized lettering becomes an unreadable smudge. If the words will not fit at that size, use fewer words — never smaller ones.",
-    "Mood: warm, a little humorous, human. The point is to make a page of study material feel alive.",
     "Framing: draw ONLY the illustration itself, never the page it will sit on. No border or frame line around the image, no header, no running title, no book or chapter name, no page number, no caption, no margins, no drop shadow, no watermark. The app puts the picture on the page and sets all type itself.",
     "Background: flat pure white, no tint, no grey wash, no paper texture, no vignette — any background tone shows up as a visible grey rectangle on the page. Draw no setting or scenery unless the idea genuinely needs one.",
-).joinToString("\n") { "- $it" }
+)
+
+/** What a MOOD figure adds: one vivid subject, a shouted line, a smile. */
+private val MOOD_STYLE: List<String> = listOf(
+    "Composition: ZOOM IN CLOSE. The subject must fill the frame edge to edge, taking up at least three quarters of the image — crop into it if that helps. No wide empty margins, no distant wide shot, no small figure lost in a large scene. Draw one clear subject only.",
+    "Text, if any: at most a handful of words — a short speech bubble or one big label. A character saying something in a speech bubble is welcome and encouraged. Keep it to three or four SHORT everyday words; a long word is a long word to hand-letter and comes back mangled.",
+    "Mood: warm, a little humorous, human. The point is to make a page of study material feel alive.",
+)
+
+/**
+ * What a SHOW figure adds instead: this one has a job, and being charming is
+ * not it. The reader is going to copy what this picture shows, so the thing
+ * has to be legible and right, and anything decorative is competition.
+ *
+ * The hand rule is here because it is the known failure. A grip is among the
+ * hardest subjects an image model is asked for — fused fingers, six of them,
+ * impossible thumbs — and a wrong hand does not read as charmingly loose, it
+ * reads as broken. Loose ink line art is far more forgiving than photorealism
+ * (wobble passes as style), which is the only reason this is worth trying at
+ * all.
+ */
+private val SHOW_STYLE: List<String> = listOf(
+    "THE PICTURE HAS A JOB: the reader is looking at this to learn how the thing actually is, and will copy it. Draw the thing itself, plainly and correctly. Do not turn it into a joke, a metaphor, a mascot or a scene — those are welcome elsewhere in this book but they are wrong here.",
+    "Composition: one close, plain view of the subject, filling the frame. No setting, no scenery, no background objects, no bystanders, no characters reacting. Nothing in the frame that is not part of what is being shown.",
+    "Accuracy is the whole point: proportions correct, and the specific relationship the brief describes clearly visible — what touches what, what sits where, which way round it goes. If an angle would hide the thing being shown, choose the angle that reveals it.",
+    "IF A HAND APPEARS, it is the hardest part of this drawing and the part most likely to spoil it: draw exactly five fingers, separate and countable, in a pose a real hand can hold. Show clearly where each finger contacts the object. A hand with the wrong number of fingers makes the picture useless, however good the rest is.",
+    "Text, if any: at most ONE short label of one or two words, and only if a part genuinely needs naming. No speech bubbles and no jokes in the lettering — words take space from the thing being shown.",
+    "Mood: calm and clear rather than comic. Still warm and hand-drawn, never cold or technical — a patient teacher's sketch on a napkin, not an engineering drawing.",
+)
+
+/**
+ * Backwards-compatible name for the mood style, which is what "the house
+ * style" meant when there was only one. Referenced by design.md §7.
+ */
+internal val SKETCH_HOUSE_STYLE: String =
+    (SHARED_STYLE + MOOD_STYLE).joinToString("\n") { "- $it" }
+
+/** The style rules for one kind of figure, as a prompt block. */
+internal fun houseStyleFor(kind: FigureKind): String = when (kind) {
+    FigureKind.MOOD -> SKETCH_HOUSE_STYLE
+    // Show rules first: they decide what the picture is, and the shared rules
+    // only decide how it is drawn.
+    FigureKind.SHOW -> (SHOW_STYLE + SHARED_STYLE).joinToString("\n") { "- $it" }
+}
 
 /**
  * Builds the image-generation brief for one figure slot. Image models take
@@ -46,8 +86,17 @@ internal fun buildFigurePrompt(
     chapterTitle: String,
     brief: String,
     context: String,
+    kind: FigureKind = FigureKind.MOOD,
 ): String = buildString {
-    appendLine("Draw a single illustration to be placed on a page of a study book.")
+    appendLine(
+        when (kind) {
+            FigureKind.MOOD ->
+                "Draw a single illustration to be placed on a page of a study book."
+            FigureKind.SHOW ->
+                "Draw a single instructional illustration for a page of a study book. " +
+                    "The reader will look at it to see how the thing actually is, and copy it."
+        },
+    )
     appendLine()
     appendLine("WHERE IT APPEARS — background knowledge only. These are NOT things to draw,")
     appendLine("and none of these words may appear anywhere in the image:")
@@ -63,7 +112,7 @@ internal fun buildFigurePrompt(
     }
     appendLine()
     appendLine("STYLE — follow every rule exactly:")
-    append(SKETCH_HOUSE_STYLE)
+    append(houseStyleFor(kind))
 }
 
 /**

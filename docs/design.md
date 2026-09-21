@@ -344,10 +344,43 @@ house style against emulator screenshots.**
 
 **Constraints that shaped it.** Figures are requested and displayed at a fixed 4:3 (`FIGURE_ASPECT`), which is what lets the paginator reserve a figure's height without opening the file. Rendering forces saturation to zero — the panel is greyscale, and unlike the UI chrome (pure black and white, to dodge dither patterns) a sketch is *meant* to dither, but a colour cast would muddy it.
 
+### Two kinds of figure (2026-09-21)
+
+The fence now carries `kind="show"`, which is the dispatch the previous paragraph had parked.
+It was forced by a real page: a chapter teaching how to hold a pencil — fingers back from the
+tip, resting on the middle joint — was illustrated with *"a very relaxed capybara holding a
+giant wooden pencil in a sunny meadow"*. A good picture that teaches nothing about the grip,
+and not the model's fault: the chapter prompt said to describe a concrete SCENE and used
+"a diagram of the classification process" as the worked example of what to refuse.
+
+So "mood, not reference" was too strong as a blanket rule. It is right for most of a book and
+wrong for the passages where the reader has to SEE the thing to do it.
+
+- **MOOD** (default, unchanged) — a scene, one vivid subject, a shouted speech bubble, a smile.
+- **SHOW** — the thing itself. The brief describes the object and the relationship that
+  matters, not a scene. Style rules diverge: no setting, no character, no speech bubble, plus
+  an explicit accuracy rule and a rule about hands, which are the known failure mode. An
+  abstraction made concrete belongs here too — if the prose says a weight is "like a knob you
+  turn", the knob is a show figure.
+
+**This is not the §7 rejection being reopened.** What was rejected was a semantic diagram DSL
+rendered natively in Compose — boxes and arrows, accurate and boring. A SHOW figure is still a
+hand-drawn sketch from the image model in the same house style; only its job on the page
+differs. `SKETCH_HOUSE_STYLE` is now `SHARED_STYLE + MOOD_STYLE`, with `SHARED_STYLE` holding
+everything that keeps a book looking like one book, so the two kinds can never drift apart on
+medium, colour, line or framing.
+
+Figure COUNT also stopped being flat. The prompt said "two or three per chapter is plenty",
+which is stingy for a physical skill; it now scales with how visual the subject is — five or
+six for hands-on work, two for a chapter of pure ideas.
+
+**Unproven at time of writing.** A pencil grip is among the hardest subjects an image model is
+given, and a hand with six fingers does not read as charmingly loose. Loose ink line art is far
+more forgiving than photorealism, which is the only reason this is worth trying — but expect
+the same tuning rounds the grey wash and the lettering needed.
+
 **Deliberately not done yet.** A recurring cast of characters across *figures* — though the
-mechanism now exists and is used by badges (§9), so this is mostly plumbing. Also unbuilt:
-`type=` on the fence to dispatch different figure kinds (a structural renderer could still slot
-in beside the sketch path later).
+mechanism now exists and is used by badges (§9), so this is mostly plumbing.
 
 ## 9. Badges (2026-09-14)
 

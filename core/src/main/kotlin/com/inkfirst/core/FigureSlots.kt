@@ -14,6 +14,37 @@ package com.inkfirst.core
  * ```figure alt="…"``` shape the model routinely emits — so ordinals here
  * always line up with the figure blocks the renderer sees.
  */
+/**
+ * What a figure is FOR, which decides how its brief is drawn.
+ *
+ * [MOOD] is the original and remains the default: a silly visual metaphor
+ * that stops a study page reading as a wall of text. [SHOW] is for the
+ * passages where the reader has to SEE the thing to do it.
+ *
+ * The split was forced by a real page (2026-09-21). A chapter teaching how to
+ * hold a pencil — fingers back from the tip, resting on the middle joint —
+ * was illustrated with "a very relaxed capybara holding a giant wooden pencil
+ * in a sunny meadow". A good picture that teaches nothing about the grip, and
+ * not the model's fault: the chapter prompt told it to describe a SCENE and
+ * gave rejecting a diagram as the worked example.
+ *
+ * This is NOT the semantic diagram DSL that design.md §7 rejected. That was
+ * boxes and arrows rendered natively — accurate schematics nobody enjoys
+ * looking at. A SHOW figure is still a hand-drawn picture from the image
+ * model in the same house style; only its job on the page is different.
+ */
+enum class FigureKind {
+    MOOD,
+    SHOW,
+    ;
+
+    companion object {
+        /** Parses the fence's `kind="…"` param. Anything unrecognised is [MOOD]. */
+        fun parse(raw: String?): FigureKind =
+            if (raw?.trim()?.lowercase() == "show") SHOW else MOOD
+    }
+}
+
 data class FigureSlot(
     /** 1-based position among the figures of this chapter, in document order. */
     val ordinal: Int,
@@ -25,6 +56,8 @@ data class FigureSlot(
     val body: String,
     /** The `src="…"` param once a picture has been generated; null while empty. */
     val src: String?,
+    /** What the picture is for — see [FigureKind]. Absent param reads as [FigureKind.MOOD]. */
+    val kind: FigureKind = FigureKind.MOOD,
 ) {
     /** What to actually draw — alt text, falling back to the fence body. */
     val brief: String get() = alt.ifBlank { body.trim() }
@@ -68,8 +101,10 @@ fun findFigureSlots(markdown: String): List<FigureSlot> {
             }
         }
 
-        val (kind, params) = parseFenceInfo(info)
-        if (kind == "figure") {
+        // `fenceKind` is which FENCE this is (figure / exercise / recap);
+        // FigureSlot.kind is what the figure is FOR. Different questions.
+        val (fenceKind, params) = parseFenceInfo(info)
+        if (fenceKind == "figure") {
             ordinal++
             slots += FigureSlot(
                 ordinal = ordinal,
@@ -77,6 +112,7 @@ fun findFigureSlots(markdown: String): List<FigureSlot> {
                 alt = params["alt"].orEmpty(),
                 body = body.toString(),
                 src = params["src"]?.ifBlank { null },
+                kind = FigureKind.parse(params["kind"]),
             )
         }
         i++

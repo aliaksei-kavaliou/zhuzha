@@ -160,4 +160,86 @@ class FigureSlotsTest {
         assertFalse(context.contains("Skipped heading"))
         assertFalse(context.contains("```"))
     }
+
+    @Test
+    fun `a fence with no kind param is a mood figure`() {
+        val md = """
+            Some prose.
+
+            ```figure alt="A tired robot sorting socks"
+            ```
+        """.trimIndent()
+
+        assertEquals(FigureKind.MOOD, findFigureSlots(md).single().kind)
+    }
+
+    @Test
+    fun `kind=show is parsed`() {
+        // The passage this exists for: a chapter teaching a pencil grip got a
+        // capybara in a meadow, because the prompt asked for a scene.
+        val md = """
+            ```figure kind="show" alt="A hand holding a pencil well back from the tip"
+            ```
+        """.trimIndent()
+
+        val slot = findFigureSlots(md).single()
+        assertEquals(FigureKind.SHOW, slot.kind)
+        assertEquals("A hand holding a pencil well back from the tip", slot.alt)
+    }
+
+    @Test
+    fun `an unrecognised kind falls back to mood rather than failing`() {
+        // A generated fence is model output; a typo must cost the picture its
+        // treatment, never the picture.
+        val md = """
+            ```figure kind="diagram" alt="something"
+            ```
+        """.trimIndent()
+
+        assertEquals(FigureKind.MOOD, findFigureSlots(md).single().kind)
+    }
+
+    @Test
+    fun `kind survives having src written back into the fence`() {
+        // withFigureSrc rewrites the opener line in place; losing the kind
+        // there would silently re-brief the picture on any later redraw.
+        val md = """
+            ```figure kind="show" alt="A hand holding a pencil"
+            ```
+        """.trimIndent()
+
+        val filled = withFigureSrc(md, mapOf(1 to "01-intro-1.jpg"))
+        val slot = findFigureSlots(filled).single()
+        assertEquals(FigureKind.SHOW, slot.kind)
+        assertEquals("01-intro-1.jpg", slot.src)
+    }
+
+    @Test
+    fun `the two kinds brief the artist differently`() {
+        val course = Course(
+            title = "Sketching", slug = "sketching", topicPrompt = "draw",
+            priorKnowledge = "none", dailyMinutes = 30, style = "headfirst-inspired",
+            model = "gemini-x", created = "2026-09-21", chapters = emptyList(),
+        )
+        val mood = buildFigurePrompt(course, "Holding the pencil", "a hand on a pencil", "", FigureKind.MOOD)
+        val show = buildFigurePrompt(course, "Holding the pencil", "a hand on a pencil", "", FigureKind.SHOW)
+
+        // A show figure is told the picture has a job and that hands are the
+        // thing most likely to spoil it; a mood figure is invited to be funny.
+        assertTrue(show.contains("THE PICTURE HAS A JOB"))
+        assertTrue(show.contains("exactly five fingers"))
+        assertFalse(mood.contains("THE PICTURE HAS A JOB"))
+
+        assertTrue(mood.contains("a little humorous"))
+        assertFalse(show.contains("a little humorous"))
+        // Speech bubbles are encouragement in one and forbidden in the other.
+        assertTrue(mood.contains("speech bubble is welcome"))
+        assertTrue(show.contains("No speech bubbles"))
+
+        // Both still share the rules that keep the book looking like one book.
+        listOf(mood, show).forEach {
+            assertTrue(it.contains("pure greyscale"))
+            assertTrue(it.contains("PURE LINE ART"))
+        }
+    }
 }

@@ -165,6 +165,7 @@ class ChapterIllustrator(
                         chapterTitle = chapter.title,
                         brief = slot.brief,
                         context = contextAround(markdown, slot),
+                        kind = slot.kind,
                     ),
                     aspectRatio = FIGURE_ASPECT_RATIO,
                     apiKey = apiKey,
