@@ -37,19 +37,50 @@ class CourseStoreTest {
     )
 
     @Test
-    fun `archiveChapter files the old body beside the new one`(@TempDir tmp: File) {
+    fun `archiveChapter sets the old body aside`(@TempDir tmp: File) {
         val store = CourseStore(tmp)
         store.createTest("book")
         store.saveChapter("book", "01-intro", "first attempt")
 
-        assertEquals("01-intro.r1.md", store.archiveChapter("book", "01-intro"))
+        assertEquals("01-intro.previous.md", store.archiveChapter("book", "01-intro"))
         assertNull(store.readChapter("book", "01-intro"))
-        assertEquals("first attempt", File(tmp, "book/chapters/01-intro.r1.md").readText())
+        assertEquals("first attempt", File(tmp, "book/chapters/01-intro.previous.md").readText())
+    }
 
-        // A second rewrite must not clobber the first archive.
+    @Test
+    fun `archiving is one generation deep, not a chain`(@TempDir tmp: File) {
+        // A numbered chain implies a version history, and nothing can
+        // navigate one — the app offers no rollback. "Previous" is all anyone
+        // wants: a rewrite that missed is noticed at once, not five later.
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.saveChapter("book", "01-intro", "first attempt")
+        store.archiveChapter("book", "01-intro")
         store.saveChapter("book", "01-intro", "second attempt")
-        assertEquals("01-intro.r2.md", store.archiveChapter("book", "01-intro"))
-        assertEquals("first attempt", File(tmp, "book/chapters/01-intro.r1.md").readText())
+        store.archiveChapter("book", "01-intro")
+
+        assertEquals("second attempt", File(tmp, "book/chapters/01-intro.previous.md").readText())
+        assertEquals(
+            listOf("01-intro.previous.md"),
+            File(tmp, "book/chapters").list().orEmpty().sorted(),
+        )
+    }
+
+    @Test
+    fun `the chapter list comes from course_json, so an archive is never read as one`(
+        @TempDir tmp: File,
+    ) {
+        // Nothing enumerates the chapters directory — a chapter is addressed
+        // by the exact slug held in course.json, and slugs are kebab-case
+        // with no dot in them. That is what keeps the archive inert rather
+        // than any filtering on read.
+        val store = CourseStore(tmp)
+        store.createTest("book")
+        store.saveChapter("book", "01-intro", "body")
+        store.archiveChapter("book", "01-intro")
+
+        assertNull(store.readChapter("book", "01-intro"))
+        assertTrue(store.load("book")!!.chapters.none { it.slug.contains('.') })
     }
 
     @Test
@@ -152,7 +183,7 @@ class CourseStoreTest {
 
         assertEquals("", store.readQa("book", "01-intro"))
         assertTrue(
-            File(tmp, "book/notes/01-intro.r1.qa.md").readText().contains("what is this?"),
+            File(tmp, "book/notes/01-intro.previous.qa.md").readText().contains("what is this?"),
         )
     }
 

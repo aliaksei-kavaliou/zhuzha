@@ -153,13 +153,30 @@ would freeze — the old reading's observations kept forever, the new reading of
 chapter never recorded at all. `ReaderNotes.removeChapter` takes the section out so the
 rewritten chapter can be read afresh.
 
-Nothing is actually destroyed on disk. `archiveChapter` files both the body and the transcript
-away under the same revision number — `<slug>.r1.md` and `<slug>.r1.qa.md` — precisely because
-the transcript only means anything next to the prose it quotes. The cover and closing pictures
-survive in place: they illustrate the chapter's title and objectives, and those come from the
-outline, which a rewrite does not touch. Inline figures do not: they are stored as
-`<chapter>-<ordinal>` and matched by slot ordinal, so a stale one would silently illustrate an
-unrelated paragraph.
+Nothing is destroyed on disk. `archiveChapter` sets the body and the transcript aside as
+`<slug>.previous.md` and `<slug>.previous.qa.md` — together, because the transcript only means
+anything next to the prose it quotes.
+
+**One generation, not a chain.** `.r1`, `.r2`, `.r3` was the first attempt and it promised a
+version history that nothing can navigate: the app has no rollback and is not going to grow a
+revision browser. It also fills a directory the reader is meant to browse with files nobody
+can act on, which costs the very value the archive defends. Recovery is by hand — rename the
+file back — and in practice a rewrite that missed is noticed at once, not five rewrites later.
+
+The storage argument points the same way but is not the reason, because the measured numbers
+are lopsided: on the first real course a chapter is about **10 KB** of Markdown while its
+inline figures are about **1.9 MB**, and figures are 89% of the 12.6 MB course. A rewrite
+deletes the figures and keeps the text, so it frees roughly two hundred times what it stores.
+Archiving was never going to be what filled the device.
+
+The cover and closing pictures survive in place: they illustrate the chapter's title and
+objectives, and those come from the outline, which a rewrite does not touch. Inline figures do
+not: they are stored as `<chapter>-<ordinal>` and matched by slot ordinal, so a stale one would
+silently illustrate an unrelated paragraph.
+
+Nothing enumerates the chapters directory — a chapter is addressed by the exact slug held in
+`course.json`, and slugs are kebab-case with no dot — so the archive is inert without any
+filtering on read.
 
 The general form of the rule, for whenever whole-book regeneration arrives: **a regenerated
 thing starts over, and what it replaces is archived rather than deleted.** Deleting the course

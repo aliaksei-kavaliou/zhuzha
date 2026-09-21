@@ -94,32 +94,44 @@ class CourseStore(private val root: File) {
     }
 
     /**
-     * Files a chapter's current body and its Q&A transcript away as revision
-     * `n`: `chapters/<slug>.r<n>.md` and `notes/<slug>.r<n>.qa.md`. Returns
-     * the chapter file's new name, or null if there was nothing to archive.
+     * Sets a chapter's current body and Q&A transcript aside as
+     * `chapters/<slug>.previous.md` and `notes/<slug>.previous.qa.md`,
+     * replacing whatever was there before. Returns the chapter file's new
+     * name, or null if there was nothing to set aside.
      *
-     * Called before a rewrite. The app never shows these files and nothing
-     * reads them back — they exist because the whole premise of this project
-     * is that the study material is plain, inspectable files that outlive the
-     * app (CLAUDE.md, decision 2). A chapter someone read, annotated and
-     * asked questions about is not something to delete on a confirm dialog
-     * when keeping it costs a rename.
+     * Called before a rewrite. Nothing in the app reads these back. They
+     * exist because the study material is meant to be plain inspectable files
+     * that outlive the app (CLAUDE.md, decision 2), and because a chapter
+     * someone read and annotated should not be unrecoverable after one
+     * confirm dialog. Recovery is by hand — rename the file back.
      *
-     * The transcript travels WITH the chapter, under the same revision
-     * number, because it is only meaningful next to the prose it quotes: every
-     * exchange in it names a passage, and on its own those are quotations from
-     * a text nobody can read any more.
+     * ONE generation deep, on purpose. A numbered chain (`.r1`, `.r2`, …)
+     * implies a version history, and there is no way to navigate one: the app
+     * offers no rollback and is not going to grow a revision browser. It also
+     * fills a directory the reader is supposed to be able to browse with
+     * files nobody can act on, which costs the very thing the archive is
+     * defending. "Previous" is the whole of what anyone actually wants — a
+     * rewrite that missed is noticed immediately, not five rewrites later.
+     *
+     * Cheap either way: a chapter is around 10 KB of Markdown, against about
+     * 1.9 MB of inline figures that the same rewrite deletes. Rewriting
+     * frees roughly two hundred times what this keeps.
+     *
+     * The transcript travels WITH the body, because it is only meaningful
+     * next to the prose it quotes: every exchange in it names a passage, and
+     * on its own those are quotations from a text nobody can read any more.
      */
     fun archiveChapter(courseSlug: String, chapterSlug: String): String? {
-        val dir = File(root, "$courseSlug/chapters")
-        val live = File(dir, "$chapterSlug.md").takeIf { it.isFile } ?: return null
-        var n = 1
-        while (File(dir, "$chapterSlug.r$n.md").exists()) n++
-        val archived = File(dir, "$chapterSlug.r$n.md")
+        val live = File(root, "$courseSlug/chapters/$chapterSlug.md")
+            .takeIf { it.isFile } ?: return null
+        val archived = File(root, "$courseSlug/chapters/$chapterSlug.previous.md")
+        // renameTo will not replace an existing file on every filesystem.
+        archived.delete()
         if (!live.renameTo(archived)) return null
-        File(root, "$courseSlug/notes/$chapterSlug.qa.md")
-            .takeIf { it.isFile }
-            ?.renameTo(File(root, "$courseSlug/notes/$chapterSlug.r$n.qa.md"))
+        val qa = File(root, "$courseSlug/notes/$chapterSlug.qa.md")
+        val qaArchived = File(root, "$courseSlug/notes/$chapterSlug.previous.qa.md")
+        qaArchived.delete()
+        if (qa.isFile) qa.renameTo(qaArchived)
         return archived.name
     }
 

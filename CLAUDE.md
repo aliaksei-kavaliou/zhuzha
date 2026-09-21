@@ -129,7 +129,9 @@ yet" note that used to live here was two months stale.
       course directory directly under the root. Search runs over parsed BLOCKS, so a hit
       opens at the right page whatever the font size; it searches chapters, notes and the
       passages that were asked about. Rewriting a chapter archives the old body as
-      `<slug>.r1.md` and its Q&A as `<slug>.r1.qa.md`, then starts the chapter over:
+      `<slug>.previous.md` and its Q&A as `<slug>.previous.qa.md` — one generation deep,
+      because a numbered chain promises a version history nothing can navigate — then
+      starts the chapter over:
       annotations, bookmarks, ink, inline figures, the transcript and that chapter's
       reader.md section all go. Only the cover and closing pictures stay, because they
       come from the outline. A first attempt at keeping "records" while dropping

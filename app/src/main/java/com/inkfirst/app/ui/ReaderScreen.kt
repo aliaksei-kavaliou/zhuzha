@@ -4167,9 +4167,10 @@ private fun compileChapter(
                 // Only now, with the new chapter in hand, throw away what was
                 // anchored into the old one.
                 if (isRewrite) {
-                    // The old body is filed beside the new one rather than
-                    // overwritten. Nothing in the app reads it back; it is
-                    // there so a chapter someone annotated is still on disk.
+                    // The old body is set aside as <slug>.previous.md rather
+                    // than overwritten. Nothing in the app reads it back; it
+                    // is there so a chapter someone annotated is recoverable
+                    // by hand. One generation deep — see archiveChapter.
                     store.archiveChapter(course.slug, chapter.slug)
                     store.clearChapterMarks(course.slug, chapter.slug)
                     // The saved reading position is a block index into prose
