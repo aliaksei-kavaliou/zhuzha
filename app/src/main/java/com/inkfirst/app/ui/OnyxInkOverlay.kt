@@ -1278,12 +1278,25 @@ internal fun OnyxInkOverlay(
                     // path so Compose can see them (tap-on-stroke chip,
                     // finger page-turn). If this doesn't do it, try the other
                     // FEATURE_ constants — see javap in the aar for the set.
-                    val helper = TouchHelper.create(
-                        this,
-                        ONYX_FEATURE_MODE,
-                        callback,
-                        ONYX_CREATE_FLAG,
-                    )
+                    // Nullable, and a failure here is reported rather than
+                    // thrown. PenSupport already keeps non-Onyx devices off
+                    // this path entirely, so reaching this line means the
+                    // device claims to be an Onyx and its SDK still would not
+                    // start — in which case the reader drops to the
+                    // MotionEvent overlay instead of taking the screen down.
+                    // Every use of `helper` below already sits inside its own
+                    // try/catch, so null simply makes them no-ops.
+                    val helper = try {
+                        TouchHelper.create(
+                            this,
+                            ONYX_FEATURE_MODE,
+                            callback,
+                            ONYX_CREATE_FLAG,
+                        )
+                    } catch (t: Throwable) {
+                        PenSupport.rawPenUnavailable(t)
+                        null
+                    }
                     touchHelperRef.value = helper
                     Log.d(
                         TAG,
@@ -1312,9 +1325,9 @@ internal fun OnyxInkOverlay(
                                 val loc = IntArray(2)
                                 surface.getLocationOnScreen(loc)
                                 val bounds = AndroidRect(0, 0, surface.width, surface.height)
-                                helper.setLimitRect(bounds, emptyList())
+                                helper?.setLimitRect(bounds, emptyList())
                                 Log.d(TAG, "  (view origin on screen = ${loc[0]},${loc[1]})")
-                                if (drawEnabledRef.value) helper.setRawDrawingEnabled(true)
+                                if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
                                 Log.d(TAG, "limitRect($reason) viewLocal=$bounds")
                             } catch (t: Throwable) {
                                 Log.w(TAG, "limitRect($reason) failed", t)
@@ -1325,9 +1338,9 @@ internal fun OnyxInkOverlay(
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(h: SurfaceHolder) {
                             try {
-                                helper.setStrokeWidth(3f).openRawDrawing()
-                                helper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
-                                if (drawEnabledRef.value) helper.setRawDrawingEnabled(true)
+                                helper?.setStrokeWidth(3f)?.openRawDrawing()
+                                helper?.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
+                                if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
                                 Log.d(TAG, "TouchHelper opened ${width}x$height")
                                 applyLimitRect("created")
                             } catch (t: Throwable) {
@@ -1340,7 +1353,7 @@ internal fun OnyxInkOverlay(
                             applyLimitRect("changed")
                         }
                         override fun surfaceDestroyed(h: SurfaceHolder) {
-                            try { helper.setRawDrawingEnabled(false) } catch (_: Throwable) {}
+                            try { helper?.setRawDrawingEnabled(false) } catch (_: Throwable) {}
                         }
                     })
 

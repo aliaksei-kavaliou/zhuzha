@@ -139,18 +139,10 @@ import java.time.LocalDateTime
 // screens but rendered as noise on the Boox. Pure black on pure white is the
 // canonical e-ink palette.
 /**
- * Which pen path the reader draws with.
- *
- * true  — Onyx's TouchHelper, which paints straight to the EPD controller.
- *         Near-zero latency, and the reason to keep trying: "lag is boring".
- * false — the plain MotionEvent + Compose Canvas path. Higher latency, but
- *         every gesture around the stroke (tap-on-stroke chip, barrel erase,
- *         enclosure popup) is known to work.
- *
- * This is a device-only question — the emulator has no stylus and no EPD —
- * so it is a constant to flip and reinstall, not a user setting.
+ * Which ink path the reader mounts — see [PenSupport], which owns the
+ * decision now. It used to be a constant here, flipped and reinstalled by
+ * hand, because the only device that mattered was the Boox on the desk.
  */
-private const val USE_ONYX_PEN = true
 
 /**
  * Blank space above the first block, so the first line can be stroked from
@@ -436,23 +428,28 @@ fun ReaderScreen(
     // compile prompt to report into, and drawing takes long enough that
     // silence reads as "nothing happened".
     // Badges are course-level, so unlike figures this counts once for the
-    // whole book. badgeVersion exists to invalidate the decoded-badge cache
-    // and the page pack after a draw — a badge makes a block label taller,
-    // so pagination has to be recomputed, not just repainted.
-    var badgeVersion by remember { mutableStateOf(0) }
+    // whole book. pictureVersion invalidates every decoded-picture cache and
+    // the page pack after anything on disk changes — a badge makes a block
+    // label taller, so pagination has to be recomputed, not just repainted.
+    //
+    // It was called badgeVersion, which is how figures came to be left out of
+    // it: it already gated covers, closing pictures and the page pack, but
+    // the name said badges, so nobody thought to ask whether FIGURES needed
+    // it too. They did (2026-09-21) — see the figure cache below.
+    var pictureVersion by remember { mutableStateOf(0) }
     // What this chapter actually needs — a chapter with code blocks earns a
     // code badge the first time it is opened, so the set grows with the book
     // instead of being fixed up front.
     val neededBadges = remember(markdown) {
         markdown?.let { badgeKindsIn(it) }.orEmpty().ifEmpty { BADGE_KINDS }
     }
-    val hasCover = remember(course?.slug, chapterSlug, badgeVersion) {
+    val hasCover = remember(course?.slug, chapterSlug, pictureVersion) {
         course?.slug?.let { store.coverFile(it, chapterSlug) != null } == true
     }
-    val hasTail = remember(course?.slug, chapterSlug, badgeVersion) {
+    val hasTail = remember(course?.slug, chapterSlug, pictureVersion) {
         course?.slug?.let { store.tailFile(it, chapterSlug) != null } == true
     }
-    val pendingBadges = remember(course?.slug, badgeVersion, neededBadges) {
+    val pendingBadges = remember(course?.slug, pictureVersion, neededBadges) {
         val have = course?.slug?.let { store.badgeKinds(it) }.orEmpty()
         neededBadges.count { it !in have }
     }
@@ -776,7 +773,7 @@ fun ReaderScreen(
                     annotations = chapterAnnotations,
                     course = course,
                     chapterSlug = chapterSlug,
-                    badgeVersion = badgeVersion,
+                    pictureVersion = pictureVersion,
                     fontScale = fontScale,
                     lineSpacing = lineSpacing,
                     textAlign = textAlign,
@@ -1095,6 +1092,12 @@ fun ReaderScreen(
                                     // New prose means new pages; the pager
                                     // re-seeks to this anchor on its own.
                                     anchorBlockIndex = 0
+                                    // Same reason the ink is dropped above:
+                                    // the figures on disk were replaced, and
+                                    // they kept their filenames, so every
+                                    // decoded-picture cache is now holding
+                                    // the previous chapter's art.
+                                    pictureVersion++
                                 }
                             },
                         )
@@ -1144,7 +1147,7 @@ fun ReaderScreen(
                         store = store,
                         apiKeyStore = apiKeyStore,
                         onState = { compileState = it },
-                        onDone = { badgeVersion++ },
+                        onDone = { pictureVersion++ },
                     )
                 },
                 onDrawCover = {
@@ -1157,7 +1160,7 @@ fun ReaderScreen(
                         store = store,
                         apiKeyStore = apiKeyStore,
                         onState = { compileState = it },
-                        onDone = { badgeVersion++ },
+                        onDone = { pictureVersion++ },
                     )
                 },
                 onRewriteChapter = {
@@ -1173,7 +1176,7 @@ fun ReaderScreen(
                         store = store,
                         apiKeyStore = apiKeyStore,
                         onState = { compileState = it },
-                        onDone = { badgeVersion++ },
+                        onDone = { pictureVersion++ },
                     )
                 },
                 onIllustrate = {
@@ -1248,7 +1251,7 @@ private fun PagedContent(
     course: Course?,
     chapterSlug: String,
     /** Bumped when badges are drawn, to rebuild the badge cache and the page pack. */
-    badgeVersion: Int,
+    pictureVersion: Int,
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
@@ -1318,9 +1321,18 @@ private fun PagedContent(
     // Decoded figures, kept for as long as the chapter is open. Without a
     // cache every page turn re-decodes the pictures on the new page, which
     // is real work on the Boox. Keyed on the chapter so leaving it frees the
-    // bitmaps. Not observable state on purpose: entries are filled during
-    // composition and never change for a given src.
-    val figureBitmaps = remember(course?.slug, chapterSlug) { mutableMapOf<String, ImageBitmap?>() }
+    // bitmaps. Entries are filled during composition, and the cache is thrown
+    // away whenever [pictureVersion] moves.
+    //
+    // It used to be keyed on the chapter alone, with a note saying a given
+    // src never changes. A REWRITE breaks that: it regenerates a chapter's
+    // figures under the same names — they are <chapter-slug>-<ordinal> — so
+    // the bytes change while every key stays identical. The reported symptom
+    // was that a redrawn chapter still showed the previous illustration; the
+    // new one was on disk the whole time, correctly drawn.
+    val figureBitmaps = remember(course?.slug, chapterSlug, pictureVersion) {
+        mutableMapOf<String, ImageBitmap?>()
+    }
     val loadFigure: (String) -> ImageBitmap? = { src ->
         figureBitmaps.getOrPut(src) {
             val slug = course?.slug
@@ -1337,7 +1349,7 @@ private fun PagedContent(
     // reused by every exercise and recap in the whole book, so the cache is
     // keyed on the course and survives chapter changes. Keyed by block kind
     // because nothing in the Markdown names the file.
-    val badgeBitmaps = remember(course?.slug, badgeVersion) { mutableMapOf<String, ImageBitmap?>() }
+    val badgeBitmaps = remember(course?.slug, pictureVersion) { mutableMapOf<String, ImageBitmap?>() }
     val loadBadge: (String) -> ImageBitmap? = { kind ->
         badgeBitmaps.getOrPut(kind) {
             val slug = course?.slug
@@ -1369,7 +1381,7 @@ private fun PagedContent(
             val textInsetPx = with(density) { horizontalPadding.dp.toPx() }
             val availableHeightPx = with(density) { (maxHeight - 40.dp).toPx().toInt() }
 
-            val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing, badgeVersion) {
+            val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion) {
                 paginate(
                     blocks = blocks,
                     contentWidthPx = widthPx,
@@ -1749,8 +1761,8 @@ private fun PagedContent(
                     // the SurfaceView below Compose, so finger tap-on-stroke,
                     // the chip and barrel-erase never saw an event — and the
                     // v3 seed sets FEATURE_APP_PEN_TOUCH_RENDER to try to let
-                    // finger events through. Flip USE_ONYX_PEN back to false
-                    // to return to the MotionEvent path, which works but lags.
+                    // finger events through. PenSupport decides which path
+                    // is mounted; the MotionEvent one works but lags.
                     val onStrokeAddedEnriched: (InkStroke) -> Unit = { raw ->
                             // Enrich with the text the stroke actually sits
                             // over, so Ask/Add-note from a stroke-tap gets
@@ -1812,7 +1824,7 @@ private fun PagedContent(
                         overlayTopInRoot = coords.positionInRoot().y
                         overlayLeftInRoot = coords.positionInRoot().x
                     }
-                    if (USE_ONYX_PEN) {
+                    if (PenSupport.useRawPen) {
                         OnyxInkOverlay(
                             textInsetPx = textInsetPx,
                             pageStrokes = pageStrokes,
