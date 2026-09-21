@@ -109,6 +109,15 @@ yet" note that used to live here was two months stale.
       buttons kept reverting to raising Android's volume slider. Screens claim the keys
       with `PageKeys.register`; last registration wins, which is how the Ask panel takes
       them from the reader underneath it.
+- [x] **Pen reaches the whole page (2026-09-21).** The ink overlay used to sit inside the
+      reader's padded column, so margins were not drawable, a line's last word could not be
+      underlined, and a stroke running off the surface turned a page. The inset is on the
+      text now, not the page; stroke coordinates stay TEXT-relative so the on-disk format
+      and existing ink are unchanged. See `docs/onyx-pen-thread.md` §T8.
+- [x] **Repaint scoping is a QUEUE, not a rect (2026-09-21).** It failed merged (bounding
+      box of two far-apart regions blinks half the page) and it failed as two slots (one
+      writer displaces another, ink left on the glass). Every region gets its own
+      invalidate. Do not try to express N regions in one field a third time. §T8.
 - [x] **First line of a page not drawable — closed 2026-09-21, did not reproduce.** The
       symptom named the cause and the standing suspicion (anchor maths) was wrong: "takes a
       page" is a page turn, and the overlay used to resolve a finger contact on its

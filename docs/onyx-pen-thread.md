@@ -686,3 +686,88 @@ reasonable to consume an enclosure on Ask while keeping a margin bar.
 Margin markers had to be hit-tested by the tap handler: the overlay owns the touch stream, so
 Compose's `clickable` on a `?` or `✎` never ran and tapping one turned the page. That is the
 FOURTH place tap rules now live, and the strongest argument yet for the consolidation.
+
+## T8 · CLI → device · 2026-09-21 (reading session: margins, page ownership, repaint scoping)
+
+A day of actual reading with the pen. Four reports, two causes, and one measurement habit that
+paid for itself repeatedly: **every finding below came from a log line or a screencap, and two
+of the four standing suspicions in this file turned out to be wrong.**
+
+### The ink surface stopped where the text stopped
+
+The overlay lived inside the reader's padded column. Consequences, all reported separately and
+all the same bug: margins not drawable, the last word of a line impossible to underline, and a
+stroke that ran off the surface arriving as a bare contact that the tap ladder turned into a
+page turn. The giveaway was in the log — switching to Wide margins shrank the limit rect from
+1188px to 1114px, so the setting sold as "marginalia space" was *removing* drawable area.
+
+The inset now applies to the header, the text column and the footer's type; the page and the
+pen get the full width. **Stroke coordinates stay relative to the TEXT**, converted at the
+overlay's edge, so the on-disk format is unchanged and ink drawn before the change still lands
+where it was drawn. Ink in the margin has a negative x and everything downstream copes:
+`extract blk=28 x=-49.19..140.59 -> "layers."`.
+
+### Page ownership is judged by a stroke's MIDDLE
+
+`belongsToThisPage` used the stroke's top edge. The top is the wrong end for anything but a
+dead-straight underline — a circle stands taller than its line, and the first line of a page is
+stroked from the blank margin above it, which is what `INK_TOP_MARGIN` exists for. Measured: a
+circle on the first visible line of a **continued** paragraph, stroke top 4px against a visible
+top of 53px, `PAGE_OWNERSHIP_SLOP_PX` 24. Saved, extracted (`touched=[1,2] -> "into a
+vertical"`), chip opened, and never drawn — on that visit or any future one.
+
+Same end anchoring already uses, and for the same reason. Noted in T7 for anchoring; it should
+have been applied here at the same time.
+
+### Repaint scoping has now failed in BOTH directions
+
+Worth stating as a pair, because each fix caused the other failure:
+
+- **Merged into one rect** → the bounding box of two far-apart regions (a stroke in the text and
+  the chip pill at the bottom) is everything in between, so deleting one underline blinked half
+  the page. The September lesson again: the flash is the SCOPE.
+- **A primary slot and a spare** → the chip's effect wrote the primary unconditionally and
+  displaced the ink's region. The pill was refreshed, the ink stayed on the glass, and the ghost
+  survived a page turn because by then the stroke was out of the model and nothing knew where it
+  had been.
+
+It is a **queue** now. Every region that asks gets its own invalidate at its own size; no writer
+can displace another's. If a third shape of this is ever needed, note that both failures came
+from trying to express N regions in one field.
+
+### A page turn needs a whole-layer wipe and a small refresh
+
+Two different scopes, and one field was answering both — the wipe's. The driver's layer must go
+entirely (every stroke on it belongs to the page being left) while the panel refresh wants only
+the rectangle that ink occupied, measured *while that page was still up*: once the turn has
+happened the block tops have moved and the departed ink cannot be located. T7 said a page turn
+needs no refresh at all because the new page's content redraws over the old ink. That holds
+where the new page has text there and fails where it does not, which is why ghosts appeared
+over blank space.
+
+### Showing a chip and closing one need different timing
+
+Both were "immediate" — refresh after two frames. Two frames prove Compose has drawn the frame,
+not that the controller has taken it. For an appearing chip that is fine, since the thing being
+refreshed is the thing being drawn. For a leaving one it is the whole problem: measured, the GC
+fired over exactly the right rectangle 82ms after the dismiss and the pill still ghosted. A
+full-quality refresh issued while the panel still shows a solid black pill re-asserts it, and
+the removal then arrives as an ordinary partial update — which is what leaves residue. The
+close waits out the debounce now. **This one is a timing hypothesis confirmed only by the
+symptom going away; the log can say which pixels were refreshed, never what the panel was
+showing at that instant.**
+
+### Two standing suspicions in this file were wrong
+
+Recorded because being wrong in writing is the point of this file:
+
+1. **"First line of a page is not drawable"** (T7, blamed `findAnchorBlockOnyx`). It was a page
+   turn — the symptom said so all along, "takes a page" — from the overlay resolving a finger
+   contact on its ACTION_DOWN. Fixed as a side effect of restoring swipe.
+2. **"Takes a page" while drawing.** Not the pen being misread. Every page turn logged `tool=1`
+   while every real stroke logged `tool=2` and the eraser `tool=4`. Finger taps in the turn
+   bands, working as designed.
+
+Both were settled by one log line — `contact down tool=` on every contact, not only on the
+rejected ones. "Ink only from the pen" is decided entirely by that number and it was invisible
+except on rejection. Keep it.
