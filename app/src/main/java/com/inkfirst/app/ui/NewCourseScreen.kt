@@ -1,7 +1,6 @@
 package com.inkfirst.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -50,6 +48,7 @@ import com.inkfirst.core.OutlineParseException
 import com.inkfirst.core.StylePreset
 import com.inkfirst.core.StylePresets
 import com.inkfirst.core.courseSlug
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -60,6 +59,24 @@ private sealed interface OutlineUiState {
     data class Failed(val message: String) : OutlineUiState
 }
 
+/**
+ * Creating a course, as three full PAGES rather than one growing form.
+ *
+ * It used to be one scrolling column: the form, the Generate button, and the
+ * result appended underneath. On the Go 7 that button sits at the bottom edge
+ * of the viewport, so a finished outline rendered entirely off-screen while
+ * the button's label flipped from "Generating…" back to "Generate outline".
+ * Nothing on e-ink animates or scrolls by itself, so the page looked
+ * untouched and a perfectly good course sat one swipe away, unseen — reported
+ * as "new course generate did nothing" on 2026-09-21.
+ *
+ * Scrolling the result into view would have fixed that instance. Pages remove
+ * the whole class of it: a result that has its own page cannot render below
+ * the fold. It also matches the rest of the app, which is paginated
+ * everywhere else, and it gives "try again" and "edit inputs" somewhere
+ * obvious to live. The form's state lives here, in the parent, so returning
+ * to it from the review page costs nothing and keeps every field filled.
+ */
 @Composable
 fun NewCourseScreen(
     onBack: () -> Unit,
@@ -80,138 +97,236 @@ fun NewCourseScreen(
     var units by remember { mutableStateOf(DEFAULT_MEASUREMENT_SYSTEM) }
     var uiState by remember { mutableStateOf<OutlineUiState>(OutlineUiState.Idle) }
 
+    // Held so Cancel can stop a request in flight. The request timeout is
+    // three minutes, and a page with no way off it for three minutes is worse
+    // than the bug this rewrite fixes.
+    var job by remember { mutableStateOf<Job?>(null) }
+
     val apiKey = store.getApiKey()
     val model = store.getModelName()
 
+    // A plain local function, not a composable — it runs on a tap rather than
+    // during drawing. Both the form and the review page call it.
+    fun generate() {
+        focusManager.clearFocus()
+        val minutes = dailyMinutes.toIntOrNull() ?: return
+        val key = apiKey ?: return
+        uiState = OutlineUiState.Loading
+        job = scope.launch {
+            uiState = runOutline(
+                topic, minutes, priorKnowledge, expectations, style, language,
+                units, model, key,
+            )
+        }
+    }
+
+    when (val s = uiState) {
+        OutlineUiState.Loading -> GeneratingPage(
+            topic = topic,
+            onCancel = {
+                job?.cancel()
+                job = null
+                uiState = OutlineUiState.Idle
+            },
+        )
+
+        is OutlineUiState.Ready -> OutlineReviewPage(
+            outline = s.outline,
+            onApprove = {
+                val course = courseStore.create(
+                    outline = s.outline,
+                    proposedSlug = courseSlug(s.outline.title),
+                    topicPrompt = topic,
+                    priorKnowledge = priorKnowledge,
+                    expectations = expectations,
+                    dailyMinutes = dailyMinutes.toIntOrNull() ?: 30,
+                    style = style.key,
+                    model = model,
+                    language = language.trim().ifBlank { "English" },
+                    units = units,
+                    created = LocalDate.now().toString(),
+                )
+                onCourseCreated(course.slug)
+            },
+            onTryAgain = { generate() },
+            onEdit = { uiState = OutlineUiState.Idle },
+        )
+
+        // Idle and Failed are the same page: a failure means "fix something
+        // and go again", so it belongs on the form, at the TOP where it
+        // cannot be missed, rather than on a dead-end page of its own.
+        else -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    // Tap outside any input dismisses the IME so the Generate
+                    // button becomes reachable on short viewports.
+                    detectTapGestures(onTap = { focusManager.clearFocus() })
+                }
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("New course", style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onBack) { Text("Back") }
+            }
+
+            if (apiKey.isNullOrBlank()) {
+                Text(
+                    text = "No API key set. Go to Settings first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            (s as? OutlineUiState.Failed)?.let { failed ->
+                Text(
+                    text = failed.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            OutlinedTextField(
+                value = topic,
+                onValueChange = { topic = it },
+                label = { Text("Topic (what do you want to learn?)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = dailyMinutes,
+                onValueChange = { input -> dailyMinutes = input.filter { it.isDigit() }.take(3) },
+                label = { Text("Daily minutes") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = priorKnowledge,
+                onValueChange = { priorKnowledge = it },
+                label = { Text("Prior knowledge (optional)") },
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+            )
+
+            OutlinedTextField(
+                value = expectations,
+                onValueChange = { expectations = it },
+                label = { Text("What you want to be able to do (optional)") },
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+            )
+
+            StylePicker(current = style, onSelected = { style = it })
+
+            LanguagePicker(
+                label = "Language",
+                value = language,
+                onValueChange = { language = it },
+            )
+
+            // Fixed for the life of the book, like the language: a course whose
+            // chapter 1 measures in Celsius and whose chapter 6 measures in
+            // Fahrenheit is worse than either.
+            MeasurementPicker(current = units, onSelected = { units = it })
+
+            Spacer(Modifier.height(8.dp))
+
+            Button(
+                enabled = !apiKey.isNullOrBlank() &&
+                    topic.isNotBlank() &&
+                    language.isNotBlank() &&
+                    (dailyMinutes.toIntOrNull() ?: 0) > 0,
+                onClick = { generate() },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Generate outline")
+            }
+        }
+    }
+}
+
+/**
+ * While the outline is being written. A whole page rather than a line under
+ * the button, so there is no doubt that the tap landed.
+ *
+ * A label, not a spinner: an indeterminate spinner on e-ink is an animation
+ * the panel cannot draw, and it says nothing a sentence cannot say better.
+ */
+@Composable
+private fun GeneratingPage(topic: String, onCancel: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                // Tap outside any input dismisses the IME so the Generate button
-                // becomes reachable on short viewports.
-                detectTapGestures(onTap = { focusManager.clearFocus() })
-            }
-            .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("New course", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onBack) { Text("Back") }
+        Text("Writing the outline…", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = topic.trim(),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "This usually takes 10-30 seconds.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(32.dp))
+        TextButton(onClick = onCancel) { Text("Cancel") }
+    }
+}
+
+/**
+ * The proposed outline, with the decision it asks for.
+ *
+ * The actions sit OUTSIDE the scrolling area. A twelve-chapter outline will
+ * not fit on a 7" panel, so the list has to scroll — but the buttons must
+ * never be the thing that scrolled away, which is the entire defect this page
+ * was built to remove.
+ */
+@Composable
+private fun OutlineReviewPage(
+    outline: CourseOutline,
+    onApprove: () -> Unit,
+    onTryAgain: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+    ) {
+        Text("PROPOSED OUTLINE", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(12.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            OutlinePreview(outline)
         }
 
-        if (apiKey.isNullOrBlank()) {
-            Text(
-                text = "No API key set. Go to Settings first.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
-        OutlinedTextField(
-            value = topic,
-            onValueChange = { topic = it },
-            label = { Text("Topic (what do you want to learn?)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = dailyMinutes,
-            onValueChange = { input -> dailyMinutes = input.filter { it.isDigit() }.take(3) },
-            label = { Text("Daily minutes") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = priorKnowledge,
-            onValueChange = { priorKnowledge = it },
-            label = { Text("Prior knowledge (optional)") },
-            modifier = Modifier.fillMaxWidth().height(120.dp),
-        )
-
-        OutlinedTextField(
-            value = expectations,
-            onValueChange = { expectations = it },
-            label = { Text("What you want to be able to do (optional)") },
-            modifier = Modifier.fillMaxWidth().height(120.dp),
-        )
-
-        StylePicker(current = style, onSelected = { style = it })
-
-        LanguagePicker(
-            label = "Language",
-            value = language,
-            onValueChange = { language = it },
-        )
-
-        // Fixed for the life of the book, like the language: a course whose
-        // chapter 1 measures in Celsius and whose chapter 6 measures in
-        // Fahrenheit is worse than either.
-        MeasurementPicker(current = units, onSelected = { units = it })
-
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(16.dp))
 
         Button(
-            enabled = uiState !is OutlineUiState.Loading &&
-                !apiKey.isNullOrBlank() &&
-                topic.isNotBlank() &&
-                language.isNotBlank() &&
-                (dailyMinutes.toIntOrNull() ?: 0) > 0,
-            onClick = {
-                focusManager.clearFocus()  // hide keyboard before the async call
-                val minutes = dailyMinutes.toInt()
-                val key = apiKey!!
-                uiState = OutlineUiState.Loading
-                scope.launch {
-                    uiState = runOutline(
-                        topic, minutes, priorKnowledge, expectations, style, language,
-                        units, model, key,
-                    )
-                }
-            },
+            onClick = onApprove,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (uiState is OutlineUiState.Loading) "Generating…" else "Generate outline")
+            Text("Approve & save")
         }
-
-        Spacer(Modifier.height(8.dp))
-
-        Box(modifier = Modifier.fillMaxWidth()) {
-            when (val s = uiState) {
-                OutlineUiState.Idle -> Unit
-                OutlineUiState.Loading -> CircularProgressIndicator()
-                is OutlineUiState.Failed -> Text(
-                    text = s.message,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                is OutlineUiState.Ready -> Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    OutlinePreview(s.outline)
-                    Button(onClick = {
-                        val slug = courseSlug(s.outline.title)
-                        val created = LocalDate.now().toString()
-                        val course = courseStore.create(
-                            outline = s.outline,
-                            proposedSlug = slug,
-                            topicPrompt = topic,
-                            priorKnowledge = priorKnowledge,
-                            expectations = expectations,
-                            dailyMinutes = dailyMinutes.toIntOrNull() ?: 30,
-                            style = style.key,
-                            model = model,
-                            language = language.trim().ifBlank { "English" },
-                            units = units,
-                            created = created,
-                        )
-                        onCourseCreated(course.slug)
-                    }) { Text("Approve & save") }
-                }
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onTryAgain) { Text("Try again") }
+            TextButton(onClick = onEdit) { Text("Edit inputs") }
         }
     }
 }
