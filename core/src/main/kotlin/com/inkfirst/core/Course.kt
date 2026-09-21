@@ -24,6 +24,10 @@ data class Course(
     // "write in this language" instruction. Free-text so exotic choices work;
     // memory.md stays in English regardless (internal-only artifact).
     val language: String = "English",
+    // Which measurement system examples are written in — see
+    // [MeasurementSystem]. Defaults to metric, which also means every course
+    // written before this field existed reads as metric from here on.
+    val units: String = DEFAULT_MEASUREMENT_SYSTEM,
     val created: String,
     val chapters: List<PersistedChapter>,
     val bookmarks: List<Bookmark> = emptyList(),
@@ -43,13 +47,31 @@ data class Annotation(
     val quote: String,
     val note: String,
     val created: String,
-    // "text" for hand-selected annotations (render as an underline on the
-    // matched quote); "ask" for a passage the reader asked the AI about
-    // (a margin marker only — no underline, because the point of recording
-    // the question is to keep the page clean enough to stop marking it up);
-    // "curve" for stylus lasso-selected annotations (render the stored
-    // path). Kept as free-text string not enum so JSON migration is a
-    // non-event when we add more kinds.
+    /**
+     * When this was made, to the second — "2026-09-20T21:14:07".
+     *
+     * [created] is a DATE, which is the right granularity for showing a note
+     * in the Contents and is what identifies one for deletion. It is the
+     * wrong granularity for ORDER: everything made in one evening carries the
+     * same string, so the Q&A feed could only fall back to the order its two
+     * sources happened to be concatenated in — every answered question, then
+     * every unasked mark — and a session of reading came out sorted by where
+     * on the page things happened rather than by when.
+     *
+     * Empty for anything written before this field existed; [created] is the
+     * fallback, which sorts such entries before the same day's timestamped
+     * ones. That is the truth: they are older.
+     */
+    val at: String = "",
+    // "text" for hand-selected annotations; "ask" for a passage the reader
+    // asked the AI about; "curve" for stylus lasso-selected annotations
+    // (render the stored path). Both text and ask underline their quote and
+    // put a glyph in the margin — \u270e for something you wrote, ? for
+    // something you wanted explained. An "ask" was originally a margin mark
+    // with no underline, to keep the page clean; on the device that left a ?
+    // beside a paragraph with nothing saying which sentence it was about.
+    // Kept as free-text string not enum so JSON migration is a non-event
+    // when we add more kinds.
     val kind: String = "text",
 )
 
@@ -165,6 +187,7 @@ fun CourseOutline.toCourse(
     style: String,
     model: String,
     language: String,
+    units: String = DEFAULT_MEASUREMENT_SYSTEM,
     created: String,
 ): Course = Course(
     title = title,
@@ -176,6 +199,7 @@ fun CourseOutline.toCourse(
     style = style,
     model = model,
     language = language,
+    units = units,
     created = created,
     chapters = chapters.map {
         PersistedChapter(

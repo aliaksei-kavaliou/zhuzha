@@ -42,6 +42,8 @@ import com.inkfirst.app.data.ApiKeyStore
 import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.CourseOutline
+import com.inkfirst.core.DEFAULT_MEASUREMENT_SYSTEM
+import com.inkfirst.core.MEASUREMENT_SYSTEMS
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.OutlineGenerator
 import com.inkfirst.core.OutlineParseException
@@ -75,6 +77,7 @@ fun NewCourseScreen(
     var expectations by remember { mutableStateOf("") }
     var style by remember { mutableStateOf(StylePresets.DEFAULT) }
     var language by remember { mutableStateOf(store.getPreferredLanguage()) }
+    var units by remember { mutableStateOf(DEFAULT_MEASUREMENT_SYSTEM) }
     var uiState by remember { mutableStateOf<OutlineUiState>(OutlineUiState.Idle) }
 
     val apiKey = store.getApiKey()
@@ -145,6 +148,11 @@ fun NewCourseScreen(
             onValueChange = { language = it },
         )
 
+        // Fixed for the life of the book, like the language: a course whose
+        // chapter 1 measures in Celsius and whose chapter 6 measures in
+        // Fahrenheit is worse than either.
+        MeasurementPicker(current = units, onSelected = { units = it })
+
         Spacer(Modifier.height(8.dp))
 
         Button(
@@ -159,7 +167,10 @@ fun NewCourseScreen(
                 val key = apiKey!!
                 uiState = OutlineUiState.Loading
                 scope.launch {
-                    uiState = runOutline(topic, minutes, priorKnowledge, expectations, style, language, model, key)
+                    uiState = runOutline(
+                        topic, minutes, priorKnowledge, expectations, style, language,
+                        units, model, key,
+                    )
                 }
             },
         ) {
@@ -194,11 +205,52 @@ fun NewCourseScreen(
                             style = style.key,
                             model = model,
                             language = language.trim().ifBlank { "English" },
+                            units = units,
                             created = created,
                         )
                         onCourseCreated(course.slug)
                     }) { Text("Approve & save") }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Which units the book's examples are measured in.
+ *
+ * Read-only dropdown rather than the free-text field the language uses: a
+ * language is a name the model understands whatever you type, where this
+ * selects one of two written rules.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MeasurementPicker(current: String, onSelected: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = MEASUREMENT_SYSTEMS.firstOrNull { it.key == current } ?: MEASUREMENT_SYSTEMS.first()
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = selected.label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Measurements") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            MEASUREMENT_SYSTEMS.forEach { system ->
+                DropdownMenuItem(
+                    text = { Text(system.label) },
+                    onClick = {
+                        onSelected(system.key)
+                        expanded = false
+                    },
+                )
             }
         }
     }
@@ -271,6 +323,7 @@ private suspend fun runOutline(
     expectations: String,
     style: StylePreset,
     language: String,
+    units: String,
     model: String,
     apiKey: String,
 ): OutlineUiState {
@@ -285,6 +338,7 @@ private suspend fun runOutline(
                     expectations = expectations,
                     style = style,
                     language = language.trim().ifBlank { "English" },
+                    units = units,
                     apiKey = apiKey,
                 ),
             )

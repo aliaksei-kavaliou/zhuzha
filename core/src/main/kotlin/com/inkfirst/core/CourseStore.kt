@@ -37,6 +37,7 @@ class CourseStore(private val root: File) {
         style: String,
         model: String,
         language: String = "English",
+        units: String = DEFAULT_MEASUREMENT_SYSTEM,
         created: String,
     ): Course {
         root.mkdirs()
@@ -51,6 +52,7 @@ class CourseStore(private val root: File) {
             style = style,
             model = model,
             language = language,
+            units = units,
             created = created,
         )
 
@@ -292,6 +294,8 @@ class CourseStore(private val root: File) {
         note: String,
         created: String,
         kind: String = "text",
+        /** Full timestamp for ordering; see [Annotation.at]. */
+        at: String = "",
     ): Course? {
         val course = load(courseSlug) ?: return null
         val updated = course.copy(
@@ -301,6 +305,7 @@ class CourseStore(private val root: File) {
                 quote = quote,
                 note = note,
                 created = created,
+                at = at,
                 kind = kind,
             ),
         )

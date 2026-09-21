@@ -19,7 +19,16 @@ package com.inkfirst.core
  */
 object QaTranscript {
 
-    /** One turn of the feed, oldest first. [created] is an ISO date. */
+    /**
+     * One turn of the feed, oldest first.
+     *
+     * [created] is what the turn is sorted by. It is an ISO date for anything
+     * recorded before this file carried the time of day, and a full ISO
+     * timestamp since — which is what makes the feed chronological rather
+     * than "all the answered questions, then all the unasked marks". Both
+     * forms sort correctly against each other, because a date is a prefix of
+     * the timestamps within it.
+     */
     sealed interface Entry {
         val created: String
 
@@ -136,7 +145,7 @@ object QaTranscript {
 
         val marked = annotations
             .filter { it.chapterSlug == chapterSlug && it.kind == "ask" }
-            .map { it.created to it.quote.trim() }
+            .map { it.at.ifBlank { it.created } to it.quote.trim() }
             .filter { (_, q) -> q.isNotEmpty() && q !in answered }
 
         val seen = mutableSetOf<String>()
@@ -150,9 +159,10 @@ object QaTranscript {
             entries += Entry.Marked(today, pending)
         }
 
-        // Dates are ISO, so lexicographic order is chronological, and sortedBy
-        // is stable — within a day each source keeps its own append order, and
-        // the passage just marked stays last because it was added last.
+        // ISO stamps, so lexicographic order is chronological. sortedBy is
+        // stable, which is what keeps the passage just marked at the bottom
+        // where the reader is looking, and what keeps entries that predate
+        // the timestamp in the order their own source recorded them.
         return entries.sortedBy { it.created }
     }
 }

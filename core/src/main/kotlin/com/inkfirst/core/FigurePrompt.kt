@@ -28,7 +28,8 @@ internal val SKETCH_HOUSE_STYLE: String = listOf(
     "Line and tone: PURE LINE ART. Bold confident black outlines that survive being shrunk, on white. Shading only ever as hatching or cross-hatching — visible separate pen strokes. Absolutely no filled grey areas, no grey wash, no marker tone, no soft shading, no gradients, no drop shadows and no large solid black areas. If a shape needs to look darker, hatch it with more lines; never fill it with tone.",
     "Composition: ZOOM IN CLOSE. The subject must fill the frame edge to edge, taking up at least three quarters of the image — crop into it if that helps. No wide empty margins, no distant wide shot, no small figure lost in a large scene. Draw one clear subject only.",
     "Detail level: keep it simple and bold. This is reduced to a few centimetres on a low-resolution grey screen, so fine detail, thin lines and small elements disappear entirely.",
-    "Text, if any: at most a handful of words — a short speech bubble or one big label. A character saying something in a speech bubble is welcome and encouraged. Keep it to four or five words.",
+    "Text, if any: at most a handful of words — a short speech bubble or one big label. A character saying something in a speech bubble is welcome and encouraged. Keep it to three or four SHORT everyday words; a long word is a long word to hand-letter and comes back mangled.",
+    "SPELLING IS PART OF THE DRAWING: write each word once, spelled correctly, complete. Do not print a word twice, do not start a word and restart it beside itself, do not leave one half-finished or trailing off. Read the lettering back before finishing — a picture that says \"LEAR LEARNING\" is a spoiled picture however good the drawing is. If a word is hard to letter, choose a shorter one.",
     "TEXT SIZE IS CRITICAL: hand-letter every word ENORMOUS. Each capital letter must be at least one twelfth of the whole image height, and a speech bubble must span at least a third of the image width — comic-book lettering, absurdly oversized, as if shouted. Write text straight and horizontal, never rotated, curved or along a slope. The whole picture is reduced to a few centimetres on a small grey screen, so normal-sized lettering becomes an unreadable smudge. If the words will not fit at that size, use fewer words — never smaller ones.",
     "Mood: warm, a little humorous, human. The point is to make a page of study material feel alive.",
     "Framing: draw ONLY the illustration itself, never the page it will sit on. No border or frame line around the image, no header, no running title, no book or chapter name, no page number, no caption, no margins, no drop shadow, no watermark. The app puts the picture on the page and sets all type itself.",
@@ -101,8 +102,9 @@ internal fun buildCoverBriefPrompt(course: Course, chapter: PersistedChapter): S
     appendLine("raise a smile.")
     appendLine()
     appendLine("Rules: one vivid subject, no diagrams, no charts, no screens full of text,")
-    appendLine("no labels or numbers. A short shouted speech bubble of four or five words")
-    appendLine("is welcome if it sharpens the joke.")
+    appendLine("no labels or numbers. A short shouted speech bubble of three or four")
+    appendLine("short words is welcome if it sharpens the joke — short ones, because the")
+    appendLine("artist hand-letters them and long words come back misspelled.")
     appendLine()
     appendLine("Reply with the scene description only — one or two sentences, nothing else.")
 }

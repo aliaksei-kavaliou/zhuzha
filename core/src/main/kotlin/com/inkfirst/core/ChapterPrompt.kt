@@ -45,12 +45,13 @@ internal fun buildChapterPrompt(
     appendLine()
     appendLine("FORMAT RULES")
     appendLine("- Return Markdown. Do NOT wrap the whole output in a code fence.")
+    appendLine("- ${measurementRule(course.units)}")
     appendLine("- Write the entire chapter in ${course.language}. All headings, prose, exercise text, recap text, and figure alt-text must be in ${course.language}. Technical terms may stay in English if that's how the field uses them.")
     appendLine("- Aim for content that fills ~${chapter.estMinutes} minutes of slow, e-ink reading. Redundancy is welcome if it's pedagogical.")
     appendLine("- Use custom fenced blocks where they fit:")
     appendLine("  - ```exercise … ``` for practice; put the answer inside on a line starting with \"answer: \".")
     appendLine("  - ```recap … ``` for end-of-section wrap-ups that restate the key idea differently.")
-    appendLine("  - ```figure alt=\"…\" ``` for figure slots. The alt text is the drawing brief: an artist reads it and nothing else, so describe a concrete SCENE, not a diagram. \"A very tired robot trying to sort a mountain of socks\" works; \"a diagram of the classification process\" does not. One vivid subject. Words in the picture are allowed but must be few and large — a short speech bubble (a character reacting is very welcome) or a single big label. Never ask for small print, a paragraph, many labels, or numbers presenting data; if your idea only works with dense text, pick a different idea. and it should raise a smile as well as make the point. Two or three figures per chapter is plenty.")
+    appendLine("  - ```figure alt=\"…\" ``` for figure slots. The alt text is the drawing brief: an artist reads it and nothing else, so describe a concrete SCENE, not a diagram. \"A very tired robot trying to sort a mountain of socks\" works; \"a diagram of the classification process\" does not. One vivid subject. Words in the picture are allowed but must be few, short and large — a speech bubble of three or four short everyday words (a character reacting is very welcome) or a single big label. Long words come back misspelled, so do not ask for one. Never ask for small print, a paragraph, many labels, or numbers presenting data; if your idea only works with dense text, pick a different idea. and it should raise a smile as well as make the point. Two or three figures per chapter is plenty.")
     appendLine("- Where a metaphor or term from an earlier chapter helps, reuse it explicitly.")
     if (readerNotes.isNotBlank()) {
         // Bounding this is the whole design. An unbounded "adapt to the

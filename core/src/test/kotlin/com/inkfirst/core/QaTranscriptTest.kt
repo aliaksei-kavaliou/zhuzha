@@ -23,15 +23,20 @@ class QaTranscriptTest {
         appendLine()
     }
 
-    private fun ann(quote: String, created: String = "2026-09-18", kind: String = "ask") =
-        Annotation(
-            chapterSlug = "ch1",
-            blockIndex = 0,
-            quote = quote,
-            note = "",
-            created = created,
-            kind = kind,
-        )
+    private fun ann(
+        quote: String,
+        created: String = "2026-09-18",
+        kind: String = "ask",
+        at: String = "",
+    ) = Annotation(
+        chapterSlug = "ch1",
+        blockIndex = 0,
+        quote = quote,
+        note = "",
+        created = created,
+        at = at,
+        kind = kind,
+    )
 
     @Test
     fun `parses a single exchange with its passage`() {
@@ -165,6 +170,47 @@ class QaTranscriptTest {
         assertEquals("2026-09-16", feed[0].created)
         assertEquals("marked yesterday", (feed[1] as QaTranscript.Entry.Marked).passage)
         assertEquals("just marked now", (feed[2] as QaTranscript.Entry.Marked).passage)
+    }
+
+    @Test
+    fun `one evening's turns interleave by the clock, not by source`() {
+        // The defect this pins: dates alone tie every turn made in one
+        // session, so the feed could only fall back to "all the answered
+        // questions, then all the bare marks" — which, reading a chapter
+        // front to back, comes out looking sorted by page.
+        val feed = QaTranscript.feed(
+            qaMarkdown = entry("2026-09-20T19:05:00", "page 2 passage", "why?", "because.") +
+                entry("2026-09-20T21:40:00", "page 9 passage", "and this?", "like so."),
+            annotations = listOf(
+                ann("page 5 passage", created = "2026-09-20", at = "2026-09-20T20:10:00"),
+            ),
+            chapterSlug = "ch1",
+            today = "2026-09-20T22:00:00",
+        )
+        assertEquals(3, feed.size)
+        assertEquals("page 2 passage", (feed[0] as QaTranscript.Entry.Asked).passage)
+        // The mark made between the two questions sits between them.
+        assertEquals("page 5 passage", (feed[1] as QaTranscript.Entry.Marked).passage)
+        assertEquals("page 9 passage", (feed[2] as QaTranscript.Entry.Asked).passage)
+    }
+
+    @Test
+    fun `an entry written before timestamps existed sorts by its date`() {
+        // Old annotations carry no time of day. They are older than anything
+        // stamped today, and a date is a prefix of that day's timestamps, so
+        // lexicographic order already says so.
+        val feed = QaTranscript.feed(
+            qaMarkdown = "",
+            annotations = listOf(
+                ann("stamped this evening", created = "2026-09-20", at = "2026-09-20T21:00:00"),
+                ann("from before the field existed", created = "2026-09-19"),
+            ),
+            chapterSlug = "ch1",
+        )
+        assertEquals(
+            listOf("from before the field existed", "stamped this evening"),
+            feed.map { (it as QaTranscript.Entry.Marked).passage },
+        )
     }
 
     @Test

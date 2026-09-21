@@ -33,6 +33,7 @@ class OutlineGenerator(
         expectations: String = "",
         style: StylePreset = StylePresets.DEFAULT,
         language: String = "English",
+        units: String = DEFAULT_MEASUREMENT_SYSTEM,
         apiKey: String,
     ): CourseOutline {
         require(topic.isNotBlank()) { "topic must not be blank" }
@@ -40,7 +41,9 @@ class OutlineGenerator(
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
         val prompt = buildOutlinePrompt(
-            OutlineRequestInputs(topic, dailyMinutes, priorKnowledge, expectations, style, language),
+            OutlineRequestInputs(
+                topic, dailyMinutes, priorKnowledge, expectations, style, language, units,
+            ),
         )
 
         val raw = client.generateJson(

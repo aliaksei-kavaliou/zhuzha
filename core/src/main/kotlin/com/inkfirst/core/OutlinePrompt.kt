@@ -7,6 +7,7 @@ internal data class OutlineRequestInputs(
     val expectations: String,
     val style: StylePreset,
     val language: String = "English",
+    val units: String = DEFAULT_MEASUREMENT_SYSTEM,
 )
 
 /**
@@ -28,4 +29,5 @@ internal fun buildOutlinePrompt(inputs: OutlineRequestInputs): String = buildStr
     appendLine("- The slug field is a placeholder; leave it empty, it will be derived deterministically.")
     appendLine("- Titles should reflect the chosen teaching style (see system instruction).")
     appendLine("- Write the title, chapter titles, and all objectives in ${inputs.language}. Do not include translations.")
+    appendLine("- ${measurementRule(inputs.units)}")
 }
