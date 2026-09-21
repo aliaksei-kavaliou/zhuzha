@@ -109,7 +109,11 @@ yet" note that used to live here was two months stale.
       buttons kept reverting to raising Android's volume slider. Screens claim the keys
       with `PageKeys.register`; last registration wins, which is how the Ask panel takes
       them from the reader underneath it.
-- [ ] Known open defects: first line of a page not drawable. See `docs/onyx-pen-thread.md` §T7.
+- [x] **First line of a page not drawable — closed 2026-09-21, did not reproduce.** The
+      symptom named the cause and the standing suspicion (anchor maths) was wrong: "takes a
+      page" is a page turn, and the overlay used to resolve a finger contact on its
+      ACTION_DOWN. Fixed as a side effect of making swipes work. Evidence and the remaining
+      latent risk are in `docs/onyx-pen-thread.md` §T7.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

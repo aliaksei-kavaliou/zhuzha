@@ -453,11 +453,26 @@ device rounds unless you know a firmware-level switch.
 
 ### New defects found by the user (NOT yet fixed — flagging to avoid duplicate work)
 
-1. **First line of a page is not drawable.** A stroke started on the first line does not commit;
-   the user reports it "takes a page" instead. Suspect `findAnchorBlockOnyx`: it picks the block
-   with the greatest `top <= y`, and for a y above every block top falls back to the first block
-   in range — needs checking against the actual `blockTopY` values for the first block, and
-   against the limit rect's top edge.
+1. ~~**First line of a page is not drawable.**~~ **CLOSED 2026-09-21 — does not reproduce.**
+   Retested on device: three underlines on the first line of a page, all committed, all
+   extracting the right words (`anchor=15 startY=128 strokeY=68..82 lines=2 touched=[0] ->
+   "number four" / "attaches the" / "wheels and"`), and visible in a screencap. The block top
+   sat at ~60px against a 53px ink margin, so that block WAS the first on the page.
+
+   The standing suspicion — `findAnchorBlockOnyx` — was wrong, and the symptom named the
+   cause: "takes a page" is a PAGE TURN, not a failed anchor. Until 2026-09-20 the overlay
+   resolved a finger contact on its ACTION_DOWN, so any contact whose tool type read as
+   finger turned the page the instant it landed. The same log shows why that was reachable
+   with a pen in hand: the SDK fires `onBeginRawDrawing` for finger contacts too, and a
+   28-point contact was dropped with `tool=1 not a pen` — under the old code that contact
+   would have turned a page from the left band before it had moved at all. Waiting for the
+   release (a tap lifts, a drag resolves by direction, a held press is left alone) removed
+   it as a side effect of restoring swipe.
+
+   **Still latent, and worth knowing:** `emitStroke` gates ink on `lastToolRef`, the tool of
+   the last MotionEvent seen. A genuine pen stroke the digitiser reports as finger is
+   dropped silently — the log line is the only trace. Not observed for a real pen stroke,
+   but it is the shape of any future "my stroke vanished" report.
 2. **"Ask AI" returns the wrong line — usually the line below the marked one.** Suspect
    `extractStrokeText` in ReaderScreen.kt: it measures the anchor block's text layout and takes
    the substring the stroke bbox intersects, with a half-line downward slop tuned for the
