@@ -46,6 +46,7 @@ Figures are the opposite — the fence carries `src=`.
   "style": "headfirst-inspired",
   "model": "gemini-flash-<current>",
   "language": "English",
+  "units": "metric",
   "expectations": "optional free text — what the user wants out of the course",
   "created": "2026-08-07",
   "bookmarks": [{ "chapter_slug": "01-intro", "block_index": 42, "created": "2026-09-01" }],
@@ -56,7 +57,8 @@ Figures are the opposite — the fence carries `src=`.
       "quote": "the passage the note is anchored to",
       "note": "what the user wrote",
       "kind": "text",
-      "created": "2026-09-01"
+      "created": "2026-09-01",
+      "at": "2026-09-01T21:14:07"
     }
   ],
   "chapters": [
@@ -73,10 +75,28 @@ Figures are the opposite — the fence carries `src=`.
 }
 ```
 
+`units` is `metric` or `imperial`, chosen at course creation beside the language and fixed for
+the life of the book — a course whose chapter 1 measures in Celsius and whose chapter 6
+measures in Fahrenheit is worse than either. Left unsaid the model defaults to US customary,
+because most of its training text does, so the book quietly assumes an American reader.
+Absent from a course written before the field existed, which reads as metric.
+
+`created` on an annotation is a DATE and identifies it (deletion matches on quote + created);
+`at` is the full timestamp and only orders it. The Q&A feed merges two sources — the `.qa.md`
+transcript and the `kind: "ask"` annotations — and with date granularity everything made in
+one evening tied, so the feed fell back to the order the two sources happened to be
+concatenated in. `at` is empty on anything written before it existed; `created` is the
+fallback, which correctly sorts such entries before the same day's stamped ones.
+
 Positions are stored as **block indices, never page numbers** — pages recompute whenever the
 font size, line spacing, margin or screen changes, so a page number is meaningless a day later.
 The same index anchors bookmarks, annotations and ink strokes, which is why inserting or
 removing a block is a breaking change to a user's existing annotations (see §2).
+
+A page is identified by **the first block that BEGINS on it**, not simply its first block
+(`anchorForPage`). Since paragraphs can split, two consecutive pages can carry the same index,
+so "which page holds block 12" has two answers — and a bookmark set on the second of them
+resolved back to the first. The first block that starts on a page appears on no earlier one.
 
 Rules: `course.json` is the only file the app mutates on ordinary progress updates. Chapters are immutable once generated (regeneration writes a new revision, e.g. `01-intro.r2.md`, and updates the slug pointer — never silently overwrite something the user annotated).
 
@@ -317,6 +337,26 @@ and repainting the transparent ink SurfaceView does nothing because the page is 
 Compose underneath it. Wiping that layer and refreshing the panel are separate needs — a
 page turn wants only the wipe, an erase wants both scoped to the rectangle it touched.
 See `docs/onyx-pen-thread.md` §T7; remaining defects are listed in CLAUDE.md.
+
+### Ink is anchored to a block, not to words (known, accepted 2026-09-21)
+
+A stroke stores device pixels relative to its **block's** top. Change the font size and the
+text reflows while the ink stays put, so an underline drawn under the second line is no longer
+under the second line. Observed on device 2026-09-20 and deliberately not fixed.
+
+Two reasons it is liveable. Marks that mean something are no longer ink: asking about a passage
+or noting it **consumes** the stroke and leaves an underline on the text plus a `?` or `✎` in
+the margin, and both of those are anchored to the words and reflow correctly. What survives as
+ink is standalone drawing — and a doodle beside a paragraph belongs to the paragraph, which is
+exactly what block anchoring expresses. Font size is also a set-once decision in practice.
+
+If it does become worth fixing, the shape is re-anchoring by the text the stroke covers rather
+than scaling coordinates. Scaling is wrong: wrapping changes with the font, so a paragraph
+gains lines and position does not move linearly. `Stroke.annotatedText` already records what a
+stroke sits over, captured at draw time; what is missing is the *scale* it was drawn at, so the
+old layout can be reconstructed, the stroke's line and x-offset found in it, and the same
+offset located in the current layout. Two new `Stroke` fields plus a re-measure pass in the
+render path — and it touches stroke positioning on the pen path, so it wants the device.
 
 ## 13. Reader signals — adapting the next chapter (built 2026-09-17)
 

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -39,6 +41,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +92,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.ApiKeyStore
@@ -122,6 +126,7 @@ import com.inkfirst.core.parseInlines
 import com.inkfirst.core.parseMarkdown
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 // E-ink can only render pure black + pure white directly; anything between
 // gets dithered (visible dot pattern). Our warm off-white paper looked nice on
@@ -171,6 +176,34 @@ private val INK_TOP_MARGIN = 28.dp
  * page-turn territory and a tall band would swallow forward taps.
  */
 private val MENU_BAND_HEIGHT = 72.dp
+
+/**
+ * Width of the margin strip the ? and \u270e markers live in.
+ *
+ * Fixed rather than intrinsic so the text column beside it does not narrow as
+ * annotations accumulate — a paragraph must not reflow because you asked a
+ * question about it.
+ */
+private val MARKER_GUTTER_WIDTH = 22.dp
+
+/**
+ * Padding between the paragraph Row's top and a marker glyph's own line box —
+ * the gutter Box's top inset plus the marker Text's. Subtracted when placing
+ * a marker, so the number it is positioned by is the glyph's baseline and not
+ * the baseline plus whatever padding happens to be in the way.
+ */
+private val MARKER_PADDING_ABOVE = 4.dp
+
+/**
+ * How far a finger must travel for a drag to turn a page, and to change
+ * chapter.
+ *
+ * Vertical is the higher bar on purpose: a vertical wobble during a
+ * horizontal drag is common, and reading one as a chapter change costs the
+ * reader their place in the book rather than one page.
+ */
+private val DRAG_TURN_THRESHOLD = 60.dp
+private val DRAG_CHAPTER_THRESHOLD = 80.dp
 
 /**
  * Width of a chapter cover or closing picture, as a fraction of the text
@@ -242,6 +275,30 @@ fun ReaderScreen(
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
     // When non-null, an AddNote overlay is up with this quoted passage.
     var pendingNoteQuote by remember(chapterSlug) { mutableStateOf<String?>(null) }
+    /**
+     * The ink that opened the Add-note overlay, waiting to hear whether the
+     * note is actually written.
+     *
+     * A mark that becomes a note is spent, the same as one that becomes a
+     * question — but a note only exists once it is saved, and a reader who
+     * changes their mind in the overlay must get their mark back.
+     */
+    var pendingNoteStroke by remember(chapterSlug) { mutableStateOf<InkStroke?>(null) }
+    /**
+     * Drop a stroke that has been turned into a question or a note.
+     *
+     * One function because the rule has to be the same wherever it is
+     * applied: a fresh gesture's chip, a tap on week-old ink, a note saved
+     * from either. The ink was how the reader pointed at a passage; once the
+     * passage is underlined and marked in the margin, the pointing is done.
+     */
+    val consumeStroke: (InkStroke?) -> Unit = { stroke ->
+        if (stroke != null && stroke in strokes) {
+            val updated = strokes - stroke
+            strokes = updated
+            store.saveStrokes(courseSlug, chapterSlug, updated)
+        }
+    }
     // When non-null, the NoteView overlay shows this annotation for read + delete.
     var viewingAnnotation by remember(chapterSlug) { mutableStateOf<Annotation?>(null) }
     /**
@@ -304,8 +361,21 @@ fun ReaderScreen(
     }
     // startBlockIndex = -1 is the "open at last block" sentinel — used when
     // flipping left off the first page of a chapter into the previous
-    // chapter's tail. Resolved once blocks are parsed (LaunchedEffect below).
-    var anchorBlockIndex by remember(chapterSlug) { mutableStateOf(startBlockIndex.coerceAtLeast(0)) }
+    // chapter's tail. It stays -1 in state and is resolved during composition
+    // (see effectiveAnchor below), not in an effect: an effect runs a frame
+    // late, so the chapter opened at page 1 and then jumped to its end, which
+    // on e-ink is two full repaints and reads as the reader losing the page.
+    var anchorBlockIndex by remember(chapterSlug) { mutableStateOf(startBlockIndex) }
+    /**
+     * Whether the reader has moved within this chapter in this session.
+     *
+     * Progress is written only once this is true. Opening a chapter at its
+     * start — which is what Contents does for a finished one — used to write
+     * block 0 straight over the saved position, so merely LOOKING at a
+     * chapter you had read destroyed your place in it, and the next cold
+     * start resumed at page 1.
+     */
+    var anchorMoved by remember(chapterSlug) { mutableStateOf(false) }
     var compileState by remember(chapterSlug) { mutableStateOf<CompileState>(CompileState.Idle) }
 
     LaunchedEffect(courseSlug, chapterSlug) {
@@ -452,6 +522,7 @@ fun ReaderScreen(
                     quote = trimmed,
                     note = "",
                     created = LocalDate.now().toString(),
+                    at = LocalDateTime.now().withNano(0).toString(),
                     kind = "ask",
                 )
                 if (updated != null) course = updated
@@ -460,31 +531,37 @@ fun ReaderScreen(
     }
     askRef.value = askAbout
 
-    LaunchedEffect(blocks, startBlockIndex) {
-        if (startBlockIndex < 0 && blocks.isNotEmpty()) {
-            anchorBlockIndex = blocks.lastIndex
-        }
+    // The anchor actually in force. Negative means the sentinel is still
+    // waiting for blocks; once they arrive it resolves to the chapter's end.
+    val effectiveAnchor = if (anchorBlockIndex >= 0) {
+        anchorBlockIndex
+    } else {
+        blocks.lastIndex.coerceAtLeast(0)
     }
 
     // Persist the anchor whenever it changes — this is the "last block read"
-    // that Contents uses to resume you where you left off.
-    LaunchedEffect(anchorBlockIndex, courseSlug, chapterSlug) {
-        if (course != null && chapter != null && blocks.isNotEmpty()) {
-            store.updateChapterProgress(courseSlug, chapter.n, anchorBlockIndex)
+    // that Contents and the cold-start resume use to put you back.
+    // Opening at the chapter's END is a position in its own right — it is
+    // what flipping backwards out of the next chapter means — so it counts as
+    // a move even before the first page turn.
+    val anchorWorthSaving = anchorMoved || startBlockIndex < 0
+    LaunchedEffect(effectiveAnchor, anchorWorthSaving, courseSlug, chapterSlug) {
+        if (anchorWorthSaving && course != null && chapter != null && blocks.isNotEmpty()) {
+            store.updateChapterProgress(courseSlug, chapter.n, effectiveAnchor)
         }
     }
 
     // Status transitions:
     //   GENERATED → READING when the reader opens a fresh chapter
     //   READING   → DONE    when the reader reaches the last block
-    LaunchedEffect(chapter, anchorBlockIndex, blocks) {
+    LaunchedEffect(chapter, effectiveAnchor, blocks) {
         val c = course ?: return@LaunchedEffect
         val ch = chapter ?: return@LaunchedEffect
         val newStatus = when {
             ch.status == ChapterStatus.GENERATED -> ChapterStatus.READING
             ch.status == ChapterStatus.READING &&
                 blocks.isNotEmpty() &&
-                anchorBlockIndex >= blocks.lastIndex -> ChapterStatus.DONE
+                effectiveAnchor >= blocks.lastIndex -> ChapterStatus.DONE
             else -> null
         }
         if (newStatus != null) {
@@ -586,7 +663,7 @@ fun ReaderScreen(
                     fontScale = fontScale,
                     lineSpacing = lineSpacing,
                     textAlign = textAlign,
-                    anchorBlockIndex = anchorBlockIndex,
+                    anchorBlockIndex = effectiveAnchor,
                     focusRequester = focusRequester,
                     strokes = strokes,
                     fingerDraws = fingerDraws,
@@ -626,7 +703,6 @@ fun ReaderScreen(
                         pendingGestureStroke = null
                     },
                     onFirstBlockChange = { headerFirstBlock = it },
-                    onAskAboutBlock = { text -> askAbout(text, null) },
                     onOpenAnnotation = { a ->
                         // A question mark is a way back into the conversation
                         // it came from; a note opens the note. Reusing the
@@ -648,7 +724,10 @@ fun ReaderScreen(
                         chatSelection == null &&
                         pendingNoteQuote == null &&
                         viewingAnnotation == null,
-                    onAnchorChange = { anchorBlockIndex = it },
+                    onAnchorChange = {
+                        anchorBlockIndex = it
+                        anchorMoved = true
+                    },
                     onToggleMenu = { showFormatMenu = !showFormatMenu },
                 )
             }
@@ -701,28 +780,30 @@ fun ReaderScreen(
             ) {
                 TextButton(onClick = {
                     askAbout(text, stroke.blockIndex)
-                    // An enclosure is spent once the question is asked: it
-                    // sits ON the words, and five of them in a chapter is
-                    // five heavy shapes over the text you are trying to read.
-                    // A margin bar costs nothing to keep — it sits beside the
-                    // text, which is the paper idiom for "this passage
-                    // matters", so it stays.
+                    // A mark that became a question is SPENT.
                     //
-                    // Removing the shape is only reasonable because asking
-                    // now leaves a ? in the margin. Before that the ink was
-                    // the sole evidence a question had been asked, which made
-                    // using a mark the way to lose it.
-                    if (!isVerticalMarkStroke(stroke)) {
-                        val updated = strokes - stroke
-                        strokes = updated
-                        store.saveStrokes(courseSlug, chapterSlug, updated)
-                    }
+                    // The question is now recorded three times over — the
+                    // underline on the passage, the ? in the margin, the turn
+                    // in the chapter's Q&A — and the ink adds a fourth mark
+                    // saying the same thing, on top of the words you are
+                    // trying to read. Margin bars used to be kept on the
+                    // argument that they cost nothing beside the text; with
+                    // the underline back they cost a duplicate.
+                    //
+                    // Ink that is never turned into anything stays. That is
+                    // the whole distinction: a drawing is a drawing, a
+                    // gesture is consumed by what it asked for.
+                    consumeStroke(stroke)
                     pendingGestureStroke = null
                 }) {
                     Text("Ask about this", color = PaperColor)
                 }
                 TextButton(onClick = {
                     pendingNoteQuote = text
+                    // Held, not removed yet: the note does not exist until it
+                    // is saved, and cancelling the overlay must not cost the
+                    // reader the mark they drew.
+                    pendingNoteStroke = stroke
                     pendingGestureStroke = null
                 }) {
                     Text("Add note", color = PaperColor)
@@ -759,12 +840,17 @@ fun ReaderScreen(
                 if (blockText != null) {
                     TextButton(onClick = {
                         askAbout(blockText, stroke.blockIndex)
+                        // Spent, exactly as a fresh gesture is — the rule
+                        // cannot depend on whether the mark is a minute or a
+                        // week old.
+                        consumeStroke(stroke)
                         viewingStroke = null
                     }) {
                         Text("Ask about this", color = PaperColor)
                     }
                     TextButton(onClick = {
                         pendingNoteQuote = blockText
+                        pendingNoteStroke = stroke
                         viewingStroke = null
                     }) {
                         Text("Add note", color = PaperColor)
@@ -804,7 +890,11 @@ fun ReaderScreen(
         pendingNoteQuote?.let { quote ->
             AddNoteOverlay(
                 quote = quote,
-                onCancel = { pendingNoteQuote = null },
+                onCancel = {
+                    // The mark survives a change of mind.
+                    pendingNoteStroke = null
+                    pendingNoteQuote = null
+                },
                 onSave = { noteText ->
                     val c = course ?: return@AddNoteOverlay
                     val trimmedQuote = quote.trim()
@@ -817,8 +907,11 @@ fun ReaderScreen(
                         quote = trimmedQuote,
                         note = noteText.trim(),
                         created = LocalDate.now().toString(),
+                        at = LocalDateTime.now().withNano(0).toString(),
                     )
                     if (updated != null) course = updated
+                    consumeStroke(pendingNoteStroke)
+                    pendingNoteStroke = null
                     pendingNoteQuote = null
                 },
             )
@@ -1013,7 +1106,6 @@ private fun PagedContent(
     onFirstBlockChange: (Int) -> Unit,
     onOpenPrevChapter: (() -> Unit)?,
     onOpenNextChapter: (() -> Unit)?,
-    onAskAboutBlock: (String) -> Unit,
     onOpenAnnotation: (Annotation) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -1064,6 +1156,15 @@ private fun PagedContent(
     }
     val hasBadge: (String) -> Boolean = { kind ->
         course?.slug?.let { store.badgeFile(it, kind) != null } == true
+    }
+    // A mascot beside a block's label pushes that block's text down by its
+    // own height, so anything measuring where the text IS has to know.
+    val badgeHeightPx: (String) -> Float = { kind ->
+        if (kind.isNotBlank() && hasBadge(kind)) {
+            with(density) { (BADGE_SIZE * fontScale).toPx() }
+        } else {
+            0f
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -1148,8 +1249,20 @@ private fun PagedContent(
              * hit-tests strokes. Keyed by the annotation's identity so a
              * repagination replaces rather than accumulates.
              */
-            val markerRects = remember(chapterSlug) {
+            val markerRects = remember(chapterSlug, pageIndex) {
                 mutableStateMapOf<String, Pair<Annotation, Rect>>()
+            }
+            /**
+             * Where each "Show answer" button sits, in root coordinates.
+             *
+             * Same reason the markers need a map: while the SDK owns the touch
+             * stream the button's own `clickable` never runs, so the contact
+             * arrives at the tap ladder instead — and a button that happens to
+             * sit in a turn band just turned the page. Keyed by the exercise's
+             * block index, and rebuilt per page like the markers.
+             */
+            val revealRects = remember(chapterSlug, pageIndex) {
+                mutableStateMapOf<Int, Rect>()
             }
 
             // The block index of a page's first block is just the sum of block counts
@@ -1157,7 +1270,10 @@ private fun PagedContent(
             // Read off the page itself now: a split paragraph appears on two
             // pages, so summing earlier page sizes would double-count it.
             val firstBlockIndex = pages.getOrNull(pageIndex)?.firstOrNull()?.index ?: 0
-            LaunchedEffect(firstBlockIndex) { onFirstBlockChange(firstBlockIndex) }
+            // What a bookmark or a resume stores for this page. NOT the same
+            // as the first block: see [anchorForPage].
+            val pageAnchorIndex = anchorForPage(pages.getOrNull(pageIndex))
+            LaunchedEffect(pageAnchorIndex) { onFirstBlockChange(pageAnchorIndex) }
 
             // What the ink overlay is allowed to touch on this page: the
             // global block-index range and the subset of persisted strokes
@@ -1165,6 +1281,27 @@ private fun PagedContent(
             val pageBlockCount = pages.getOrNull(pageIndex)?.size ?: 0
             val pageBlockRange = firstBlockIndex until (firstBlockIndex + pageBlockCount)
             val pageStrokes = strokes.filter { it.blockIndex in pageBlockRange }
+
+            // The side buttons, claimed at the Activity's door rather than
+            // through Compose focus — see [PageKeys] for why that had to
+            // change. Claimed only while the page is the thing on top:
+            // penEnabled is already "nothing is open over the chapter", which
+            // is the same question asked for the pen.
+            val turnPage = rememberUpdatedState<(Boolean) -> Unit> { forward ->
+                if (forward) {
+                    goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
+                } else {
+                    goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
+                }
+            }
+            DisposableEffect(penEnabled) {
+                val release = if (penEnabled) {
+                    PageKeys.register { forward -> turnPage.value(forward) }
+                } else {
+                    null
+                }
+                onDispose { release?.invoke() }
+            }
 
             // The one executor. Both transports — the finger detector below
             // and the Onyx overlay, which has to observe its own taps — decide
@@ -1174,6 +1311,7 @@ private fun PagedContent(
                     TapAction.CloseMenu -> onToggleMenu()
                     TapAction.DismissChip -> onDismissChip()
                     TapAction.ClearSelection -> onClearSelection()
+                    is TapAction.PressButton -> revealed[action.blockIndex] = true
                     is TapAction.OpenMarker -> onOpenAnnotation(action.annotation)
                     is TapAction.ShowStrokeChip -> onStrokeTapped(action.stroke)
                     TapAction.ToggleMenu -> onToggleMenu()
@@ -1181,6 +1319,8 @@ private fun PagedContent(
                         goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
                     TapAction.NextPage ->
                         goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
+                    TapAction.PrevChapter -> onOpenPrevChapter?.invoke()
+                    TapAction.NextChapter -> onOpenNextChapter?.invoke()
                     TapAction.Ignore -> Unit
                 }
             }
@@ -1218,8 +1358,8 @@ private fun PagedContent(
                             }
                         }
                         .pointerInput(pageIndex, pages.size, menuOpen) {
-                            val dragThresholdPx = 60.dp.toPx()
-                            val vDragThresholdPx = 80.dp.toPx()  // slightly higher — vertical drags happen more accidentally
+                            val dragThresholdPx = DRAG_TURN_THRESHOLD.toPx()
+                            val vDragThresholdPx = DRAG_CHAPTER_THRESHOLD.toPx()
                             val dragStartPx = 10.dp.toPx()
                             val menuBandPx = MENU_BAND_HEIGHT.toPx()
                             awaitEachGesture {
@@ -1237,21 +1377,23 @@ private fun PagedContent(
                                         // of it. That was the "Show answer button also flipped a
                                         // page" bug.
                                         if (change.isConsumed) break
-                                        // A drag is the one meaning the ladder
-                                        // does not cover — it has no position,
-                                        // only a direction. An open menu still
-                                        // outranks it: the panel swallows the
-                                        // contact whatever shape it had.
-                                        if (isDrag && !menuOpen) {
-                                            // Which axis dominates decides the meaning.
-                                            if (kotlin.math.abs(totalDx) >= kotlin.math.abs(totalDy)) {
-                                                if (totalDx <= -dragThresholdPx) goNext(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenNextChapter)
-                                                else if (totalDx >= dragThresholdPx) goPrev(pageIndex, pages, { pageIndex = it }, onAnchorChange, onOpenPrevChapter)
-                                            } else {
-                                                // Vertical: swipe UP → next chapter, swipe DOWN → previous chapter.
-                                                if (totalDy <= -vDragThresholdPx) onOpenNextChapter?.invoke()
-                                                else if (totalDy >= vDragThresholdPx) onOpenPrevChapter?.invoke()
-                                            }
+                                        // A drag is the one meaning the tap
+                                        // ladder does not cover — it has no
+                                        // position, only a direction — so it
+                                        // gets a rule of its own, in the same
+                                        // file, resolved by both transports.
+                                        if (isDrag) {
+                                            performTap(
+                                                resolveSwipe(
+                                                    totalDx,
+                                                    totalDy,
+                                                    dragThresholdPx,
+                                                    vDragThresholdPx,
+                                                    menuOpen = menuOpen,
+                                                    chipOpen = chipOpen,
+                                                    selectionActive = selectionActive,
+                                                )
+                                            )
                                         } else {
                                             performTap(
                                                 resolveTap(
@@ -1303,7 +1445,6 @@ private fun PagedContent(
                             // the pen. Costs one line of page height and makes
                             // the first line behave like every other one.
                             Spacer(Modifier.height(INK_TOP_MARGIN))
-                            val pageStart = firstBlockIndex  // computed above, arithmetic
                             pages.getOrNull(pageIndex)?.forEachIndexed { i, item ->
                                 val block = item.block
                                 val globalIdx = item.index
@@ -1369,6 +1510,10 @@ private fun PagedContent(
                                         onMarkerBounds = { a, r ->
                                             markerRects[a.created + "|" + a.quote] = a to r
                                         },
+                                        onRevealBounds = { r ->
+                                            if (r == null) revealRects.remove(globalIdx)
+                                            else revealRects[globalIdx] = r
+                                        },
                                         loadFigure = loadFigure,
                                         loadBadge = loadBadge,
                                     )
@@ -1415,11 +1560,13 @@ private fun PagedContent(
                                     extractMarkedPassage(
                                         raw, blocks, blockTopsInRoot, overlayTopInRoot,
                                         widthPx, measurer, density, fontScale, lineSpacing,
+                                        badgeHeightPx,
                                     )
                                 } else {
                                     extractStrokeText(
                                         raw, anchor, widthPx, measurer, density,
                                         fontScale, lineSpacing,
+                                        badgeHeightPx = badgeHeightPx,
                                     )
                                 }
                                 if (!text.isNullOrBlank()) raw.copy(annotatedText = text) else raw
@@ -1484,19 +1631,31 @@ private fun PagedContent(
                             // clickable on the glyph never runs, so a tap on
                             // ? or \u270e simply turned the page.
                             resolveTap = { x, y, w, h, strokeHit ->
+                                val inRoot = Offset(x + overlayLeftInRoot, y + overlayTopInRoot)
                                 val hitMarker = markerRects.values.firstOrNull { (_, r) ->
-                                    r.contains(
-                                        Offset(x + overlayLeftInRoot, y + overlayTopInRoot),
-                                    )
+                                    r.contains(inRoot)
                                 }?.first
+                                val hitButton = revealRects.entries
+                                    .firstOrNull { (_, r) -> r.contains(inRoot) }?.key
                                 resolveTap(
                                     x, y, w, h,
                                     with(density) { MENU_BAND_HEIGHT.toPx() },
                                     menuOpen = menuOpen,
                                     chipOpen = chipOpen,
                                     selectionActive = selectionActive,
+                                    buttonHit = hitButton,
                                     markerHit = hitMarker,
                                     strokeHit = strokeHit,
+                                )
+                            },
+                            resolveSwipe = { dx, dy ->
+                                resolveSwipe(
+                                    dx, dy,
+                                    with(density) { DRAG_TURN_THRESHOLD.toPx() },
+                                    with(density) { DRAG_CHAPTER_THRESHOLD.toPx() },
+                                    menuOpen = menuOpen,
+                                    chipOpen = chipOpen,
+                                    selectionActive = selectionActive,
                                 )
                             },
                             onTapAction = performTap,
@@ -1527,16 +1686,38 @@ private fun PagedContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp, bottom = 8.dp)
-                        // The footer is the menu's tap target too. The band
-                        // above it belongs to the ink overlay, whose box stops
-                        // short of this row — so a tap at the true bottom edge
-                        // of the page, which is where a reader aims for
-                        // "bottom", landed outside every detector and did
-                        // nothing. Hitting the menu meant finding a strip you
-                        // could not see. Now the page-number line itself opens
-                        // it, and the band above is the generous margin around
-                        // that target rather than the whole target.
-                        .pointerInput(Unit) { detectTapGestures { onToggleMenu() } },
+                        // The footer is a menu target too — the ink overlay's
+                        // box stops short of this row, so a tap at the true
+                        // bottom edge of the page, which is where a reader
+                        // aims for "bottom", would otherwise land outside
+                        // every detector and do nothing.
+                        //
+                        // But it is the menu target only across its MIDDLE.
+                        // It used to toggle the menu at any x, which left the
+                        // bottom of the page saying two different things one
+                        // pixel apart: the band above turned the page at its
+                        // corners while the line below opened the menu there.
+                        // The whole bottom strip reads as one thing now — the
+                        // corners turn, the centre opens the menu — which is
+                        // the rule the band already followed. Passing the
+                        // row's own height as the band makes every y in it
+                        // "bottom", so only x decides.
+                        .pointerInput(menuOpen, chipOpen, selectionActive) {
+                            detectTapGestures { at ->
+                                performTap(
+                                    resolveTap(
+                                        at.x,
+                                        at.y,
+                                        size.width.toFloat(),
+                                        size.height.toFloat(),
+                                        size.height.toFloat(),
+                                        menuOpen = menuOpen,
+                                        chipOpen = chipOpen,
+                                        selectionActive = selectionActive,
+                                    )
+                                )
+                            }
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -1913,6 +2094,8 @@ private fun RenderBlock(
     onReveal: () -> Unit,
     onOpenAnnotation: (Annotation) -> Unit,
     onMarkerBounds: (Annotation, Rect) -> Unit,
+    /** Where a "Show answer" button sits, or null when there is no longer one. */
+    onRevealBounds: (Rect?) -> Unit,
     loadFigure: (String) -> ImageBitmap?,
     loadBadge: (String) -> ImageBitmap?,
 ) {
@@ -1926,7 +2109,8 @@ private fun RenderBlock(
         is Block.OrderedItem -> ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing)
         is Block.Rule -> RuleBlock()
         is Block.CustomFence -> when (block.kind) {
-            "exercise" -> ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal, loadBadge)
+            "exercise" ->
+                ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal, onRevealBounds, loadBadge)
             "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge)
             "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
             "meta" -> MetaBlock(block, fontScale, loadFigure)
@@ -2012,19 +2196,25 @@ private fun ParagraphBlock(
     onOpenAnnotation: (Annotation) -> Unit,
     onMarkerBounds: (Annotation, Rect) -> Unit,
 ) {
-    val textAnnotations = annotations.filter { it.kind == "text" }
-    val annotated = if (textAnnotations.isEmpty()) {
+    // Every annotation underlines its passage, questions included.
+    //
+    // An "ask" used to be a margin ? and nothing else, on the theory that a
+    // clean page was worth more than the mark. On the device that reads as a
+    // question mark floating beside a paragraph with no way to tell WHICH
+    // sentence it belongs to — and the answer, from Aliaksei, was to ask for
+    // the underline back.
+    val annotated = if (annotations.isEmpty()) {
         renderInlines(inlines)
     } else {
-        renderInlinesWithUnderlines(inlines, textAnnotations.map { it.quote })
+        renderInlinesWithUnderlines(inlines, annotations.map { it.quote })
     }
     // Precompute character ranges of each underlined quote so a tap inside
     // one opens the note directly, matching how physical marginalia work
     // (the mark IS the affordance). Falls through to the parent page-turn
     // handler when the tap misses every range — we only .consume() on a hit.
     val plainText = annotated.text
-    val annotationRanges = remember(plainText, textAnnotations) {
-        textAnnotations.mapNotNull { a ->
+    val annotationRanges = remember(plainText, annotations) {
+        annotations.mapNotNull { a ->
             val needle = firstLineOf(a.quote.trim())
             if (needle.isBlank()) return@mapNotNull null
             val start = plainText.indexOf(needle)
@@ -2032,6 +2222,56 @@ private fun ParagraphBlock(
         }
     }
     var textLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    // Where each margin marker belongs vertically: on the BASELINE of the
+    // line its quote starts on.
+    //
+    // Stacking them from the paragraph's top happened to look right at the
+    // default type size, because a short paragraph is a couple of lines and
+    // the error was small. Turn the font up and the same paragraph is six
+    // lines tall, and the ? sits two lines away from the sentence it is
+    // about. The layout already knows the answer; it was simply never asked.
+    //
+    // Baselines rather than line tops, and measured rather than estimated.
+    // A line BOX is mostly leading — for 18sp type on 30sp leading, roughly a
+    // quarter of the box is empty space above the glyphs — so hanging a 14sp
+    // ? from the box top floats it above the words, and dropping it by some
+    // guessed fraction only moves the error somewhere else. Two baselines on
+    // the same line is what "on the same line" means on paper, and both
+    // numbers are available exactly.
+    val markerMeasurer = rememberTextMeasurer()
+    val markerStyle = androidx.compose.ui.text.TextStyle(
+        fontFamily = FontFamily.Serif,
+        fontSize = 14.sp * fontScale,
+    )
+    val markerLead = with(LocalDensity.current) { MARKER_PADDING_ABOVE.toPx() }
+    val markerBaseline = remember(fontScale) {
+        markerMeasurer.measure(AnnotatedString("?"), markerStyle).firstBaseline
+    }
+    val markerYs = remember(plainText, annotations, textLayout, fontScale) {
+        val layout = textLayout
+        val minGapPx = 24f * fontScale
+        var lastY = Float.NEGATIVE_INFINITY
+        annotations
+            .map { a ->
+                val needle = firstLineOf(a.quote.trim())
+                val start = if (needle.isBlank()) -1 else plainText.indexOf(needle)
+                val line = if (start < 0 || layout == null) 0 else layout.getLineForOffset(start)
+                // The glyph's own box sits [markerLead] below wherever this
+                // offset puts it — the paddings between the Row and the text.
+                val y = (layout?.getLineBaseline(line) ?: markerBaseline) -
+                    markerBaseline - markerLead
+                a to y
+            }
+            .sortedBy { it.second }
+            // Two questions about the same line would otherwise print one
+            // marker on top of the other.
+            .map { (a, y) ->
+                val placed = maxOf(y, lastY + minGapPx)
+                lastY = placed
+                a to placed
+            }
+            .toMap()
+    }
     val hitSlop = with(LocalDensity.current) { 8.dp.toPx() }
     // 12dp was 0.4 of a line: two paragraphs ran together into one slab and
     // there was no way to see where one ended. 20dp reads as a break without
@@ -2085,14 +2325,23 @@ private fun ParagraphBlock(
         // different acts and read differently at a glance: ✎ is something you
         // wrote, ? is something you wanted explained.
         if (annotations.isNotEmpty()) {
-            Column(modifier = Modifier.padding(start = 6.dp, top = 2.dp)) {
+            // A Box with per-marker offsets, not a Column: the markers are
+            // positioned against the TEXT beside them, which a stack cannot
+            // express. Fixed width so the text column is the same width
+            // whether a paragraph carries one marker or four.
+            Box(
+                modifier = Modifier
+                    .padding(start = 6.dp, top = 2.dp)
+                    .width(MARKER_GUTTER_WIDTH * fontScale),
+            ) {
                 annotations.forEach { a ->
+                    val y = markerYs[a] ?: 0f
                     Text(
                         text = if (a.kind == "ask") "?" else "✎",
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 14.sp * fontScale,
+                        style = markerStyle,
                         color = InkColor,
                         modifier = Modifier
+                            .offset { IntOffset(0, y.toInt()) }
                             .onGloballyPositioned { onMarkerBounds(a, it.boundsInRoot()) }
                             .clickable { onOpenAnnotation(a) }
                             .padding(vertical = 2.dp, horizontal = 4.dp),
@@ -2135,6 +2384,7 @@ private fun ExerciseBlock(
     lineSpacing: Float,
     revealed: Boolean,
     onReveal: () -> Unit,
+    onRevealBounds: (Rect?) -> Unit,
     loadBadge: (String) -> ImageBitmap?,
 ) {
     val (question, answer) = splitExerciseBody(f.body)
@@ -2178,7 +2428,19 @@ private fun ExerciseBlock(
                 }
             }
         } else {
-            TextButton(onClick = onReveal) { Text("Show answer", color = InkColor) }
+            // The bounds are reported so the tap ladder can treat this as the
+            // target it is. On the pen path the SDK owns the touch stream and
+            // this button's own click never runs — the contact goes to the
+            // ladder, and before it knew about buttons a tap here just turned
+            // the page. Cleared on disposal so a revealed answer (or a page
+            // turn) does not leave a live target behind.
+            TextButton(
+                onClick = onReveal,
+                modifier = Modifier.onGloballyPositioned { onRevealBounds(it.boundsInRoot()) },
+            ) { Text("Show answer", color = InkColor) }
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { onRevealBounds(null) }
+            }
         }
     }
 }
@@ -2496,7 +2758,7 @@ private fun goPrev(
 ) {
     if (pageIndex > 0) {
         setPage(pageIndex - 1)
-        onAnchorChange(pages.getOrNull(pageIndex - 1)?.firstOrNull()?.index ?: 0)
+        onAnchorChange(anchorForPage(pages.getOrNull(pageIndex - 1)))
     } else {
         onOpenPrevChapter?.invoke()
     }
@@ -2511,7 +2773,7 @@ private fun goNext(
 ) {
     if (pageIndex < pages.size - 1) {
         setPage(pageIndex + 1)
-        onAnchorChange(pages.getOrNull(pageIndex + 1)?.firstOrNull()?.index ?: 0)
+        onAnchorChange(anchorForPage(pages.getOrNull(pageIndex + 1)))
     } else {
         onOpenNextChapter?.invoke()
     }
@@ -2723,6 +2985,7 @@ private fun extractMarkedPassage(
     density: Density,
     fontScale: Float,
     lineSpacing: Float,
+    badgeHeightPx: (String) -> Float,
 ): String? {
     val anchorTop = blockTopsInRoot[stroke.blockIndex]?.minus(overlayTopInRoot)
         ?: return null
@@ -2740,6 +3003,7 @@ private fun extractMarkedPassage(
         val part = extractStrokeText(
             moved, block, widthPx, measurer, density, fontScale, lineSpacing,
             allowNearMiss = false,
+            badgeHeightPx = badgeHeightPx,
         )
         if (!part.isNullOrBlank()) parts += part
     }
@@ -2779,6 +3043,111 @@ private const val LINE_COVERAGE_FRACTION = 0.5f
  */
 private const val PARTIAL_WORD_KEEP_FRACTION = 0.5f
 
+/**
+ * Where a block's TEXT sits inside the block, and how it is set.
+ *
+ * Stroke coordinates are stored relative to a block's top-left corner, but
+ * what a stroke marks is words — so anything that wants to know which words
+ * has to measure the same text, at the same size, in the same column, offset
+ * by however far into the block the renderer actually put it.
+ *
+ * Keep this in step with the renderer and with Paginator.estimateHeight. All
+ * three measure the same page; when they disagree the reader sees it as ink
+ * selecting the wrong words, or as a clipped last line.
+ */
+private data class BlockTextGeometry(
+    val plain: String,
+    val style: TextStyle,
+    /** Width of the text column, which is not the block's width inside a border. */
+    val widthPx: Int,
+    val leftOffsetPx: Float,
+    val topOffsetPx: Float,
+)
+
+private fun blockTextGeometry(
+    block: Block,
+    widthPx: Int,
+    density: Density,
+    measurer: TextMeasurer,
+    fontScale: Float,
+    lineSpacing: Float,
+    badgeHeightPx: (String) -> Float,
+): BlockTextGeometry? = with(density) {
+    val bodyStyle = TextStyle(
+        fontFamily = FontFamily.Serif,
+        fontSize = 18.sp * fontScale,
+        lineHeight = 30.sp * fontScale * lineSpacing,
+        hyphens = Hyphens.Auto,
+    )
+    return@with when (block) {
+        is Block.Paragraph -> BlockTextGeometry(
+            plain = block.inlines.plainText(),
+            style = bodyStyle,
+            widthPx = widthPx,
+            leftOffsetPx = 0f,
+            topOffsetPx = 0f,
+        )
+        is Block.Heading -> BlockTextGeometry(
+            plain = block.inlines.plainText(),
+            style = bodyStyle,
+            widthPx = widthPx,
+            leftOffsetPx = 0f,
+            topOffsetPx = 0f,
+        )
+        is Block.BulletItem, is Block.OrderedItem -> {
+            val prefix = if (block is Block.OrderedItem) "${block.n}. " else "• "
+            val inlines = when (block) {
+                is Block.BulletItem -> block.inlines
+                is Block.OrderedItem -> block.inlines
+                else -> emptyList()
+            }
+            // ListItemBlock indents the row and sets the marker in a Text of
+            // its own, so the body column starts after both.
+            val indent = 18.dp.toPx()
+            val markerWidth = measurer.measure(
+                text = AnnotatedString(prefix),
+                style = bodyStyle,
+            ).size.width.toFloat()
+            BlockTextGeometry(
+                plain = inlines.plainText(),
+                style = bodyStyle,
+                widthPx = (widthPx - indent - markerWidth).toInt().coerceAtLeast(1),
+                leftOffsetPx = indent + markerWidth,
+                topOffsetPx = 0f,
+            )
+        }
+        is Block.CustomFence -> {
+            val body = when (block.kind) {
+                // Only the question is on the page until the answer is
+                // revealed, and the revealed answer is set differently again.
+                "exercise" -> splitExerciseBody(block.body).first
+                "recap" -> block.body.trim()
+                else -> return@with null
+            }
+            // BorderedBlock: 4dp spacer, 8dp outer vertical padding, a 1dp
+            // border, 12dp inner padding, then the label row (as tall as the
+            // mascot when the course has one) and its 6dp gap.
+            val labelText = 11.sp.toPx() * fontScale
+            val label = maxOf(labelText, badgeHeightPx(badgeKindFor(block.kind) ?: ""))
+            val inset = 12.dp.toPx() + 1.dp.toPx()
+            BlockTextGeometry(
+                // Parsed, like the renderer: the backticks and asterisks are
+                // gone from the page, so they must be gone from the measure.
+                plain = parseInlines(body).plainText(),
+                style = TextStyle(
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 17.sp * fontScale,
+                    lineHeight = 28.sp * fontScale * lineSpacing,
+                ),
+                widthPx = (widthPx - inset * 2).toInt().coerceAtLeast(1),
+                leftOffsetPx = inset,
+                topOffsetPx = 4.dp.toPx() + 8.dp.toPx() + inset + label + 6.dp.toPx(),
+            )
+        }
+        is Block.Rule -> null
+    }
+}
+
 private fun extractStrokeText(
     stroke: InkStroke,
     block: Block,
@@ -2795,34 +3164,19 @@ private fun extractStrokeText(
      * and claiming a line would over-select.
      */
     allowNearMiss: Boolean = true,
+    /** Height of the mascot beside a block label, or 0 when the course has none. */
+    badgeHeightPx: (String) -> Float = { 0f },
 ): String? {
-    val plain = when (block) {
-        is Block.Paragraph -> block.inlines.plainText()
-        is Block.BulletItem -> block.inlines.plainText()
-        is Block.OrderedItem -> block.inlines.plainText()
-        is Block.Heading -> block.inlines.plainText()
-        is Block.CustomFence -> when (block.kind) {
-            "recap", "exercise" -> block.body.trim()
-            else -> return null
-        }
-        is Block.Rule -> return null
-    }
+    val geometry = blockTextGeometry(
+        block, widthPx, density, measurer, fontScale, lineSpacing, badgeHeightPx,
+    ) ?: return null
+    val plain = geometry.plain
     if (plain.isBlank() || stroke.points.isEmpty() || widthPx <= 0) return null
 
-    // Style approximates what ParagraphBlock uses. Slight metric drift is
-    // OK — we're locating chars, not pixel-aligning glyphs.
-    val style = with(density) {
-        TextStyle(
-            fontFamily = FontFamily.Serif,
-            fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale * lineSpacing,
-            hyphens = Hyphens.Auto,
-        )
-    }
     val layout = measurer.measure(
         text = AnnotatedString(plain),
-        style = style,
-        constraints = Constraints(maxWidth = widthPx),
+        style = geometry.style,
+        constraints = Constraints(maxWidth = geometry.widthPx),
     )
 
     var minX = Float.POSITIVE_INFINITY
@@ -2830,10 +3184,18 @@ private fun extractStrokeText(
     var minY = Float.POSITIVE_INFINITY
     var maxY = Float.NEGATIVE_INFINITY
     stroke.points.forEach { p ->
-        if (p.x < minX) minX = p.x
-        if (p.x > maxX) maxX = p.x
-        if (p.y < minY) minY = p.y
-        if (p.y > maxY) maxY = p.y
+        // Stroke points are relative to the BLOCK's top-left; the layout just
+        // measured is relative to the TEXT's. For a paragraph those are the
+        // same corner and this subtracts nothing. For a bordered block they
+        // are a border, a padding and a whole mascot apart — which is why a
+        // pen mark inside a RECAP resolved to nothing at all, fell back to
+        // the block's entire body, and sent the whole box to the model.
+        val x = p.x - geometry.leftOffsetPx
+        val y = p.y - geometry.topOffsetPx
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
     }
 
     // Which lines the stroke touches. A line counts only if its Y range

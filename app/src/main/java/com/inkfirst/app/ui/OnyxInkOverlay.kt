@@ -30,8 +30,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
@@ -128,7 +131,15 @@ internal fun OnyxInkOverlay(
      * page's ink.
      */
     resolveTap: (x: Float, y: Float, width: Float, height: Float, strokeHit: Stroke?) -> TapAction,
-    /** Carry out what [resolveTap] decided. */
+    /**
+     * Resolve what a finger DRAG means, from its total displacement.
+     *
+     * Same argument as [resolveTap], for the contact shape the tap ladder
+     * cannot describe. The caller owns the thresholds as well as the rules —
+     * they are measured in dp and this overlay has no density to convert with.
+     */
+    resolveSwipe: (dx: Float, dy: Float) -> TapAction,
+    /** Carry out what [resolveTap] or [resolveSwipe] decided. */
     onTapAction: (TapAction) -> Unit,
     /**
      * Whether a stroke chip is currently showing. Not used to decide anything
@@ -162,6 +173,7 @@ internal fun OnyxInkOverlay(
     val addedRef = rememberUpdatedState(onStrokeAdded)
     val erasedRef = rememberUpdatedState(onStrokeErased)
     val resolveTapRef = rememberUpdatedState(resolveTap)
+    val resolveSwipeRef = rememberUpdatedState(resolveSwipe)
     val drawEnabledRef = rememberUpdatedState(drawingEnabled)
     val chipRectRef = rememberUpdatedState(chipRect)
     val tapActionRef = rememberUpdatedState(onTapAction)
@@ -271,6 +283,40 @@ internal fun OnyxInkOverlay(
                 unlockRequestRef.value?.invoke("overlay")
             }
         }
+    }
+
+    /**
+     * Ink can leave the page without the eraser: the chip's Delete, and now a
+     * mark consumed by the question or the note it became.
+     *
+     * The driver keeps its own copy of every stroke below Android's
+     * framebuffer, so removing one from the model changes nothing on the
+     * glass — Compose redraws the page without it and the physical black
+     * stays. The erase path already pays for this; these other routes did
+     * not, and the more of them there are the more often a reader is left
+     * looking at ink the app believes it deleted.
+     *
+     * Watched here rather than announced by the caller because this is the
+     * only side that knows where a stroke's pixels are.
+     */
+    val lastStrokesRef = remember { mutableStateOf<List<Stroke>>(emptyList()) }
+    val lastRangeRef = remember { mutableStateOf<IntRange?>(null) }
+    LaunchedEffect(pageStrokes, pageBlockRange) {
+        // Only within one page. Turning the page changes this list wholesale
+        // and the departed strokes belong to blocks that have moved, so their
+        // region is meaningless — and a page turn already wipes the layer.
+        val samePage = lastRangeRef.value == pageBlockRange
+        val gone = if (samePage) lastStrokesRef.value.filter { it !in pageStrokes } else emptyList()
+        lastStrokesRef.value = pageStrokes
+        lastRangeRef.value = pageBlockRange
+        if (gone.isEmpty()) return@LaunchedEffect
+        val region = inkRegion(gone, blockTopYRef.value) ?: return@LaunchedEffect
+        // Unioned, never replaced: an erase has already set the rect covering
+        // its sweep, and this effect fires for the same removal a moment
+        // later. Narrowing to the stroke alone would leave the sweep's own
+        // driver ink on the glass.
+        repaintRectRef.value = union(repaintRectRef.value, region)
+        unlockRequestRef.value?.invoke("inkRemoved")
     }
 
     LaunchedEffect(chipOpen) {
@@ -492,40 +538,90 @@ internal fun OnyxInkOverlay(
                                 // Before the first layout pass there is no
                                 // geometry to resolve a zone against.
                                 if (w > 0f) {
-                                val action = resolveTapRef.value(at.x, at.y, w, h, hit)
-                                Log.d(TAG, "finger tap at=(${at.x},${at.y}) w=$w h=$h -> $action")
-                                if (action is TapAction.ShowStrokeChip) {
-                                    // Wait and see what this contact becomes
-                                    // before claiming it. Claiming on DOWN
-                                    // made every contact within TAP_SLOP of a
-                                    // stroke a chip tap — and since strokes
-                                    // are underlines UNDER text, that is most
-                                    // of the text on an annotated page, so
-                                    // long-pressing to select stopped working
-                                    // wherever ink already was.
-                                    //
-                                    // A chip belongs to a quick tap. A press
-                                    // held past TAP_MAX_MS is the start of a
-                                    // text selection and is none of our
-                                    // business: leave the stream unconsumed
-                                    // and let the SelectionContainer have it.
-                                    val wasTap = withTimeoutOrNull(TAP_MAX_MS) {
-                                        var lifted = false
+                                // WATCH the contact; do not decide on its DOWN.
+                                //
+                                // Deciding on the DOWN is what killed every
+                                // swipe on this path: a contact in a turn band
+                                // had already turned the page before the finger
+                                // had moved far enough to be a drag, so
+                                // swipe-to-turn and swipe-up-for-next-chapter
+                                // both simply stopped existing the day the SDK
+                                // took over the touch stream.
+                                //
+                                // What the three outcomes mean:
+                                //   lifted quickly      — a tap. Resolve by position.
+                                //   moved past the slop — a drag. Resolve by direction.
+                                //   held, and still down — a press. Ours to leave
+                                //     alone: it is a text selection starting, or a
+                                //     finger resting on the page, and acting on
+                                //     either is how a rested hand turns pages.
+                                val dragStartPx = 10.dp.toPx()
+                                var dx = 0f
+                                var dy = 0f
+                                var dragging = false
+                                var release: PointerInputChange? = null
+                                withTimeoutOrNull(TAP_MAX_MS) {
+                                    while (true) {
+                                        val ev = awaitPointerEvent()
+                                        val ch = ev.changes.firstOrNull() ?: break
+                                        val pc = ch.positionChange()
+                                        dx += pc.x
+                                        dy += pc.y
+                                        if (!ch.pressed) { release = ch; break }
+                                        if (kotlin.math.abs(dx) > dragStartPx ||
+                                            kotlin.math.abs(dy) > dragStartPx
+                                        ) {
+                                            dragging = true
+                                            break
+                                        }
+                                    }
+                                }
+                                if (dragging) {
+                                    // A deliberate swipe outlasts the tap
+                                    // window, so follow it to its end on a
+                                    // bound of its own. If the release never
+                                    // arrives the displacement collected so
+                                    // far still says what was meant.
+                                    withTimeoutOrNull(DRAG_CONTACT_TIMEOUT_MS) {
                                         while (true) {
                                             val ev = awaitPointerEvent()
                                             val ch = ev.changes.firstOrNull() ?: break
-                                            if (!ch.pressed) {
-                                                lifted = true
-                                                break
-                                            }
+                                            val pc = ch.positionChange()
+                                            dx += pc.x
+                                            dy += pc.y
+                                            if (!ch.pressed) { release = ch; break }
                                         }
-                                        lifted
-                                    } == true
-                                    if (!wasTap) {
-                                        Log.d(TAG, "long press near stroke — left for selection")
-                                        return@awaitEachGesture
                                     }
                                 }
+                                if (!dragging && release == null) {
+                                    Log.d(TAG, "finger held past ${TAP_MAX_MS}ms — left for selection")
+                                    return@awaitEachGesture
+                                }
+                                // The RELEASE is what has to be consumed, and
+                                // it only became possible to consume it once
+                                // this branch waited for it.
+                                //
+                                // The reader's own detector resolves on the
+                                // release and skips a contact a child already
+                                // claimed. While this overlay decided on the
+                                // DOWN, the two never collided: acting
+                                // recomposed the reader, which re-keyed its
+                                // pointerInput and cancelled its gesture
+                                // before the release arrived. Deciding on the
+                                // release removes that accident, and without
+                                // this line both detectors would carry out the
+                                // same page turn — two pages for one tap.
+                                release?.consume()
+                                val action = if (dragging) {
+                                    resolveSwipeRef.value(dx, dy)
+                                } else {
+                                    resolveTapRef.value(at.x, at.y, w, h, hit)
+                                }
+                                Log.d(
+                                    TAG,
+                                    "finger ${if (dragging) "drag d=($dx,$dy)" else "tap at=(${at.x},${at.y})"} " +
+                                        "w=$w h=$h -> $action",
+                                )
                                 when (action) {
                                     is TapAction.ShowStrokeChip -> {
                                         down.consume()
@@ -1241,10 +1337,11 @@ private const val ERASE_COMMIT_GRACE_MS = 150L
  * Unlock reasons that must not wait out [UNLOCK_DEBOUNCE_MS]: UI the reader is
  * waiting to see or to see gone, rather than ink being committed.
  */
-private val IMMEDIATE_REASONS = setOf("chip", "chipShow", "chipClose", "overlay")
+private val IMMEDIATE_REASONS =
+    setOf("chip", "chipShow", "chipClose", "overlay", "inkRemoved")
 
 private val REPAINT_REASONS =
-    setOf("eraseTrail", "eraseSweep", "erase", "chipClose", "chipShow", "overlay")
+    setOf("eraseTrail", "eraseSweep", "erase", "chipClose", "chipShow", "overlay", "inkRemoved")
 
 /**
  * Reasons that need the driver's ink layer WIPED — a different question from
@@ -1264,7 +1361,10 @@ private val REPAINT_REASONS =
  * the chip band, so ink elsewhere on the page keeps its low-latency copy.
  */
 private val CLEAR_REASONS =
-    setOf("eraseTrail", "eraseSweep", "erase", "pageTurn", "chipShow", "chipClose", "overlay")
+    setOf(
+        "eraseTrail", "eraseSweep", "erase", "pageTurn", "chipShow", "chipClose",
+        "overlay", "inkRemoved",
+    )
 
 /**
  * How the panel is repainted once ink has been removed from it.
@@ -1309,6 +1409,16 @@ private const val TAP_SLOP_PX = 36f
  * selection, not to the stroke chip.
  */
 private const val TAP_MAX_MS = 300L
+
+/**
+ * How long a drag may go on before the overlay stops following it.
+ *
+ * Only a backstop: the SDK owns this view's touch stream and Compose is not
+ * guaranteed the release, so without a bound the gesture coroutine would hang
+ * and never restart — which is the shape of an old bug where tap-on-stroke
+ * worked on a fresh page and died the moment anything was drawn.
+ */
+private const val DRAG_CONTACT_TIMEOUT_MS = 1500L
 
 /**
  * Share of the overlay's height, measured from the bottom, that a stroke chip
@@ -1393,6 +1503,18 @@ private fun hitTestForErase(
  * Shares [eraseRegion]'s geometry because it is the same question — which
  * pixels does this ink occupy — asked with no eraser trail.
  */
+/** Smallest rect covering both, or whichever one exists. */
+private fun union(a: AndroidRect?, b: AndroidRect?): AndroidRect? {
+    if (a == null) return b
+    if (b == null) return a
+    return AndroidRect(
+        minOf(a.left, b.left),
+        minOf(a.top, b.top),
+        maxOf(a.right, b.right),
+        maxOf(a.bottom, b.bottom),
+    )
+}
+
 private fun inkRegion(
     strokes: List<Stroke>,
     blockTopY: (Int) -> Float?,

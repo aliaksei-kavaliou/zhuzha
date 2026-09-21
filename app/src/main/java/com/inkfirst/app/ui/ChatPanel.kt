@@ -32,11 +32,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -70,7 +72,7 @@ import com.inkfirst.core.QaGenerator
 import com.inkfirst.core.QaTranscript
 import com.inkfirst.core.parseInlines
 import kotlinx.coroutines.launch
-import java.time.LocalDate
+import java.time.LocalDateTime
 
 private val ChatInkColor = Color(0xFF000000)
 private val ChatPaperColor = Color(0xFFFFFFFF)
@@ -107,7 +109,10 @@ fun ChatPanel(
             annotations = course.annotations,
             chapterSlug = chapter.slug,
             pendingSelection = selection,
-            today = LocalDate.now().toString(),
+            // A timestamp, not a date: the passage just marked has to sort
+            // AFTER everything recorded earlier today, and a bare date ties
+            // with all of them.
+            today = LocalDateTime.now().withNano(0).toString(),
         )
     }
 
@@ -159,6 +164,18 @@ fun ChatPanel(
     // behind the panel, nor raise Android's volume popup.
     val keyFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { keyFocus.requestFocus() }
+    // And claimed at the Activity's door as well, which is what actually
+    // stops the volume slider: a Compose key handler only fires while its
+    // subtree holds focus, and this panel loses focus to its own text field
+    // the moment the reader starts typing. Registered last, so it outranks
+    // the reader underneath — see [PageKeys].
+    val movePanel = rememberUpdatedState<(Boolean) -> Unit> { forward ->
+        if (forward) showNewer() else showOlder()
+    }
+    DisposableEffect(Unit) {
+        val release = PageKeys.register { forward -> movePanel.value(forward) }
+        onDispose(release)
+    }
 
     Box(
         modifier = Modifier
@@ -379,7 +396,12 @@ fun ChatPanel(
                                         selection = selection,
                                         question = question,
                                         answer = answer,
-                                        created = LocalDate.now().toString(),
+                                        // The `## ` heading of the entry, and
+                                        // the key the feed is ordered by — so
+                                        // it carries the time of day. Still
+                                        // plain ISO text in a file meant to
+                                        // be read by a human in ten years.
+                                        created = LocalDateTime.now().withNano(0).toString(),
                                     )
                                     historyRaw = store.readQa(course.slug, chapter.slug)
                                     input = ""

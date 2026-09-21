@@ -23,6 +23,7 @@ class TapRoutingTest {
         menuOpen: Boolean = false,
         chipOpen: Boolean = false,
         selectionActive: Boolean = false,
+        buttonHit: Int? = null,
         markerHit: Annotation? = null,
         strokeHit: Stroke? = null,
     ) = resolveTap(
@@ -30,8 +31,24 @@ class TapRoutingTest {
         menuOpen = menuOpen,
         chipOpen = chipOpen,
         selectionActive = selectionActive,
+        buttonHit = buttonHit,
         markerHit = markerHit,
         strokeHit = strokeHit,
+    )
+
+    private fun swipe(
+        dx: Float = 0f,
+        dy: Float = 0f,
+        menuOpen: Boolean = false,
+        chipOpen: Boolean = false,
+        selectionActive: Boolean = false,
+    ) = resolveSwipe(
+        dx, dy,
+        horizontalThresholdPx = 60f,
+        verticalThresholdPx = 80f,
+        menuOpen = menuOpen,
+        chipOpen = chipOpen,
+        selectionActive = selectionActive,
     )
 
     private fun annotation() = Annotation(
@@ -67,13 +84,92 @@ class TapRoutingTest {
     }
 
     @Test
-    fun `bottom band opens the menu across the full width`() {
-        // Including the middle, which is inert everywhere else: the format
-        // menu has to stay reachable from the centre-bottom.
+    fun `the bottom band opens the menu only between the turn bands`() {
+        // The middle, which is inert everywhere else, is the menu's target
+        // here — the panel opens from the bottom, so that is where you reach.
         val y = H - MENU / 2f
         assertEquals(TapAction.ToggleMenu, tap(x = W / 2f, y = y))
-        assertEquals(TapAction.ToggleMenu, tap(x = 10f, y = y))
-        assertEquals(TapAction.ToggleMenu, tap(x = W - 10f, y = y))
+    }
+
+    @Test
+    fun `a bottom corner turns the page`() {
+        // The two bands used to overlap here and the menu won, so the corner
+        // a thumb naturally lands on opened the format menu instead of
+        // turning the page. A corner belongs to the band it is a corner of.
+        val y = H - MENU / 2f
+        assertEquals(TapAction.PrevPage, tap(x = 10f, y = y))
+        assertEquals(TapAction.NextPage, tap(x = W - 10f, y = y))
+        // The very last pixel row included: that is where "bottom" is aimed.
+        assertEquals(TapAction.NextPage, tap(x = W - 1f, y = H - 1f))
+    }
+
+    @Test
+    fun `the footer line is all band, so only x decides there`() {
+        // The page-number row passes its OWN height as the band, which makes
+        // every y in it "bottom". It used to toggle the menu at any x, so the
+        // bottom of the page said two different things one pixel apart: the
+        // band above turned the page at its corners, the line below opened
+        // the menu there.
+        val footerH = 60f
+        fun footer(x: Float) = resolveTap(
+            x, footerH / 2f, W, footerH, footerH,
+            menuOpen = false, chipOpen = false,
+        )
+        assertEquals(TapAction.PrevPage, footer(10f))
+        assertEquals(TapAction.ToggleMenu, footer(W / 2f))
+        assertEquals(TapAction.NextPage, footer(W - 10f))
+    }
+
+    @Test
+    fun `a page button outranks every zone and every mark`() {
+        // On the pen path the SDK owns the touch stream and a button's own
+        // click never runs, so "Show answer" sitting in a turn band simply
+        // turned the page.
+        assertEquals(TapAction.PressButton(7), tap(x = 10f, buttonHit = 7))
+        assertEquals(TapAction.PressButton(7), tap(x = W / 2f, buttonHit = 7, strokeHit = stroke()))
+        assertEquals(
+            TapAction.PressButton(7),
+            tap(x = W / 2f, buttonHit = 7, markerHit = annotation()),
+        )
+        // But not what is open over it.
+        assertEquals(TapAction.CloseMenu, tap(x = 10f, buttonHit = 7, menuOpen = true))
+    }
+
+    // --- drags -----------------------------------------------------------
+
+    @Test
+    fun `a horizontal drag turns the page, following the paper`() {
+        assertEquals(TapAction.NextPage, swipe(dx = -120f))
+        assertEquals(TapAction.PrevPage, swipe(dx = 120f))
+    }
+
+    @Test
+    fun `a vertical drag changes chapter`() {
+        assertEquals(TapAction.NextChapter, swipe(dy = -120f))
+        assertEquals(TapAction.PrevChapter, swipe(dy = 120f))
+    }
+
+    @Test
+    fun `the dominant axis decides`() {
+        // A page turn with a wobble in it is still a page turn, not a
+        // chapter change.
+        assertEquals(TapAction.NextPage, swipe(dx = -200f, dy = -100f))
+        assertEquals(TapAction.NextChapter, swipe(dx = -40f, dy = -200f))
+    }
+
+    @Test
+    fun `a drag too short to mean anything means nothing`() {
+        assertEquals(TapAction.Ignore, swipe(dx = -40f))
+        // Vertical asks for more, because a stray vertical wobble is commoner
+        // and reading one as a chapter change costs the reader the book.
+        assertEquals(TapAction.Ignore, swipe(dy = -70f))
+    }
+
+    @Test
+    fun `what is open over the page swallows a drag too`() {
+        assertEquals(TapAction.CloseMenu, swipe(dx = -200f, menuOpen = true))
+        assertEquals(TapAction.DismissChip, swipe(dy = -200f, chipOpen = true))
+        assertEquals(TapAction.ClearSelection, swipe(dx = 200f, selectionActive = true))
     }
 
     // --- ladder ----------------------------------------------------------

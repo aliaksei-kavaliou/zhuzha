@@ -21,10 +21,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -142,13 +144,13 @@ fun CourseDetailScreen(
             PagedContents(
                 blocks = tocBlocks,
                 onChapterTap = { chapter ->
-                    // Only READING chapters resume at the saved anchor. DONE
-                    // chapters open at the top — a finished chapter's "resume"
-                    // point is meaningless; bookmarks are the right tool for
-                    // jumping to a specific spot.
-                    val startIndex = if (chapter.status == ChapterStatus.READING) {
-                        chapter.lastBlockIndex
-                    } else 0
+                    // Every chapter resumes where it was left, finished ones
+                    // included. Sending a DONE chapter to the top threw away
+                    // a position the reader might still want — reaching the
+                    // last page is what marks a chapter DONE, so the rule
+                    // punished exactly the chapters that had been read — and
+                    // opening it then overwrote the saved anchor with 0.
+                    val startIndex = chapter.lastBlockIndex.coerceAtLeast(0)
                     onReadChapter(chapter.slug, startIndex)
                 },
                 onBookmarkTap = { bookmark -> onReadChapter(bookmark.chapterSlug, bookmark.blockIndex) },
@@ -243,6 +245,16 @@ private fun PagedContents(
         // Boox side buttons fire VolumeUp/VolumeDown; page TOC same as Reader.
         val focusRequester = remember { FocusRequester() }
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        // Claimed at the Activity's door too, for the same reason the reader
+        // does it: a Compose key handler needs focus, and the rows on this
+        // page are all clickable and can take it. See [PageKeys].
+        val turnToc = rememberUpdatedState<(Boolean) -> Unit> { forward ->
+            if (forward) { if (hasNext) pageIndex++ } else { if (hasPrev) pageIndex-- }
+        }
+        DisposableEffect(Unit) {
+            val release = PageKeys.register { forward -> turnToc.value(forward) }
+            onDispose(release)
+        }
 
         Column(
             modifier = Modifier

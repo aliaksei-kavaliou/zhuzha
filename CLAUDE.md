@@ -96,18 +96,34 @@ yet" note that used to live here was two months stale.
       explicit bounds. Assembled from stored data, so no API call and covered by unit tests.
       Not yet surfaced in the UI: the file is inspectable at
       `<courses-root>/<slug>/reader.md` and is meant to be editable by hand.
+- [x] **One rule for touch.** `app/.../ui/TapRouting.kt` owns what a contact means —
+      `resolveTap` for taps, `resolveSwipe` for drags — with no Compose in it, so it
+      unit-tests. The two DETECTORS still cannot merge (the SDK owns the host view's touch
+      stream, so the overlay has to observe its own contacts), but neither decides anything.
+      Anything a finger can hit that is not a page — a margin marker, a "Show answer"
+      button — has to be hit-tested and passed IN as a rung, because on the pen path a
+      Compose `clickable` under the overlay never runs.
+- [x] **Side buttons are taken at the Activity's door** (`MainActivity.dispatchKeyEvent` +
+      `ui/PageKeys.kt`), not by a Compose `onKeyEvent`. A Compose key handler only fires
+      while its subtree holds focus, and on the pen path focus moves constantly — so the
+      buttons kept reverting to raising Android's volume slider. Screens claim the keys
+      with `PageKeys.register`; last registration wins, which is how the Ask panel takes
+      them from the reader underneath it.
 - [ ] Known open defects: first line of a page not drawable. See `docs/onyx-pen-thread.md` §T7.
-- [ ] **Two tap detectors, unconsolidated.** One finger contact is handled both by the
-      reader's own `awaitEachGesture` and by the overlay (which must report taps itself,
-      since the SDK owns the host view's touch stream). Three separate bugs on 2026-09-17
-      came from the two drifting apart. The fix is one detector with an explicit ladder:
-      menu open → close · chip open → dismiss · hits a stroke → chip · footer → menu ·
-      else → zone turn.
+- [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
+      reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
+      carry meaning are consumed into an underline + margin glyph, which DO reflow, so what
+      drifts is standalone drawing. Cause and the shape of a fix are in design.md §11.
 
 **Device tip that paid for itself:** `adb exec-out screencap -p` is a differential test on
 the Boox, not just a screenshot. It captures Android's framebuffer, which the pen driver
 bypasses — so an artefact visible in the capture is real app state, and one visible on the
 glass but absent from the capture is driver ink or EPD residue. That distinction resolved
 several "ghost" reports in minutes.
+
+**Generation settings are per COURSE, not per device** — `language` and `units` both live in
+`course.json`, chosen at creation and fixed for the life of the book. A course whose chapter 1
+measures in Celsius and whose chapter 6 measures in Fahrenheit is worse than either. Left
+unsaid, the model writes US customary units, because most of its training text does.
 
 See `docs/design.md` for data model, file formats, and the generation strategy.

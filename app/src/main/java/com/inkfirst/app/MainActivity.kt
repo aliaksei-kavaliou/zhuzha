@@ -1,6 +1,7 @@
 package com.inkfirst.app
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,9 +19,9 @@ import com.inkfirst.app.data.courseStoreFor
 import com.inkfirst.app.ui.CourseDetailScreen
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
+import com.inkfirst.app.ui.PageKeys
 import com.inkfirst.app.ui.ReaderScreen
 import com.inkfirst.app.ui.SettingsScreen
-import com.inkfirst.core.ChapterStatus
 
 private object Routes {
     const val LIBRARY = "library"
@@ -48,6 +49,30 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * The Boox side buttons, caught at the door.
+     *
+     * They arrive as VolumeUp / VolumeDown, so not consuming them puts
+     * Android's volume slider over the page. A Compose key handler can only
+     * consume them while something in its subtree holds focus, and on the pen
+     * path focus moves around constantly — the SDK's SurfaceView, any
+     * TextButton on the page, the selection container being rebuilt. Here
+     * focus is not part of the question. See [PageKeys].
+     *
+     * Both the DOWN and the UP are consumed: releasing an unconsumed
+     * VolumeUp is enough on its own to raise the slider.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val forward = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> true
+            KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_PAGE_UP -> false
+            else -> return super.dispatchKeyEvent(event)
+        }
+        if (!PageKeys.claimed()) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) PageKeys.dispatch(forward)
+        return true
+    }
 }
 
 @Composable
@@ -69,10 +94,13 @@ private fun InkFirstApp() {
             store.clearLastRead()
             return@remember null
         }
-        // Match Contents' behavior: READING resumes at the saved anchor,
-        // DONE/GENERATED open at the top. PENDING opens on the CompilePrompt
-        // regardless of blockIndex.
-        val blockIndex = if (chapter.status == ChapterStatus.READING) chapter.lastBlockIndex else 0
+        // A cold start puts you back exactly where you were, whatever the
+        // chapter's status says. Resuming only READING chapters meant that
+        // reaching the last page — which flips a chapter to DONE — threw the
+        // position away, so finishing a chapter in the evening and opening
+        // the app next morning landed on its first page. PENDING opens on the
+        // CompilePrompt regardless of blockIndex.
+        val blockIndex = chapter.lastBlockIndex.coerceAtLeast(0)
         Routes.reader(course.slug, chapter.slug, blockIndex)
     }
 

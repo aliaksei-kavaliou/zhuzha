@@ -303,6 +303,25 @@ fun findPageContainingBlock(pages: List<List<PageItem>>, blocks: List<Block>, bl
 }
 
 /**
+ * The block index that identifies a page — what a bookmark stores, and what a
+ * resume is resolved against.
+ *
+ * Not simply the first block on the page. A split paragraph appears on TWO
+ * consecutive pages under one index, so "the page holding block 12" has two
+ * answers, and a bookmark set on the second of them resolved back to the
+ * first: you saved your place and the book handed you the page before it. The
+ * first block that actually BEGINS on this page is unambiguous — no earlier
+ * page carries it — so [findPageContainingBlock] can only resolve it one way.
+ *
+ * A page made entirely of one long paragraph's continuation has no such
+ * block. There the split index is all there is, and it is used as before.
+ */
+fun anchorForPage(page: List<PageItem>?): Int =
+    page?.firstOrNull { it.skippedPx == 0 }?.index
+        ?: page?.firstOrNull()?.index
+        ?: 0
+
+/**
  * Heights match the ReaderScreen renderer as closely as feasible without
  * doing a full off-screen SubcomposeLayout pass. Close enough for spike v2.0;
  * we can tighten if pages regularly under- or over-fill by more than ~10%.
