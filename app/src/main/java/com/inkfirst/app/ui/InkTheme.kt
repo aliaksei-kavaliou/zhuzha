@@ -73,6 +73,18 @@ private val InkColors = lightColorScheme(
     surfaceVariant = Paper,
     onSurfaceVariant = Muted,
     surfaceTint = Paper,
+    // The surfaceContainer family is a SECOND set of surface colours, and
+    // missing them is invisible until something uses one: menus take their
+    // background from surfaceContainer, not from surface, so the dropdowns
+    // stayed lilac after everything else had gone black and white. Found by
+    // screenshotting a picker rather than by reading the scheme.
+    surfaceBright = Paper,
+    surfaceDim = Paper,
+    surfaceContainerLowest = Paper,
+    surfaceContainerLow = Paper,
+    surfaceContainer = Paper,
+    surfaceContainerHigh = Paper,
+    surfaceContainerHighest = Paper,
     inverseSurface = Ink,
     inverseOnSurface = Paper,
     error = Ink,

@@ -100,6 +100,50 @@ class ChapterIllustratorTest {
     }
 
     @Test
+    fun `a chapter stops at its ceiling and says how many it left`() = runTest {
+        // Eight briefs, a ceiling of two: the model is not misbehaving by
+        // asking for eight, and the reader is not charged for eight.
+        val eight = (1..8).joinToString("\n\n") { """```figure alt="brief $it"```""" }
+        val client = FakeImageClient()
+        val saved = mutableMapOf<String, ByteArray>()
+
+        val result = ChapterIllustrator(client)
+            .illustrate(course, chapter, eight, apiKey = "k", maxFigures = 2) { name, bytes ->
+                saved[name] = bytes
+            }
+
+        assertEquals(2, result.generated)
+        assertEquals(6, result.skipped)
+        assertEquals(2, saved.size)
+    }
+
+    @Test
+    fun `the ones over the ceiling keep their briefs and stay pending`() = runTest {
+        // Nothing is lost by stopping: an undrawn slot renders its alt text
+        // and the reader's menu still offers to draw it.
+        val three = (1..3).joinToString("\n\n") { """```figure alt="brief $it"```""" }
+
+        val result = ChapterIllustrator(FakeImageClient())
+            .illustrate(course, chapter, three, apiKey = "k", maxFigures = 1) { _, _ -> }
+
+        val slots = findFigureSlots(result.markdown)
+        assertEquals(listOf(false, true, true), slots.map { it.isPending })
+        assertTrue(slots.all { it.alt.startsWith("brief") })
+    }
+
+    @Test
+    fun `a book set to no pictures draws none of them`() = runTest {
+        val client = FakeImageClient()
+
+        val result = ChapterIllustrator(client)
+            .illustrate(course.copy(figures = "none"), chapter, markdown, apiKey = "k") { _, _ -> }
+
+        assertEquals(0, result.generated)
+        assertEquals(2, result.skipped)
+        assertTrue(client.prompts.isEmpty())
+    }
+
+    @Test
     fun `prompt carries the brief, the house style and the surrounding prose`() = runTest {
         val client = FakeImageClient()
         ChapterIllustrator(client).illustrate(course, chapter, markdown, apiKey = "k") { _, _ -> }

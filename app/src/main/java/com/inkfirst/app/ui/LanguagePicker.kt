@@ -1,5 +1,6 @@
 package com.inkfirst.app.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DropdownMenuItem
@@ -81,6 +82,7 @@ fun LanguagePicker(
             ExposedDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
+                modifier = Modifier.border(width = 1.dp, color = Ink),
             ) {
                 filtered.forEach { suggestion ->
                     DropdownMenuItem(

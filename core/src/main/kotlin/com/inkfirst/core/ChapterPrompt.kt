@@ -77,10 +77,23 @@ internal fun buildChapterPrompt(
     appendLine("- Use custom fenced blocks where they fit:")
     appendLine("  - ```exercise … ``` for practice; put the answer inside on a line starting with \"answer: \".")
     appendLine("  - ```recap … ``` for end-of-section wrap-ups that restate the key idea differently.")
+    if (course.figurePolicy.maxPerChapter == 0) {
+        appendLine("  - ${course.figurePolicy.rule}")
+    } else {
     appendLine("  - ```figure alt=\"…\" ``` for figure slots. The alt text is the drawing brief: an artist reads it and nothing else. Every figure is a loose hand-drawn ink sketch — never ask for a chart, a graph, a screenshot or a labelled schematic. There are TWO kinds, and choosing the right one matters more than the wording:")
     appendLine("    - DEFAULT (no kind param) — a picture that makes the page feel alive. Describe a concrete SCENE with one vivid subject. \"A very tired robot trying to sort a mountain of socks\" works. Words in the picture are welcome but must be few, short and large — a speech bubble of three or four short everyday words (a character reacting is very welcome) or a single big label. It should raise a smile as well as make the point.")
     appendLine("    - ```figure kind=\"show\" alt=\"…\" ``` — use this when the reader has to SEE the thing to do it, and words alone would leave them guessing: a hand position, how a tool is held, how something is physically arranged, what a described object looks like. Here describe the THING ITSELF and the relationship that matters — \"a hand holding a pencil well back from the tip, resting on the middle joint of the middle finger, thumb and index finger holding it lightly, seen close up from the side\" — not a scene, not a character, no joke. Say which parts touch and from what angle it should be seen. A concrete object standing in for an abstract idea belongs here too: if the chapter says a value is \"like a knob you turn\", a picture of that knob being turned is a show figure.")
-    appendLine("    Use whichever fits each moment; a chapter can mix them freely. How MANY figures depends on how visual the subject is: a physical, hands-on skill where the reader must see positions and movements can carry five or six, while a chapter of pure ideas is well served by two. Never add one that has nothing to show.")
+    appendLine("    Use whichever fits each moment; a chapter can mix them freely.")
+    // What the panel can physically carry, said to the model that writes the
+    // brief rather than only to the one that draws it. Until this line
+    // existed the medium constraint reached the illustrator and stopped
+    // there, so a cooking chapter could brief "the finished risotto, creamy
+    // and golden" — impossible on a small grey screen, and the same defect
+    // as the capybara: not the image model's fault, the brief could not be
+    // filled.
+    appendLine("    WHAT A PICTURE HERE CAN CARRY: this book is read on a small greyscale e-ink screen, and every picture is black ink lines on white. A picture can show shape, arrangement, position, sequence, and texture drawn as hatching. It CANNOT show colour, sheen, gloss, browning, or photographic detail. Never write a brief whose point depends on one of those — the golden crust of a dish, the exact shade something turns. Put those in the PROSE, where the reader can actually read them (\"deep amber, not pale straw\"), and let the picture show the form, the step, or the arrangement instead.")
+    appendLine("    ${course.figurePolicy.rule}")
+    }
     appendLine("- Where a metaphor or term from an earlier chapter helps, reuse it explicitly.")
     if (readerNotes.isNotBlank()) {
         // Bounding this is the whole design. An unbounded "adapt to the

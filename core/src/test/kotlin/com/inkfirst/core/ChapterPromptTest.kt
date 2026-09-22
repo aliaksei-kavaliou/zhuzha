@@ -90,6 +90,43 @@ class ChapterPromptTest {
         assertTrue(prompt.contains("```figure"))
     }
 
+    // --- pictures ---------------------------------------------------------
+
+    @Test
+    fun `the figure section names the ceiling the illustrator will enforce`() {
+        val prompt = buildChapterPrompt(course, course.chapters[0], memory = "")
+        assertTrue(prompt.contains("never more than SIX"))
+
+        val generous = buildChapterPrompt(course.copy(figures = "generous"), course.chapters[0], memory = "")
+        assertTrue(generous.contains("never more than TEN"))
+    }
+
+    @Test
+    fun `a book with no pictures is told not to write briefs at all`() {
+        val prompt = buildChapterPrompt(course.copy(figures = "none"), course.chapters[0], memory = "")
+
+        // The figure syntax is never offered — the one mention of it is the
+        // instruction not to use it.
+        assertFalse(prompt.contains("for figure slots"))
+        assertFalse(prompt.contains("kind=\"show\""))
+        assertTrue(prompt.contains("Do NOT include any"))
+        assertTrue(prompt.contains("written without pictures"))
+        // Still a book: what a picture would have carried goes into the words.
+        assertTrue(prompt.contains("carried by the prose"))
+    }
+
+    @Test
+    fun `the writer is told what this screen can and cannot print`() {
+        // Otherwise a cooking chapter briefs "the finished risotto, creamy and
+        // golden" — impossible on a small grey panel, and the same defect as
+        // the capybara: the brief could not be filled, whoever drew it.
+        val prompt = buildChapterPrompt(course, course.chapters[0], memory = "")
+
+        assertTrue(prompt.contains("WHAT A PICTURE HERE CAN CARRY"))
+        assertTrue(prompt.contains("CANNOT show colour"))
+        assertTrue(prompt.contains("Put those in the PROSE"))
+    }
+
     @Test
     fun `blank memory renders as nothing yet fallback for chapter 1`() {
         val prompt = buildChapterPrompt(course, course.chapters[0], memory = "")

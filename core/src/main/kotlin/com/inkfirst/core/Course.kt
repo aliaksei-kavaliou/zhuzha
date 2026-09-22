@@ -28,6 +28,12 @@ data class Course(
     // [MeasurementSystem]. Defaults to metric, which also means every course
     // written before this field existed reads as metric from here on.
     val units: String = DEFAULT_MEASUREMENT_SYSTEM,
+    /**
+     * How many pictures this book may draw — see [FigurePolicy]. Defaulted
+     * rather than required, so every course.json written before this existed
+     * still loads, and loads as the behaviour it already had.
+     */
+    val figures: String = DEFAULT_FIGURE_POLICY,
     val created: String,
     val chapters: List<PersistedChapter>,
     val bookmarks: List<Bookmark> = emptyList(),
@@ -188,6 +194,7 @@ fun CourseOutline.toCourse(
     model: String,
     language: String,
     units: String = DEFAULT_MEASUREMENT_SYSTEM,
+    figures: String = DEFAULT_FIGURE_POLICY,
     created: String,
 ): Course = Course(
     title = title,
@@ -200,6 +207,7 @@ fun CourseOutline.toCourse(
     model = model,
     language = language,
     units = units,
+    figures = figures,
     created = created,
     chapters = chapters.map {
         PersistedChapter(

@@ -144,13 +144,23 @@ class ChapterIllustrator(
         chapter: PersistedChapter,
         markdown: String,
         apiKey: String,
+        maxFigures: Int = course.figurePolicy.maxPerChapter,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
         saveImage: (fileName: String, bytes: ByteArray) -> Unit,
     ): IllustrateResult {
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
-        val pending = findFigureSlots(markdown).filter { it.isPending }
-        if (pending.isEmpty()) return IllustrateResult(markdown, generated = 0, failed = 0)
+        val waiting = findFigureSlots(markdown).filter { it.isPending }
+        // The ceiling is enforced here rather than asked for in the prompt,
+        // because a prompt is a suggestion and this is money. Nothing is
+        // lost by stopping: a slot with no picture keeps rendering its alt
+        // text, and the reader's menu still offers to draw it — so the
+        // pictures past the ceiling become a decision instead of a charge.
+        val pending = waiting.take(maxFigures.coerceAtLeast(0))
+        val skipped = waiting.size - pending.size
+        if (pending.isEmpty()) {
+            return IllustrateResult(markdown, generated = 0, failed = 0, skipped = skipped)
+        }
 
         val srcByOrdinal = mutableMapOf<Int, String>()
         var failed = 0
@@ -190,6 +200,7 @@ class ChapterIllustrator(
             markdown = withFigureSrc(markdown, srcByOrdinal),
             generated = srcByOrdinal.size,
             failed = failed,
+            skipped = skipped,
         )
     }
 }
@@ -202,4 +213,6 @@ data class IllustrateResult(
     val markdown: String,
     val generated: Int,
     val failed: Int,
+    /** Slots left undrawn because the chapter reached its ceiling. */
+    val skipped: Int = 0,
 )

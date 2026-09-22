@@ -1,5 +1,6 @@
 package com.inkfirst.app.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,6 +42,11 @@ import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.CourseOutline
 import com.inkfirst.core.DEFAULT_MEASUREMENT_SYSTEM
+import com.inkfirst.core.DEFAULT_FIGURE_POLICY
+import com.inkfirst.core.FIGURE_POLICIES
+import com.inkfirst.core.FigurePolicy
+import com.inkfirst.core.bookPictureEstimate
+import com.inkfirst.core.figurePolicyFor
 import com.inkfirst.core.MEASUREMENT_SYSTEMS
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.OutlineGenerator
@@ -95,6 +101,7 @@ fun NewCourseScreen(
     var style by remember { mutableStateOf(StylePresets.DEFAULT) }
     var language by remember { mutableStateOf(store.getPreferredLanguage()) }
     var units by remember { mutableStateOf(DEFAULT_MEASUREMENT_SYSTEM) }
+    var figures by remember { mutableStateOf(DEFAULT_FIGURE_POLICY) }
     var uiState by remember { mutableStateOf<OutlineUiState>(OutlineUiState.Idle) }
 
     // Held so Cancel can stop a request in flight. The request timeout is
@@ -132,6 +139,7 @@ fun NewCourseScreen(
 
         is OutlineUiState.Ready -> OutlineReviewPage(
             outline = s.outline,
+            figures = figurePolicyFor(figures),
             onApprove = {
                 val course = courseStore.create(
                     outline = s.outline,
@@ -144,6 +152,7 @@ fun NewCourseScreen(
                     model = model,
                     language = language.trim().ifBlank { "English" },
                     units = units,
+                    figures = figures,
                     created = LocalDate.now().toString(),
                 )
                 onCourseCreated(course.slug)
@@ -233,6 +242,12 @@ fun NewCourseScreen(
             // Fahrenheit is worse than either.
             MeasurementPicker(current = units, onSelected = { units = it })
 
+            FigurePicker(current = figures, onSelected = { figures = it })
+            Text(
+                text = figurePolicyFor(figures).note,
+                style = MaterialTheme.typography.bodySmall,
+            )
+
             Spacer(Modifier.height(8.dp))
 
             Button(
@@ -292,6 +307,7 @@ private fun GeneratingPage(topic: String, onCancel: () -> Unit) {
 @Composable
 private fun OutlineReviewPage(
     outline: CourseOutline,
+    figures: FigurePolicy,
     onApprove: () -> Unit,
     onTryAgain: () -> Unit,
     onEdit: () -> Unit,
@@ -313,6 +329,16 @@ private fun OutlineReviewPage(
         }
 
         Spacer(Modifier.height(16.dp))
+
+        // Said here because this is the last page before anything is spent,
+        // and because a price nobody was shown is the part that stings.
+        Text(
+            text = "Pictures: ${figures.label.lowercase()}. " +
+                bookPictureEstimate(outline.chapters.size, figures),
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        Spacer(Modifier.height(8.dp))
 
         Button(
             onClick = onApprove,
@@ -357,12 +383,68 @@ private fun MeasurementPicker(current: String, onSelected: (String) -> Unit) {
                 .fillMaxWidth()
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        // A white menu on a white page has no edge at all, and M3's own
+        // edge is a shadow gradient, which dithers. Same hairline as
+        // [InkDialog], same reason.
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.border(width = 1.dp, color = Ink),
+        ) {
             MEASUREMENT_SYSTEMS.forEach { system ->
                 DropdownMenuItem(
                     text = { Text(system.label) },
                     onClick = {
                         onSelected(system.key)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * How many pictures this book may draw.
+ *
+ * A property of the BOOK, like its language and its units, and fixed here for
+ * the same reason: a course lavishly illustrated in chapter 1 and bare by
+ * chapter 6 is worse than either. It is also the only place the reader is
+ * asked about money before any is spent, which is why the choice carries a
+ * note underneath rather than standing alone.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FigurePicker(current: String, onSelected: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = figurePolicyFor(current)
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = selected.label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Pictures") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        // A white menu on a white page has no edge at all, and M3's own
+        // edge is a shadow gradient, which dithers. Same hairline as
+        // [InkDialog], same reason.
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.border(width = 1.dp, color = Ink),
+        ) {
+            FIGURE_POLICIES.forEach { policy ->
+                DropdownMenuItem(
+                    text = { Text(policy.label) },
+                    onClick = {
+                        onSelected(policy.key)
                         expanded = false
                     },
                 )
@@ -389,9 +471,13 @@ private fun StylePicker(current: StylePreset, onSelected: (StylePreset) -> Unit)
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth(),
         )
+        // A white menu on a white page has no edge at all, and M3's own
+        // edge is a shadow gradient, which dithers. Same hairline as
+        // [InkDialog], same reason.
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier.border(width = 1.dp, color = Ink),
         ) {
             StylePresets.ALL.forEach { preset ->
                 DropdownMenuItem(

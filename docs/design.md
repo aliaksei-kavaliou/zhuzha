@@ -382,6 +382,56 @@ the same tuning rounds the grey wash and the lettering needed.
 **Deliberately not done yet.** A recurring cast of characters across *figures* — though the
 mechanism now exists and is used by badges (§9), so this is mostly plumbing.
 
+### How many, and what they cost (2026-09-22)
+
+Until this date there was no limit on pictures at all. `ChapterIllustrator` drew every slot it
+found, and the only thing between a chapter and a dozen pictures was one sentence of prompt
+guidance. A model that decides a chapter wants twelve is not misbehaving — it is answering the
+question it was asked — and the answer costs about 36 cents in silence. Silence is the defect:
+the reader supplies the key, so the money is real and theirs.
+
+**`FigurePolicy` is a property of the BOOK**, stored in `course.json` as `figures` beside
+`language` and `units`, chosen at creation and fixed for the book's life — a course lavishly
+illustrated in chapter 1 and bare by chapter 6 is worse than either. Four values:
+
+| | ceiling | drawn automatically |
+|---|---|---|
+| **As needed** (default) | 6 a chapter | yes |
+| **Generous** | 10 a chapter | yes |
+| **On request** | 6 a pass | no |
+| **None** | none, and no briefs written | no |
+
+**The ceiling is enforced, not requested.** Guidance in a prompt is a suggestion;
+`illustrate(maxFigures = …)` is a fact. Nothing is lost by stopping: a slot over the ceiling
+keeps rendering its alt text exactly as an undrawn slot always has, and the reader's menu still
+offers to draw it — so the last few pictures become a decision instead of a charge. The
+ceiling bounds one automatic PASS; the menu path passes no ceiling at all, because there the
+count and the price are printed on the row being tapped.
+
+**Every row that spends says what it will cost** — "Draw 4 figures · ~12¢", "Draw opening
+picture · ~3¢" — and the outline review page, the last screen before a book exists, carries a
+range for the whole book. The rate is a constant tracking the default image model, and every
+price is written with a `~`: the image model is a free-text field in Settings, so the app
+cannot know what the reader's own choice charges.
+
+### What a picture on this panel can carry (2026-09-22)
+
+The medium constraint used to reach only the model that DRAWS. `SKETCH_HOUSE_STYLE` has always
+said black line art, no grey wash, nothing too fine for the panel — but nothing told the model
+that WRITES the brief, so a cooking chapter could ask for "the finished risotto, creamy and
+golden". No illustrator can fill that brief on a small greyscale screen. It is the capybara
+defect again: the picture is not wrong, the request was impossible.
+
+So the chapter prompt now states what a picture here can and cannot carry — shape, arrangement,
+position, sequence, hatched texture; never colour, sheen, browning or photographic detail — and
+says where the rest belongs: in the PROSE, where "deep amber, not pale straw" is more useful
+than any sketch, survives being read in the dark, and can be checked against the actual pan.
+`SHARED_STYLE` carries the same rule pointed at the illustrator: draw the form, not the finish.
+
+This is the general form of the `kind="show"` lesson. Each time the figure system has been
+wrong, it was because the chapter model held a wrong idea of what a picture is FOR, and each
+fix has been a sentence in the prompt that writes the brief rather than machinery further down.
+
 ## 9. Badges (2026-09-14)
 
 A small mascot doodle beside each attention block — the Head First trick of giving every

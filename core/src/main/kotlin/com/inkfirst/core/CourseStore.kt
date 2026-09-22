@@ -42,6 +42,7 @@ class CourseStore(private val root: File) {
         model: String,
         language: String = "English",
         units: String = DEFAULT_MEASUREMENT_SYSTEM,
+        figures: String = DEFAULT_FIGURE_POLICY,
         created: String,
     ): Course {
         root.mkdirs()
@@ -57,6 +58,7 @@ class CourseStore(private val root: File) {
             model = model,
             language = language,
             units = units,
+            figures = figures,
             created = created,
         )
 

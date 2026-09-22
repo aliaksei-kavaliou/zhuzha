@@ -117,6 +117,8 @@ import com.inkfirst.core.Annotation
 import com.inkfirst.core.Course
 import com.inkfirst.core.CourseStore
 import com.inkfirst.core.FIGURE_ASPECT
+import com.inkfirst.core.figurePolicy
+import com.inkfirst.core.pictureCost
 import com.inkfirst.core.Inline
 import com.inkfirst.core.GeminiClient
 import com.inkfirst.core.KtorGeminiClient
@@ -2276,7 +2278,9 @@ private fun FormatMenu(
                             pendingFigures == 0 ->
                                 "all $figureSlots drawn"
                             else ->
-                                "Draw $pendingFigures figure" + if (pendingFigures == 1) "" else "s"
+                                "Draw $pendingFigures figure" +
+                                    (if (pendingFigures == 1) "" else "s") +
+                                    " · ${pictureCost(pendingFigures)}"
                         },
                         enabled = !busyDrawing && pendingFigures > 0 && figureStatus == null,
                         onClick = onIllustrate,
@@ -2290,7 +2294,8 @@ private fun FormatMenu(
             // unrelated things. Opening/Closing reads as the pair it is.
             MenuRow(label = "Opening") {
                 MenuAction(
-                    text = if (hasCover) "picture drawn" else "Draw opening picture",
+                    text = if (hasCover) "picture drawn"
+                    else "Draw opening picture · ${pictureCost(1)}",
                     enabled = !busyDrawing && !hasCover,
                     onClick = onDrawCover,
                 )
@@ -2304,7 +2309,7 @@ private fun FormatMenu(
                     text = when {
                         hasTail -> "picture drawn"
                         !hasCover -> "needs the chapter picture first"
-                        else -> "Draw closing picture"
+                        else -> "Draw closing picture · ${pictureCost(1)}"
                     },
                     enabled = !busyDrawing && hasCover && !hasTail,
                     onClick = onDrawTail,
@@ -2319,7 +2324,9 @@ private fun FormatMenu(
                     text = if (pendingBadges == 0) {
                         "all drawn"
                     } else {
-                        "Draw $pendingBadges book badge" + if (pendingBadges == 1) "" else "s"
+                        "Draw $pendingBadges book badge" +
+                            (if (pendingBadges == 1) "" else "s") +
+                            " · ${pictureCost(pendingBadges)}"
                     },
                     enabled = !busyDrawing && pendingBadges > 0,
                     onClick = onDrawBadges,
@@ -4052,12 +4059,14 @@ private suspend fun illustrateChapter(
     apiKey: String,
     store: com.inkfirst.core.CourseStore,
     onState: (CompileState) -> Unit,
+    maxFigures: Int = course.figurePolicy.maxPerChapter,
 ): String = try {
     val result = ChapterIllustrator(client, imageModel).illustrate(
         course = course,
         chapter = chapter,
         markdown = markdown,
         apiKey = apiKey,
+        maxFigures = maxFigures,
         onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "figures")) },
         saveImage = { fileName, bytes -> store.saveFigure(course.slug, fileName, bytes) },
     )
@@ -4104,6 +4113,10 @@ private fun illustrateExistingChapter(
                     apiKey = apiKey,
                     store = store,
                     onState = onState,
+                    // No ceiling on this path. The ceiling bounds what gets
+                    // spent without being asked; here the reader tapped a row
+                    // that named the count and the price.
+                    maxFigures = Int.MAX_VALUE,
                 )
                 onState(CompileState.Idle)
                 onDone(illustrated)
@@ -4355,39 +4368,54 @@ private fun compileChapter(
                 // Pictures last, and best-effort: the chapter is already
                 // saved and readable, so a failed or slow illustration pass
                 // can never cost the user their generated text.
-                val illustrated = illustrateChapter(
-                    client = client,
-                    imageModel = apiKeyStore.getImageModelName(),
-                    course = course,
-                    chapter = chapter,
-                    markdown = markdown,
-                    apiKey = apiKey,
-                    store = store,
-                    onState = onState,
-                )
+                //
+                // A book set to "on request" or "none" stops with the words.
+                // Its briefs are still in the chapter and still render as alt
+                // text, and the reader's menu draws any of them later — with
+                // the price on the row. Compiling a chapter should not spend
+                // money the reader did not ask to spend.
+                val drawsNow = course.figurePolicy.automatic
+                val illustrated = if (drawsNow) {
+                    illustrateChapter(
+                        client = client,
+                        imageModel = apiKeyStore.getImageModelName(),
+                        course = course,
+                        chapter = chapter,
+                        markdown = markdown,
+                        apiKey = apiKey,
+                        store = store,
+                        onState = onState,
+                    )
+                } else {
+                    markdown
+                }
                 // Badges too, if this course has none yet — it is a one-time
                 // cost on the first chapter, and then every exercise and
                 // recap in the book has its mark. Failures are swallowed
                 // inside BookBadger; a course with no badges just renders
                 // plain blocks.
                 try {
-                    BookBadger(client, apiKeyStore.getImageModelName()).drawMissing(
-                        course = course,
-                        apiKey = apiKey,
-                        kinds = badgeKindsIn(illustrated),
-                        existing = store.badgeKinds(course.slug),
-                        knownMascot = store.readMascot(course.slug),
-                        onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "badges")) },
-                        loadBadge = { kind ->
-                            store.badgeFile(course.slug, kind)?.let { f ->
-                                GeneratedImage(
-                                    bytes = f.readBytes(),
-                                    mimeType = if (f.extension == "jpg") "image/jpeg" else "image/png",
-                                )
-                            }
-                        },
-                        saveImage = { kind, ext, bytes -> store.saveBadge(course.slug, kind, ext, bytes) },
-                    ).also { store.saveMascot(course.slug, it.mascot) }
+                    // Badges are drawn with the pictures or not at all — they are
+                    // the same spend and the same decision.
+                    if (drawsNow) {
+                        BookBadger(client, apiKeyStore.getImageModelName()).drawMissing(
+                            course = course,
+                            apiKey = apiKey,
+                            kinds = badgeKindsIn(illustrated),
+                            existing = store.badgeKinds(course.slug),
+                            knownMascot = store.readMascot(course.slug),
+                            onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "badges")) },
+                            loadBadge = { kind ->
+                                store.badgeFile(course.slug, kind)?.let { f ->
+                                    GeneratedImage(
+                                        bytes = f.readBytes(),
+                                        mimeType = if (f.extension == "jpg") "image/jpeg" else "image/png",
+                                    )
+                                }
+                            },
+                            saveImage = { kind, ext, bytes -> store.saveBadge(course.slug, kind, ext, bytes) },
+                        ).also { store.saveMascot(course.slug, it.mascot) }
+                    }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {

@@ -164,6 +164,24 @@ yet" note that used to live here was two months stale.
       which is how a passage gets asked about. Watch `surfaceTint`: it defaults to `primary`,
       so a black primary greys every elevated surface unless it is pointed at white. See
       design.md §16.
+- [x] **Pictures have a budget (2026-09-22)** — there was no limit on them at all: the
+      illustrator drew every slot the model wrote, and a chapter that asked for twelve
+      pictures spent ~36¢ without saying so. `FigurePolicy` is now a per-course setting in
+      `course.json` (as needed / generous / on request / none), the ceiling is ENFORCED in
+      `illustrate` rather than requested in the prompt, and every row that spends names its
+      price. The overflow costs nothing: an undrawn slot renders its alt text and the menu
+      still offers to draw it. Same commit teaches the chapter model what this panel can
+      carry — shape and arrangement, never colour or browning — because nothing did, and
+      "the finished risotto, creamy and golden" is a brief no illustrator can fill here.
+      design.md §7.
+- [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
+      emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
+      Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,
+      which is tall enough. This is the fourth screen in the class the 2026-09-21 audit
+      thought it had closed. The fix is not just a scroll container: with the menu open, a
+      finger drag resolves to `CloseMenu` in `TapRouting`, so scrolling it means teaching the
+      one rule for touch that a drag STARTING inside the menu is a scroll — gesture-path work,
+      which is why it was not done on sight.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what
