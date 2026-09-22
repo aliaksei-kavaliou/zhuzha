@@ -16,6 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.inkfirst.app.data.courseStoreFor
+import com.inkfirst.app.ui.BackupScreen
 import com.inkfirst.app.ui.CourseDetailScreen
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
@@ -28,6 +29,7 @@ import com.inkfirst.app.ui.SettingsScreen
 private object Routes {
     const val LIBRARY = "library"
     const val SETTINGS = "settings"
+    const val BACKUP = "backup"
     const val NEW_COURSE = "new-course"
     // A trailing "/-" segment means "no current chapter" (from the Library entry).
     // From the Reader menu we pass the current chapterSlug so the Contents page
@@ -125,7 +127,13 @@ private fun InkFirstApp() {
             )
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onDone = { nav.popBackStack() })
+            SettingsScreen(
+                onDone = { nav.popBackStack() },
+                onBackup = { nav.navigate(Routes.BACKUP) },
+            )
+        }
+        composable(Routes.BACKUP) {
+            BackupScreen(onDone = { nav.popBackStack() })
         }
         composable(Routes.NEW_COURSE) {
             NewCourseScreen(

@@ -12,9 +12,16 @@ import java.io.File
  * visible to file managers on the device (per docs/design.md — greppable,
  * backupable, readable in 10 years).
  */
-fun courseStoreFor(context: Context): CourseStore {
+fun courseStoreFor(context: Context): CourseStore = CourseStore(coursesRootFor(context))
+
+/**
+ * The same directory as a plain [File], for the paths that work on the whole
+ * shelf rather than on one course — backup copies the tree wholesale, and
+ * `CourseStore` deliberately keeps its root to itself.
+ */
+fun coursesRootFor(context: Context): File {
     val base = context.getExternalFilesDir(null) ?: context.filesDir
-    return CourseStore(File(base, "courses"))
+    return File(base, "courses")
 }
 
 @Composable

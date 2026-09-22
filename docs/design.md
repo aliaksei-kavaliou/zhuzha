@@ -624,6 +624,63 @@ questions follow, each showing the question it asked, matched to the transcript 
 A passage marked with no question typed says "no question yet" — a real state, which
 `ReaderSignals` reads as "stopped here but could not put the difficulty into words".
 
+## 15. Backup (built 2026-09-22)
+
+Backup, not sync. Multi-device reading is a weak want for an e-ink-first app — the same
+reasoning that deferred the iPad — but ~15 MB of generated course living on one consumer
+e-reader with no copy anywhere is a real one. One direction at a time, chosen by the reader,
+nothing merged, so there are no conflicts and no change to how a course is stored. It also
+makes good on §1 in a way the app could not before: the courses sit in the app's own
+external-files directory, whose permissions give other apps nothing, so "plain inspectable
+files" was true over adb from a laptop and nowhere else. Copying them into a folder the reader
+picked is what makes it true on the device.
+
+**The split.** `:core` decides WHAT to copy and knows no Android: `CourseBackup.plan` takes two
+listings and returns a decision, which is why every rule below is a unit test rather than a
+device session. `:app` supplies the far end — `DocumentTreeFileTree` over the document tree the
+picker hands back — and decides nothing.
+
+**Three things the far end taught, all cheap to get wrong:**
+
+- **The display name is the index, and `createDocument` treats it as a suggestion.** The mime
+  type is authoritative: if the two disagree the provider appends the extension its type
+  implies, so asking for `01-intro.md` as `application/octet-stream` lands as `01-intro.md.bin`
+  on any device whose mime table knows `md`. That is not cosmetic — `CourseStore` finds a
+  chapter by its filename, so a restored `.md.bin` is a chapter the app cannot see. Deriving
+  the type FROM the extension makes them agree by construction, on every device and for every
+  extension.
+- **Not `DocumentFile`.** It looks like exactly this class, but `findFile` lists the whole
+  directory on every call, so writing 400 files into one folder is 400 full listings — and a
+  course is mostly one big `figures/`. One cursor per directory plus a path→document-id map
+  walks each directory once.
+- **A backed-up file carries the moment it was COPIED**, because the document API offers no way
+  to set a timestamp on write. So `plan` asks whether the destination is at least as new as the
+  source, never whether the stamps match — the equality rule would recopy all 14 MB of
+  illustrations every run.
+
+**Shape of the UI.** Backing up is one button and takes everything: a backup you have to curate
+is one you stop taking, and the incremental rule makes the second run cost nothing. Restoring
+is per book and asks first, because it is the direction that can destroy something. Restore is
+`OVERWRITE` — an incremental restore would skip exactly the files that changed on the device,
+which are the ones being restored. Narrowing to one book needed no new machinery: paths on both
+sides are relative to the courses root, so filtering the SOURCE listing by `<slug>/` is the
+whole of it and `CourseBackup` never has to learn what a course is.
+
+Progress is a line of text that changes every 25 files, not a bar — on e-ink an animation is a
+repaint per frame, and reporting each of 400 files would cost more than the copying does.
+
+**Verified on the emulator 2026-09-22**, which is the point: this is the first substantial slice
+built and proved with no Boox in the room. 4 books / 23 files / 3.4 MB copied into a folder
+chosen through the picker, every filename intact, `jpg`/`png`/`json`/`md` byte-identical by
+md5; the second run reported "Already up to date — 23 files unchanged"; a chapter deleted from
+the device came back from the backup with its original md5 and opened in the reader.
+
+**What it is not.** No schedule and no automatic run — a backup that happens without being asked
+needs to be trustworthy in the background, and this one is a screen the reader visits. Nothing
+at the far end is ever deleted, so a course removed on the device stays in the backup; that is
+the difference between a backup and a mirror. `last_read.json` travels with the shelf but never
+comes back, since restore is per course.
+
 ## 12. Open questions (revisit while building)
 
 - Exercise answers: reveal-in-place vs. end-of-chapter answer pages?

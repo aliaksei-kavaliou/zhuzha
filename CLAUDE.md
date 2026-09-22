@@ -147,6 +147,15 @@ yet" note that used to live here was two months stale.
       "Bookmark this page" for a page that already was. `bookmarkOnPage` now asks the
       question the same way the jump asks it. Stored indices are never rewritten to heal —
       silently editing a saved position on a font change is worse than the bug.
+- [x] **Backup and restore (2026-09-22)** — `CourseBackup` in `:core` had been sitting with
+      no UI; it has one now. A folder chosen through Android's document picker, remembered
+      with a persistable grant, "Back up everything" in one button, restore per book behind a
+      confirm. The trap worth knowing: `createDocument` treats the mime type as authoritative
+      and the filename as a suggestion, so a name whose extension disagrees with the type
+      comes back with the provider's extension appended — and filenames ARE the app's index.
+      Derive the type from the extension. See design.md §15. **Proved end to end on the
+      emulator, no device needed**: 23 files copied byte-identical, a second run copied
+      nothing, a chapter deleted from the device came back with its original md5 and opened.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

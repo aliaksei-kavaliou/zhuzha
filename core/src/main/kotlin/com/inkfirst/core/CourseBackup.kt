@@ -92,10 +92,23 @@ object CourseBackup {
     /**
      * Carries out a [plan]. Reads each file from [from] and writes it to [to];
      * anything that fails is recorded and the run continues.
+     *
+     * [onProgress] is called after each file with how many of the planned
+     * files are done. A course is ~15 MB over a document provider, which is
+     * slow enough that a silent screen reads as a dead button — and on e-ink
+     * the honest form of a progress bar is a line of text that changes a few
+     * times, not an animation that repaints the panel every frame.
      */
-    fun run(from: FileTree, to: FileTree, plan: Plan): Report {
+    fun run(
+        from: FileTree,
+        to: FileTree,
+        plan: Plan,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Report {
         var copied = 0
         var bytes = 0L
+        var done = 0
+        val total = plan.copy.size
         val failed = mutableListOf<Failure>()
 
         plan.copy.forEach { entry ->
@@ -107,13 +120,22 @@ object CourseBackup {
             } catch (e: IOException) {
                 failed += Failure(entry.path, e.message ?: e::class.java.simpleName)
             }
+            // Outside the catch: a file that failed is still a file dealt
+            // with, and a counter that stalls on the broken one is the same
+            // dead screen this exists to avoid.
+            done++
+            onProgress(done, total)
         }
         return Report(copied = copied, skipped = plan.skip.size, bytes = bytes, failed = failed)
     }
 
     /** Plan and run in one call — the ordinary case. */
-    fun copy(from: FileTree, to: FileTree, mode: Mode = Mode.INCREMENTAL): Report =
-        run(from, to, plan(from.list(), to.list(), mode))
+    fun copy(
+        from: FileTree,
+        to: FileTree,
+        mode: Mode = Mode.INCREMENTAL,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Report = run(from, to, plan(from.list(), to.list(), mode), onProgress)
 
     /**
      * The course slugs present in a tree, found the same way the app finds
@@ -121,8 +143,15 @@ object CourseBackup {
      * Lets a restore screen list what is in a backup without parsing any of
      * it.
      */
-    fun coursesIn(tree: FileTree): List<String> =
-        tree.list()
+    fun coursesIn(tree: FileTree): List<String> = coursesIn(tree.list())
+
+    /**
+     * The same question asked of a listing already in hand. Worth having
+     * separately: over a document provider a listing is a query per directory,
+     * and a backup screen needs both the names and the files themselves.
+     */
+    fun coursesIn(entries: List<FileTree.Entry>): List<String> =
+        entries
             .mapNotNull { entry ->
                 val parts = entry.path.split("/")
                 if (parts.size == 2 && parts[1] == "course.json") parts[0] else null

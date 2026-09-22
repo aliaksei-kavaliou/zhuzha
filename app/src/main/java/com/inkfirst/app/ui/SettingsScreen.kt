@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -37,6 +39,7 @@ import com.inkfirst.app.data.maskApiKey
 @Composable
 fun SettingsScreen(
     onDone: () -> Unit,
+    onBackup: () -> Unit,
 ) {
     val context = LocalContext.current
     val store = remember { ApiKeyStore(context) }
@@ -163,6 +166,19 @@ fun SettingsScreen(
                 text = "Off: stylus draws, finger navigates. On: finger draws too (for testing on non-stylus devices).",
                 style = MaterialTheme.typography.bodySmall,
             )
+
+            HorizontalDivider()
+
+            Text("Backup", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Copy your books to a folder you choose, and bring them back. " +
+                    "They are only on this device until you do.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            TextButton(
+                onClick = onBackup,
+                contentPadding = PaddingValues(0.dp),
+            ) { Text("Backup and restore") }
 
             savedNote?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
