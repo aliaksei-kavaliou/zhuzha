@@ -35,10 +35,6 @@ import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.CourseSearch
 
-private val InkColor = Color(0xFF000000)
-private val PaperColor = Color(0xFFFFFFFF)
-private val MutedColor = Color(0xFF555555)
-
 /**
  * Finding a passage again in a book already read.
  *
@@ -71,14 +67,14 @@ fun SearchScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PaperColor)
+            .background(Paper)
             .padding(horizontal = 20.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
         ) {
-            TextButton(onClick = onBack) { Text("≡ Contents", color = InkColor) }
+            TextButton(onClick = onBack) { Text("≡ Contents", color = Ink) }
         }
 
         OutlinedTextField(
@@ -90,19 +86,19 @@ fun SearchScreen(
                     text = "Search this book",
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
-                    color = MutedColor,
+                    color = Muted,
                 )
             },
             singleLine = true,
             textStyle = TextStyle(
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
-                color = InkColor,
+                color = Ink,
             ),
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = PaperColor,
-                unfocusedContainerColor = PaperColor,
-                cursorColor = InkColor,
+                focusedContainerColor = Paper,
+                unfocusedContainerColor = Paper,
+                cursorColor = Ink,
             ),
         )
 
@@ -118,7 +114,7 @@ fun SearchScreen(
             fontFamily = FontFamily.Serif,
             fontStyle = FontStyle.Italic,
             fontSize = 12.sp,
-            color = MutedColor,
+            color = Muted,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
         )
 
@@ -162,7 +158,7 @@ private fun HitRow(hit: CourseSearch.Hit, onTap: () -> Unit) {
             text = glyph,
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
-            color = InkColor,
+            color = Ink,
             modifier = Modifier.padding(end = 8.dp, top = 2.dp),
         )
         Column(
@@ -174,7 +170,7 @@ private fun HitRow(hit: CourseSearch.Hit, onTap: () -> Unit) {
                 fontFamily = FontFamily.Serif,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
-                color = InkColor,
+                color = Ink,
             )
             Text(
                 text = if (hit.chapterN > 0) "Ch ${hit.chapterN}: ${hit.chapterTitle}" else hit.chapterTitle,
@@ -182,7 +178,7 @@ private fun HitRow(hit: CourseSearch.Hit, onTap: () -> Unit) {
                 fontStyle = FontStyle.Italic,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
-                color = MutedColor,
+                color = Muted,
             )
         }
     }

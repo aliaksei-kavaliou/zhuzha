@@ -156,6 +156,14 @@ yet" note that used to live here was two months stale.
       Derive the type from the extension. See design.md §15. **Proved end to end on the
       emulator, no device needed**: 23 files copied byte-identical, a second run copied
       nothing, a chapter deleted from the device came back with its original md5 and opened.
+- [x] **One palette, in one place (2026-09-22)** — the app had no theme: `MaterialTheme { }`
+      with no scheme, so Library, Settings, New course and Backup rendered in M3's purple,
+      and the five colours the book screens use were declared privately in seven files.
+      `ui/InkTheme.kt` owns both now. The purple reached further than the obvious buttons —
+      the text-field focus ring, the `Switch`, and the text-selection handles in the READER,
+      which is how a passage gets asked about. Watch `surfaceTint`: it defaults to `primary`,
+      so a black primary greys every elevated surface unless it is pointed at white. See
+      design.md §16.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

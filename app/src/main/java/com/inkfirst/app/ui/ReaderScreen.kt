@@ -55,7 +55,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
@@ -214,12 +213,6 @@ private val DRAG_CHAPTER_THRESHOLD = 80.dp
  * simply looks better on a book page.
  */
 internal const val PLATE_WIDTH_FRACTION = 0.72f
-
-
-private val InkColor = Color(0xFF000000)
-private val PaperColor = Color(0xFFFFFFFF)
-private val MutedColor = Color(0xFF555555)
-private val BorderColor = Color(0xFF888888)
 
 // Inline `code` is marked by the monospace face alone — no background. A tint
 // behind the words was tried in both a dithered and a flat form and read as
@@ -410,7 +403,6 @@ fun ReaderScreen(
 
     val chapter = course?.chapters?.firstOrNull { it.slug == chapterSlug }
     val chapterAnnotations = course?.annotations?.filter { it.chapterSlug == chapterSlug }.orEmpty()
-
 
     // Figure slots still waiting for a picture. Drives the menu's "Draw
     // figures" row — the retrofit path for chapters written before figures
@@ -675,7 +667,7 @@ fun ReaderScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(PaperColor),
+            .background(Paper),
     ) {
         // No horizontal padding here any more. The ink overlay lives inside
         // this column, so padding it was what stopped the pen at the text
@@ -863,17 +855,17 @@ fun ReaderScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 64.dp)
-                    .background(InkColor, RoundedCornerShape(24.dp))
+                    .background(Ink, RoundedCornerShape(24.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 TextButton(onClick = { askToolbar.ask() }) {
-                    Text("Ask about this", color = PaperColor)
+                    Text("Ask about this", color = Paper)
                 }
                 TextButton(onClick = { askToolbar.addNote() }) {
-                    Text("Add note", color = PaperColor)
+                    Text("Add note", color = Paper)
                 }
                 TextButton(onClick = clearSelection) {
-                    Text("Cancel", color = PaperColor)
+                    Text("Cancel", color = Paper)
                 }
             }
         }
@@ -895,7 +887,7 @@ fun ReaderScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 64.dp)
                     .onGloballyPositioned { lastChipBounds = it.boundsInRoot() }
-                    .background(InkColor, RoundedCornerShape(24.dp))
+                    .background(Ink, RoundedCornerShape(24.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 TextButton(onClick = {
@@ -916,7 +908,7 @@ fun ReaderScreen(
                     consumeStroke(stroke)
                     pendingGestureStroke = null
                 }) {
-                    Text("Ask about this", color = PaperColor)
+                    Text("Ask about this", color = Paper)
                 }
                 TextButton(onClick = {
                     pendingNoteQuote = text
@@ -926,7 +918,7 @@ fun ReaderScreen(
                     pendingNoteStroke = stroke
                     pendingGestureStroke = null
                 }) {
-                    Text("Add note", color = PaperColor)
+                    Text("Add note", color = Paper)
                 }
                 TextButton(onClick = {
                     val updated = strokes - stroke
@@ -934,10 +926,10 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     pendingGestureStroke = null
                 }) {
-                    Text("Delete", color = PaperColor)
+                    Text("Delete", color = Paper)
                 }
                 TextButton(onClick = { pendingGestureStroke = null }) {
-                    Text("Cancel", color = PaperColor)
+                    Text("Cancel", color = Paper)
                 }
             }
         }
@@ -954,7 +946,7 @@ fun ReaderScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 64.dp)
                     .onGloballyPositioned { lastChipBounds = it.boundsInRoot() }
-                    .background(InkColor, RoundedCornerShape(24.dp))
+                    .background(Ink, RoundedCornerShape(24.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 if (blockText != null) {
@@ -966,14 +958,14 @@ fun ReaderScreen(
                         consumeStroke(stroke)
                         viewingStroke = null
                     }) {
-                        Text("Ask about this", color = PaperColor)
+                        Text("Ask about this", color = Paper)
                     }
                     TextButton(onClick = {
                         pendingNoteQuote = blockText
                         pendingNoteStroke = stroke
                         viewingStroke = null
                     }) {
-                        Text("Add note", color = PaperColor)
+                        Text("Add note", color = Paper)
                     }
                 }
                 TextButton(onClick = {
@@ -982,10 +974,10 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     viewingStroke = null
                 }) {
-                    Text("Delete", color = PaperColor)
+                    Text("Delete", color = Paper)
                 }
                 TextButton(onClick = { viewingStroke = null }) {
-                    Text("Cancel", color = PaperColor)
+                    Text("Cancel", color = Paper)
                 }
             }
         }
@@ -1951,7 +1943,7 @@ private fun PagedContent(
                 ) {
                     Text(
                         text = if (pages.isEmpty()) "" else "Page ${pageIndex + 1} of ${pages.size}",
-                        style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                        style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                         modifier = Modifier.weight(1f),
                     )
                     // What the app is doing outranks the hint: the hint is
@@ -1961,7 +1953,7 @@ private fun PagedContent(
                     if (status != null) {
                         Text(
                             text = status,
-                            style = MaterialTheme.typography.bodySmall.copy(color = InkColor),
+                            style = MaterialTheme.typography.bodySmall.copy(color = Ink),
                             textAlign = TextAlign.End,
                         )
                     } else if (showTapHint) {
@@ -1975,7 +1967,7 @@ private fun PagedContent(
                             // inert, an arrow pointing at the edges is the
                             // hint that matters.
                             text = "tap edge ← / → · bottom for menu ",
-                            style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                            style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                             textAlign = TextAlign.End,
                         )
                     }
@@ -2010,12 +2002,12 @@ private fun ReaderHeader(
         // cold-start pushes Reader directly on top of Library with no
         // Contents in between, so a back-pop would land on Library. The
         // button label says Contents; it should always go to Contents.
-        TextButton(onClick = onOpenContents) { Text("≡ Contents", color = InkColor) }
+        TextButton(onClick = onOpenContents) { Text("≡ Contents", color = Ink) }
         Spacer(Modifier.weight(1f))
         if (chapterN != null && chapterCount != null) {
             Text(
                 text = "Ch $chapterN/$chapterCount",
-                style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                 modifier = Modifier.padding(end = 8.dp),
             )
         }
@@ -2042,7 +2034,7 @@ private fun ReaderHeader(
                         lineTo(0f, h)
                         close()
                     }
-                    drawPath(path, color = InkColor)
+                    drawPath(path, color = Ink)
                 }
             }
         }
@@ -2092,8 +2084,8 @@ private fun FormatMenu(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(PaperColor)
-            .border(width = 1.dp, color = BorderColor)
+            .background(Paper)
+            .border(width = 1.dp, color = Hairline)
             // Consume taps so they don't bubble to the parent's dismiss handler.
             .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -2110,7 +2102,7 @@ private fun FormatMenu(
                     text = "Contents",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
             // From the page too, not only from Contents: "where did it say
@@ -2124,7 +2116,7 @@ private fun FormatMenu(
                     text = "Search",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
         }
@@ -2143,7 +2135,7 @@ private fun FormatMenu(
                     text = "How it has gone",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
         }
@@ -2159,7 +2151,7 @@ private fun FormatMenu(
                     text = "About this chapter",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
         }
@@ -2175,26 +2167,25 @@ private fun FormatMenu(
                     text = if (isBookmarked) "Remove bookmark" else "Bookmark this page",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (canBookmark) InkColor else MutedColor,
+                    color = if (canBookmark) Ink else Muted,
                 )
             }
         }
-
 
         MenuDivider()
 
         // Font size
         MenuRow(label = "Font") {
             TextButton(onClick = onFontSmaller, enabled = canShrink) {
-                Text("A−", fontSize = 16.sp, color = if (canShrink) InkColor else MutedColor)
+                Text("A−", fontSize = 16.sp, color = if (canShrink) Ink else Muted)
             }
             Text(
                 text = "%.2fx".format(fontScale),
-                style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
             TextButton(onClick = onFontLarger, enabled = canGrow) {
-                Text("A+", fontSize = 18.sp, color = if (canGrow) InkColor else MutedColor)
+                Text("A+", fontSize = 18.sp, color = if (canGrow) Ink else Muted)
             }
         }
 
@@ -2247,7 +2238,7 @@ private fun FormatMenu(
                     text = "Rewrite this chapter",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (busyDrawing) MutedColor else InkColor,
+                    color = if (busyDrawing) Muted else Ink,
                 )
             }
         }
@@ -2355,7 +2346,7 @@ private fun MenuDivider() {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(BorderColor),
+            .background(Hairline),
     )
 }
 
@@ -2376,7 +2367,7 @@ private fun MenuAction(text: String, enabled: Boolean, onClick: () -> Unit) {
             text = text,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            color = if (enabled) InkColor else MutedColor,
+            color = if (enabled) Ink else Muted,
         )
     }
 }
@@ -2386,7 +2377,7 @@ private fun MenuRow(label: String, content: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium.copy(color = InkColor),
+            style = MaterialTheme.typography.bodyMedium.copy(color = Ink),
             // 70dp broke "Reading" across two lines — "Readin" over a lone
             // "g" — and left "Chapter" a hair from the same fate. The column
             // is a label gutter, so it costs the controls beside it nothing
@@ -2404,7 +2395,7 @@ private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit
         modifier = Modifier
             .padding(end = 8.dp)
             .then(
-                if (selected) Modifier.border(border, InkColor, RoundedCornerShape(4.dp))
+                if (selected) Modifier.border(border, Ink, RoundedCornerShape(4.dp))
                 else Modifier,
             )
             .clickable { onClick() }
@@ -2414,7 +2405,7 @@ private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit
             text = label,
             fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            color = InkColor,
+            color = Ink,
         )
     }
 }
@@ -2505,7 +2496,7 @@ private fun HeadingBlock(
         fontWeight = FontWeight.Bold,
         fontSize = fontSize,
         lineHeight = fontSize * 1.2f,
-        color = InkColor,
+        color = Ink,
     )
     Spacer(Modifier.height(bottom))
     // The chapter's opening picture, when this heading is the chapter title.
@@ -2634,7 +2625,7 @@ private fun ParagraphBlock(
                 fontFamily = FontFamily.Serif,
                 fontSize = 18.sp * fontScale,
                 lineHeight = 30.sp * fontScale * lineSpacing,
-                color = InkColor,
+                color = Ink,
                 textAlign = if (textAlign == TextAlignPref.JUSTIFY) TextAlign.Justify else TextAlign.Start,
                 hyphens = Hyphens.Auto,
             ),
@@ -2688,7 +2679,7 @@ private fun ParagraphBlock(
                     Text(
                         text = if (a.kind == "ask") "?" else "✎",
                         style = markerStyle,
-                        color = InkColor,
+                        color = Ink,
                         modifier = Modifier
                             .offset { IntOffset(0, y.toInt()) }
                             .onGloballyPositioned { onMarkerBounds(a, it.boundsInRoot()) }
@@ -2714,14 +2705,14 @@ private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Floa
             fontFamily = FontFamily.Serif,
             fontSize = 18.sp * fontScale,
             lineHeight = 30.sp * fontScale * lineSpacing,
-            color = InkColor,
+            color = Ink,
         )
         Text(
             text = renderInlines(inlines),
             fontFamily = FontFamily.Serif,
             fontSize = 18.sp * fontScale,
             lineHeight = 30.sp * fontScale * lineSpacing,
-            color = InkColor,
+            color = Ink,
         )
     }
 }
@@ -2746,7 +2737,7 @@ private fun ExerciseBlock(
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
             lineHeight = 28.sp * fontScale * lineSpacing,
-            color = InkColor,
+            color = Ink,
         )
         Spacer(Modifier.height(8.dp))
         if (revealed || answer.isEmpty()) {
@@ -2772,7 +2763,7 @@ private fun ExerciseBlock(
                         fontSize = 16.sp * fontScale,
                         lineHeight = 26.sp * fontScale * lineSpacing,
                         fontStyle = FontStyle.Italic,
-                        color = InkColor,
+                        color = Ink,
                     )
                 }
             }
@@ -2786,7 +2777,7 @@ private fun ExerciseBlock(
             TextButton(
                 onClick = onReveal,
                 modifier = Modifier.onGloballyPositioned { onRevealBounds(it.boundsInRoot()) },
-            ) { Text("Show answer", color = InkColor) }
+            ) { Text("Show answer", color = Ink) }
             androidx.compose.runtime.DisposableEffect(Unit) {
                 onDispose { onRevealBounds(null) }
             }
@@ -2807,7 +2798,7 @@ private fun RecapBlock(
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
             lineHeight = 28.sp * fontScale * lineSpacing,
-            color = InkColor,
+            color = Ink,
         )
     }
 }
@@ -2859,7 +2850,7 @@ private fun FigureBlock(
             fontSize = 16.sp * fontScale,
             lineHeight = 26.sp * fontScale * lineSpacing,
             fontStyle = FontStyle.Italic,
-            color = MutedColor,
+            color = Muted,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         )
@@ -2880,7 +2871,7 @@ private fun MetaBlock(
         fontFamily = FontFamily.Serif,
         fontStyle = FontStyle.Italic,
         fontSize = 13.sp * fontScale,
-        color = MutedColor,
+        color = Muted,
         modifier = Modifier.padding(bottom = 8.dp),
     )
     // Stand-in title for a chapter whose Markdown never wrote one. Styled to
@@ -2892,7 +2883,7 @@ private fun MetaBlock(
             fontWeight = FontWeight.Bold,
             fontSize = 30.sp * fontScale,
             lineHeight = 30.sp * fontScale * 1.2f,
-            color = InkColor,
+            color = Ink,
         )
         Spacer(Modifier.height(16.dp))
     }
@@ -2933,7 +2924,7 @@ private fun UnknownFenceBlock(
             text = f.body,
             fontFamily = FontFamily.Monospace,
             fontSize = 14.sp * fontScale,
-            color = InkColor,
+            color = Ink,
         )
     }
 }
@@ -2950,7 +2941,7 @@ private fun BorderedBlock(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .border(1.dp, BorderColor, RoundedCornerShape(4.dp))
+            .border(1.dp, Hairline, RoundedCornerShape(4.dp))
             .padding(12.dp),
     ) {
         Row(
@@ -2975,7 +2966,7 @@ private fun BorderedBlock(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp * fontScale,
-                color = MutedColor,
+                color = Muted,
             )
         }
         content()
@@ -3907,11 +3898,11 @@ private fun CompilePrompt(
         // follows this automatically.
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
     ) {
-        TextButton(onClick = onBack) { Text("← Back", color = InkColor) }
+        TextButton(onClick = onBack) { Text("← Back", color = Ink) }
         Spacer(Modifier.weight(1f))
         Text(
             text = "Ch ${chapter.n}/$chapterCount",
-            style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+            style = MaterialTheme.typography.bodySmall.copy(color = Muted),
         )
     }
 
@@ -3925,7 +3916,7 @@ private fun CompilePrompt(
         fontFamily = FontFamily.Serif,
         fontStyle = FontStyle.Italic,
         fontSize = 13.sp,
-        color = MutedColor,
+        color = Muted,
     )
     Spacer(Modifier.height(8.dp))
     Text(
@@ -3934,7 +3925,7 @@ private fun CompilePrompt(
         fontWeight = FontWeight.Bold,
         fontSize = 26.sp,
         lineHeight = 32.sp,
-        color = InkColor,
+        color = Ink,
     )
 
     if (chapter.objectives.isNotEmpty()) {
@@ -3944,7 +3935,7 @@ private fun CompilePrompt(
             fontFamily = FontFamily.SansSerif,
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
-            color = MutedColor,
+            color = Muted,
         )
         Spacer(Modifier.height(8.dp))
         chapter.objectives.forEach { obj ->
@@ -3953,14 +3944,14 @@ private fun CompilePrompt(
                     text = "• ",
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp,
-                    color = InkColor,
+                    color = Ink,
                 )
                 Text(
                     text = obj,
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp,
                     lineHeight = 22.sp,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
         }
@@ -3973,14 +3964,14 @@ private fun CompilePrompt(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp).padding(end = 8.dp),
-                    color = InkColor,
+                    color = Ink,
                     strokeWidth = 2.dp,
                 )
                 Text(
                     text = "Compiling chapter…",
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
         }
@@ -3988,14 +3979,14 @@ private fun CompilePrompt(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp).padding(end = 8.dp),
-                    color = InkColor,
+                    color = Ink,
                     strokeWidth = 2.dp,
                 )
                 Text(
                     text = "Drawing figures… ${compileState.done}/${compileState.total}",
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
         }
@@ -4009,17 +4000,17 @@ private fun CompilePrompt(
             )
             Button(
                 onClick = onCompile,
-                colors = ButtonDefaults.buttonColors(containerColor = InkColor),
+                colors = ButtonDefaults.buttonColors(containerColor = Ink),
             ) {
-                Text("Try again", color = PaperColor)
+                Text("Try again", color = Paper)
             }
         }
         CompileState.Idle -> {
             Button(
                 onClick = onCompile,
-                colors = ButtonDefaults.buttonColors(containerColor = InkColor),
+                colors = ButtonDefaults.buttonColors(containerColor = Ink),
             ) {
-                Text("Compile chapter", color = PaperColor)
+                Text("Compile chapter", color = Paper)
             }
         }
     }
@@ -4036,7 +4027,7 @@ private fun CompilePrompt(
             },
             fontFamily = FontFamily.Serif,
             fontSize = 12.sp,
-            color = MutedColor,
+            color = Muted,
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             textAlign = TextAlign.Center,
         )
@@ -4476,7 +4467,7 @@ private fun RewriteChapterDialog(
                     fontFamily = FontFamily.Serif,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
-                    color = InkColor,
+                    color = Ink,
                 )
                 if (marksLost.isNotEmpty()) {
                     // Everything here points INTO the prose being replaced —
@@ -4488,7 +4479,7 @@ private fun RewriteChapterDialog(
                         fontFamily = FontFamily.Serif,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
-                        color = InkColor,
+                        color = Ink,
                     )
                 }
                 Text(
@@ -4497,7 +4488,7 @@ private fun RewriteChapterDialog(
                     fontFamily = FontFamily.Serif,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
-                    color = MutedColor,
+                    color = Muted,
                 )
                 if (laterChapters.isNotEmpty()) {
                     // Not blocked, just said out loud: cascading the rewrite
@@ -4511,7 +4502,7 @@ private fun RewriteChapterDialog(
                         fontFamily = FontFamily.Serif,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
-                        color = MutedColor,
+                        color = Muted,
                     )
                 }
                 OutlinedTextField(
@@ -4523,22 +4514,22 @@ private fun RewriteChapterDialog(
                             text = "What didn't work? (optional)",
                             fontFamily = FontFamily.Serif,
                             fontSize = 14.sp,
-                            color = MutedColor,
+                            color = Muted,
                         )
                     },
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Serif,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
-                        color = InkColor,
+                        color = Ink,
                     ),
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = PaperColor,
-                        unfocusedContainerColor = PaperColor,
-                        cursorColor = InkColor,
+                        focusedContainerColor = Paper,
+                        unfocusedContainerColor = Paper,
+                        cursorColor = Ink,
                         // The default indicator is the theme's purple.
-                        focusedIndicatorColor = InkColor,
-                        unfocusedIndicatorColor = MutedColor,
+                        focusedIndicatorColor = Ink,
+                        unfocusedIndicatorColor = Muted,
                     ),
                 )
         }

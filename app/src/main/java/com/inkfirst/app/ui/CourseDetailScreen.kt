@@ -64,10 +64,6 @@ import com.inkfirst.core.ReaderNotes
 import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.totalCourseDays
 
-private val InkColor = Color(0xFF000000)
-private val PaperColor = Color(0xFFFFFFFF)
-private val MutedColor = Color(0xFF555555)
-
 // internal, not private: buildTocBlocks below is a pure function over a
 // Course and is unit-tested. Everything that draws these stays private.
 internal sealed interface TocBlock {
@@ -152,7 +148,7 @@ fun CourseDetailScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(PaperColor),
+            .background(Paper),
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
@@ -162,7 +158,7 @@ fun CourseDetailScreen(
                 // Same idea as the Reader's "≡ Contents" — label the destination
                 // instead of the direction. Popping back from Contents lands on
                 // the Library shelf.
-                TextButton(onClick = onBack) { Text("≡ Library", color = InkColor) }
+                TextButton(onClick = onBack) { Text("≡ Library", color = Ink) }
             }
 
             val c = course
@@ -440,12 +436,12 @@ private fun PagedContents(
             ) {
                 Text(
                     text = if (pages.size <= 1) "" else "Page ${pageIndex + 1} of ${pages.size}",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     text = if (pages.size > 1) "tap ← / → edges to turn" else "",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     textAlign = TextAlign.End,
                 )
             }
@@ -489,17 +485,17 @@ private fun SearchEntryBlock(onTap: () -> Unit) {
                 text = "Search this book",
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
-                color = InkColor,
+                color = Ink,
             )
             Text(
                 text = "chapters, notes and questions",
                 fontFamily = FontFamily.Serif,
                 fontStyle = FontStyle.Italic,
                 fontSize = 12.sp,
-                color = MutedColor,
+                color = Muted,
             )
         }
-        Text(text = "›", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = MutedColor)
+        Text(text = "›", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = Muted)
     }
 }
 
@@ -517,7 +513,7 @@ private fun ReaderNotesEntryBlock(entry: TocBlock.ReaderNotesEntry, onTap: () ->
                 text = "How the reading has gone",
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
-                color = InkColor,
+                color = Ink,
             )
             Text(
                 text = when (entry.count) {
@@ -528,10 +524,10 @@ private fun ReaderNotesEntryBlock(entry: TocBlock.ReaderNotesEntry, onTap: () ->
                 fontFamily = FontFamily.Serif,
                 fontStyle = FontStyle.Italic,
                 fontSize = 12.sp,
-                color = MutedColor,
+                color = Muted,
             )
         }
-        Text(text = "›", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = MutedColor)
+        Text(text = "›", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = Muted)
     }
 }
 
@@ -544,7 +540,7 @@ private fun BookTitleBlock(b: TocBlock.BookTitle) {
         fontWeight = FontWeight.Bold,
         fontSize = 26.sp,
         lineHeight = 32.sp,
-        color = InkColor,
+        color = Ink,
     )
     Spacer(Modifier.height(6.dp))
     Text(
@@ -552,7 +548,7 @@ private fun BookTitleBlock(b: TocBlock.BookTitle) {
         fontFamily = FontFamily.Serif,
         fontStyle = FontStyle.Italic,
         fontSize = 13.sp,
-        color = MutedColor,
+        color = Muted,
     )
     Spacer(Modifier.height(16.dp))
 }
@@ -565,7 +561,7 @@ private fun SectionHeaderBlock(b: TocBlock.SectionHeader) {
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
         fontSize = 12.sp,
-        color = MutedColor,
+        color = Muted,
     )
     Spacer(Modifier.height(6.dp))
 }
@@ -584,7 +580,7 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
             text = if (entry.isCurrent) "▸" else " ",
             fontFamily = FontFamily.Serif,
             fontSize = 16.sp,
-            color = InkColor,
+            color = Ink,
             modifier = Modifier.padding(end = 8.dp, top = 2.dp),
         )
         Text(
@@ -593,7 +589,7 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
             fontWeight = if (entry.isCurrent) FontWeight.Bold else FontWeight.Normal,
             fontSize = 16.sp,
             lineHeight = 22.sp,
-            color = InkColor,
+            color = Ink,
             modifier = Modifier.weight(1f),
         )
         if (entry.dayLabel.isNotEmpty()) {
@@ -602,7 +598,7 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
                 fontFamily = FontFamily.Serif,
                 fontStyle = FontStyle.Italic,
                 fontSize = 12.sp,
-                color = MutedColor,
+                color = Muted,
                 modifier = Modifier.padding(start = 8.dp, top = 4.dp),
             )
         }
@@ -613,7 +609,7 @@ private fun ChapterEntryBlock(entry: TocBlock.ChapterEntry, onTap: (PersistedCha
             text = if (entry.hasNotes) "✎" else " ",
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
-            color = if (entry.hasNotes) InkColor else Color.Transparent,
+            color = if (entry.hasNotes) Ink else Color.Transparent,
             modifier = Modifier.padding(start = 8.dp, top = 2.dp),
         )
     }
@@ -696,7 +692,7 @@ private fun MarkEntryRow(
             text = "$glyph ",
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
-            color = InkColor,
+            color = Ink,
             modifier = Modifier.padding(end = 4.dp, top = 2.dp),
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -706,7 +702,7 @@ private fun MarkEntryRow(
                 fontStyle = FontStyle.Italic,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
-                color = InkColor,
+                color = Ink,
             )
             if (bodyPreview.isNotEmpty()) {
                 Text(
@@ -715,7 +711,7 @@ private fun MarkEntryRow(
                     fontStyle = if (bodyIsPlaceholder) FontStyle.Italic else FontStyle.Normal,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
-                    color = MutedColor,
+                    color = Muted,
                     modifier = Modifier.padding(top = 2.dp, start = 8.dp),
                 )
             }
@@ -725,7 +721,7 @@ private fun MarkEntryRow(
             fontFamily = FontFamily.Serif,
             fontStyle = FontStyle.Italic,
             fontSize = 12.sp,
-            color = MutedColor,
+            color = Muted,
             modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 2.dp),
         )
         // Small delete affordance — its own clickable so the outer row's
@@ -735,7 +731,7 @@ private fun MarkEntryRow(
             fontFamily = FontFamily.SansSerif,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
-            color = MutedColor,
+            color = Muted,
             modifier = Modifier
                 .clickable { onDelete() }
                 .padding(horizontal = 8.dp),
@@ -757,14 +753,14 @@ private fun BookmarkEntryBlock(entry: TocBlock.BookmarkEntry, onTap: (Bookmark) 
             text = "▪",
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
-            color = InkColor,
+            color = Ink,
             modifier = Modifier.padding(end = 8.dp),
         )
         Text(
             text = "$chapterLabel · block ${entry.bookmark.blockIndex}",
             fontFamily = FontFamily.Serif,
             fontSize = 14.sp,
-            color = InkColor,
+            color = Ink,
             modifier = Modifier.weight(1f),
         )
         Text(
@@ -772,7 +768,7 @@ private fun BookmarkEntryBlock(entry: TocBlock.BookmarkEntry, onTap: (Bookmark) 
             fontFamily = FontFamily.Serif,
             fontStyle = FontStyle.Italic,
             fontSize = 12.sp,
-            color = MutedColor,
+            color = Muted,
         )
     }
 }

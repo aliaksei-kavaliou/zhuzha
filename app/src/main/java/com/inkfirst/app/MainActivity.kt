@@ -5,7 +5,6 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import com.inkfirst.app.data.courseStoreFor
 import com.inkfirst.app.ui.BackupScreen
 import com.inkfirst.app.ui.CourseDetailScreen
+import com.inkfirst.app.ui.InkFirstTheme
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
 import com.inkfirst.app.ui.PageKeys
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            InkFirstTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     InkFirstApp()
                 }

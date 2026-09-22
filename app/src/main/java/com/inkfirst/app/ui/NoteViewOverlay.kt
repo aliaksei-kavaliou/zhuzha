@@ -19,7 +19,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -27,12 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.core.Annotation
-
-private val NoteViewInkColor = Color(0xFF000000)
-private val NoteViewPaperColor = Color(0xFFFFFFFF)
-private val NoteViewMutedColor = Color(0xFF555555)
-private val NoteViewBorderColor = Color(0xFF888888)
-private val NoteViewScrimColor = Color(0x40000000)
 
 /**
  * Read-only view of a passage-anchored note. Opened by tapping an inline ✎
@@ -48,7 +41,7 @@ fun NoteViewOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(NoteViewScrimColor)
+            .background(Scrim)
             .pointerInput(Unit) { detectTapGestures { onClose() } },
         contentAlignment = Alignment.Center,
     ) {
@@ -56,8 +49,8 @@ fun NoteViewOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .background(NoteViewPaperColor)
-                .border(1.dp, NoteViewBorderColor)
+                .background(Paper)
+                .border(1.dp, Hairline)
                 .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -68,7 +61,7 @@ fun NoteViewOverlay(
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
-                    color = NoteViewMutedColor,
+                    color = Muted,
                     modifier = Modifier.padding(end = 8.dp),
                 )
                 Text(
@@ -76,7 +69,7 @@ fun NoteViewOverlay(
                     fontFamily = FontFamily.Serif,
                     fontStyle = FontStyle.Italic,
                     fontSize = 12.sp,
-                    color = NoteViewMutedColor,
+                    color = Muted,
                 )
             }
             SelectionContainer {
@@ -86,18 +79,18 @@ fun NoteViewOverlay(
                     fontStyle = FontStyle.Italic,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
-                    color = NoteViewInkColor,
+                    color = Ink,
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
-            HorizontalDivider(color = NoteViewBorderColor)
+            HorizontalDivider(color = Hairline)
             SelectionContainer {
                 Text(
                     text = annotation.note.trim(),
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
-                    color = NoteViewInkColor,
+                    color = Ink,
                 )
             }
             Spacer(Modifier.height(4.dp))
@@ -107,10 +100,10 @@ fun NoteViewOverlay(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onDelete) {
-                    Text("Delete", color = NoteViewMutedColor)
+                    Text("Delete", color = Muted)
                 }
                 TextButton(onClick = onClose) {
-                    Text("Close", color = NoteViewInkColor)
+                    Text("Close", color = Ink)
                 }
             }
         }

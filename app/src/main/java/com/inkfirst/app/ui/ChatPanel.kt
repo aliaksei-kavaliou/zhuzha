@@ -45,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -73,11 +72,6 @@ import com.inkfirst.core.QaTranscript
 import com.inkfirst.core.parseInlines
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
-
-private val ChatInkColor = Color(0xFF000000)
-private val ChatPaperColor = Color(0xFFFFFFFF)
-private val ChatMutedColor = Color(0xFF555555)
-private val ChatBorderColor = Color(0xFF888888)
 
 @Composable
 fun ChatPanel(
@@ -180,7 +174,7 @@ fun ChatPanel(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ChatPaperColor)
+            .background(Paper)
             .focusRequester(keyFocus)
             .focusable()
             .onKeyEvent { event ->
@@ -209,7 +203,7 @@ fun ChatPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onClose) { Text("← Close", color = ChatInkColor) }
+                TextButton(onClick = onClose) { Text("← Close", color = Ink) }
                 Spacer(Modifier.weight(1f))
                 // Says the gesture exists, and only while there is somewhere
                 // to go. Not a control — the feed is moved by swiping it,
@@ -221,19 +215,19 @@ fun ChatPanel(
                     // exactly what went wrong with the first pair. "Older" and
                     // "newer" name the axis and cannot be read backwards.
                     TextButton(onClick = showOlder) {
-                        Text("Older", color = ChatInkColor)
+                        Text("Older", color = Ink)
                     }
                     TextButton(onClick = showNewer) {
-                        Text("Newer", color = ChatInkColor)
+                        Text("Newer", color = Ink)
                     }
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
                     text = "Ch ${chapter.n} · Q&A",
-                    style = MaterialTheme.typography.bodySmall.copy(color = ChatMutedColor),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                 )
             }
-            HorizontalDivider(color = ChatBorderColor)
+            HorizontalDivider(color = Hairline)
 
             // The feed, flattened to rows so it can be laid out bottom-up.
             // Built oldest-first here and handed to the list reversed, which
@@ -331,7 +325,7 @@ fun ChatPanel(
                             fontFamily = FontFamily.Serif,
                             fontStyle = FontStyle.Italic,
                             fontSize = 13.sp,
-                            color = ChatMutedColor,
+                            color = Muted,
                         )
                         is ChatRow.Problem -> Text(
                             text = row.text,
@@ -342,7 +336,7 @@ fun ChatPanel(
                         ChatRow.Thinking -> Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(
                                 modifier = Modifier.width(18.dp).height(18.dp).padding(end = 8.dp),
-                                color = ChatInkColor,
+                                color = Ink,
                                 strokeWidth = 2.dp,
                             )
                             Text(
@@ -350,15 +344,15 @@ fun ChatPanel(
                                 fontFamily = FontFamily.Serif,
                                 fontStyle = FontStyle.Italic,
                                 fontSize = 14.sp,
-                                color = ChatMutedColor,
+                                color = Muted,
                             )
                         }
-                        ChatRow.Rule -> HorizontalDivider(color = ChatBorderColor)
+                        ChatRow.Rule -> HorizontalDivider(color = Hairline)
                     }
                 }
             }
 
-            HorizontalDivider(color = ChatBorderColor)
+            HorizontalDivider(color = Hairline)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -373,7 +367,7 @@ fun ChatPanel(
                 Spacer(Modifier.width(8.dp))
                 Button(
                     enabled = !pending && input.isNotBlank() && apiKey.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = ChatInkColor),
+                    colors = ButtonDefaults.buttonColors(containerColor = Ink),
                     onClick = {
                         val question = input.trim()
                         focusManager.clearFocus()
@@ -413,7 +407,7 @@ fun ChatPanel(
                             }
                         }
                     },
-                ) { Text(if (apiKey.isBlank()) "Set API key" else "Ask", color = ChatPaperColor) }
+                ) { Text(if (apiKey.isBlank()) "Set API key" else "Ask", color = Paper) }
             }
         }
     }
@@ -431,7 +425,7 @@ private fun PassageTurn(passage: String) {
             modifier = Modifier
                 .width(3.dp)
                 .fillMaxHeight()
-                .background(ChatInkColor),
+                .background(Ink),
         )
         Spacer(Modifier.width(10.dp))
         SelectionContainer {
@@ -441,7 +435,7 @@ private fun PassageTurn(passage: String) {
                 fontStyle = FontStyle.Italic,
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
-                color = ChatInkColor,
+                color = Ink,
             )
         }
     }
@@ -457,7 +451,7 @@ private fun QuestionTurn(question: String) {
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             lineHeight = 20.sp,
-            color = ChatInkColor,
+            color = Ink,
         )
     }
 }
@@ -480,7 +474,7 @@ private fun AnswerTurn(answer: String) {
             fontFamily = FontFamily.Serif,
             fontSize = 15.sp,
             lineHeight = 22.sp,
-            color = ChatInkColor,
+            color = Ink,
         )
     }
 }

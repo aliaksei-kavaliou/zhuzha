@@ -27,7 +27,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -44,11 +43,6 @@ import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Course
 import com.inkfirst.core.ReaderNotes
-
-private val InkColor = Color(0xFF000000)
-private val PaperColor = Color(0xFFFFFFFF)
-private val MutedColor = Color(0xFF555555)
-private val BorderColor = Color(0xFF888888)
 
 private val EdgeTapWidth = 44.dp
 
@@ -129,17 +123,17 @@ fun ReaderNotesScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(PaperColor)) {
+    Box(modifier = Modifier.fillMaxSize().background(Paper)) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onBack) { Text("≡ Contents", color = InkColor) }
+                TextButton(onClick = onBack) { Text("≡ Contents", color = Ink) }
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = "How the reading has gone",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                 )
             }
             PagedNotes(rows = rows, onStrike = strike)
@@ -211,12 +205,12 @@ private fun PagedNotes(rows: List<NoteRow>, onStrike: (Int) -> Unit) {
             ) {
                 Text(
                     text = if (pages.size <= 1) "" else "Page ${pageIndex + 1} of ${pages.size}",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     text = if (pages.size > 1) "tap ← / → edges to turn" else "",
-                    style = MaterialTheme.typography.bodySmall.copy(color = MutedColor),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     textAlign = TextAlign.End,
                 )
             }
@@ -235,7 +229,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                 fontStyle = FontStyle.Italic,
                 fontSize = 13.sp,
                 lineHeight = 19.sp,
-                color = MutedColor,
+                color = Muted,
             )
             Spacer(Modifier.height(16.dp))
         }
@@ -246,7 +240,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                 fontStyle = FontStyle.Italic,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
-                color = MutedColor,
+                color = Muted,
             )
         }
         is NoteRow.ChapterHeader -> {
@@ -256,7 +250,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
-                color = MutedColor,
+                color = Muted,
             )
             row.title?.let {
                 Text(
@@ -264,7 +258,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp,
                     lineHeight = 21.sp,
-                    color = InkColor,
+                    color = Ink,
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -276,7 +270,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                 fontFamily = FontFamily.Serif,
                 fontSize = 14.sp,
                 lineHeight = 19.sp,
-                color = MutedColor,
+                color = Muted,
             )
         }
         is NoteRow.Observation -> {
@@ -289,7 +283,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
                     lineHeight = 21.sp,
-                    color = InkColor,
+                    color = Ink,
                     modifier = Modifier.weight(1f),
                 )
                 // One tap, no confirmation. Disagreeing with what the book
@@ -301,7 +295,7 @@ private fun RenderNoteRow(row: NoteRow, onStrike: (Int) -> Unit) {
                     text = "✕",
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
-                    color = BorderColor,
+                    color = Hairline,
                     modifier = Modifier
                         .clickable { onStrike(row.lineIndex) }
                         .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 8.dp),

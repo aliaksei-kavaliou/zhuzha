@@ -681,6 +681,41 @@ at the far end is ever deleted, so a course removed on the device stays in the b
 the difference between a backup and a mirror. `last_read.json` travels with the shelf but never
 comes back, since restore is per course.
 
+## 16. One palette, in one place (2026-09-22)
+
+Pure black on pure white, and the reason is the panel rather than taste: a reflective e-ink
+display renders anything between the two as a dither pattern, which on a page of text reads as
+noise. Two greys are the standing exceptions, both long since validated on the Boox — `#555555`
+for secondary labels, `#888888` for rules and borders — where the pattern is either small
+enough or thin enough not to register.
+
+That rule was being followed by hand, file by file. The screens that ARE the book styled
+themselves from the start, so the palette existed in seven private copies: `InkColor`,
+`OverlayInkColor`, `ChatInkColor`, `NoteViewInkColor` and `DialogInk` were all
+`Color(0xFF000000)`, declared privately in whichever screen needed one next. Everything else —
+Library, Settings, New course, Backup — ran on `MaterialTheme { }` with no scheme at all, which
+is to say on M3's lilac-tinted purple. `app/ui/InkTheme.kt` is now the only place either is
+decided: five tokens, one `ColorScheme` with every slot pointed at them, square shapes, and
+black text-selection colours.
+
+The purple was not only the obvious buttons. It was the text-field focus ring, the `Switch`,
+the "Saved." confirmation, every `colorScheme.error` line — and the text-selection handles in
+the **reader**, which is the one surface that was supposed to be immune, because selecting a
+passage is how a question gets asked.
+
+**Two slots are easy to miss.** `surfaceTint` defaults to `primary`, and M3 tints a surface by
+that colour as it "lifts" it — so a black primary would turn every elevated surface grey.
+Pointing it at `Paper` makes elevation a no-op rather than a wash. And `error` is black, not
+red: a warning on a monochrome panel has to be a warning in its WORDING, since a red that
+arrives as speckled grey only looks like damaged text.
+
+**Left alone deliberately.** The type scale still has Material's families and sizes. The prose
+is set explicitly and is unaffected either way; what the scale actually reaches is chrome
+labels, so changing them is an aesthetic decision rather than a fix. And filled buttons are
+still pills — M3 takes that shape from `CornerFull`, not from `Shapes`, so squaring them means
+saying so at each call site, and whether the shelf should look as square as the page is an open
+question rather than an oversight.
+
 ## 12. Open questions (revisit while building)
 
 - Exercise answers: reveal-in-place vs. end-of-chapter answer pages?

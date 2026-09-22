@@ -28,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -36,12 +35,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-private val OverlayInkColor = Color(0xFF000000)
-private val OverlayPaperColor = Color(0xFFFFFFFF)
-private val OverlayMutedColor = Color(0xFF555555)
-private val OverlayBorderColor = Color(0xFF888888)
-private val OverlayScrimColor = Color(0x40000000)
 
 /**
  * Modal composed on top of the Reader when the user taps "Add note" on a
@@ -60,7 +53,7 @@ fun AddNoteOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(OverlayScrimColor)
+            .background(Scrim)
             // Tap outside the card = cancel. Card intercepts its own taps below.
             .pointerInput(Unit) { detectTapGestures { onCancel() } },
         contentAlignment = Alignment.Center,
@@ -69,8 +62,8 @@ fun AddNoteOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .background(OverlayPaperColor)
-                .border(1.dp, OverlayBorderColor)
+                .background(Paper)
+                .border(1.dp, Hairline)
                 .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -80,7 +73,7 @@ fun AddNoteOverlay(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
-                color = OverlayMutedColor,
+                color = Muted,
             )
             SelectionContainer {
                 Text(
@@ -89,11 +82,11 @@ fun AddNoteOverlay(
                     fontStyle = FontStyle.Italic,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
-                    color = OverlayInkColor,
+                    color = Ink,
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
-            HorizontalDivider(color = OverlayBorderColor)
+            HorizontalDivider(color = Hairline)
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
@@ -105,19 +98,19 @@ fun AddNoteOverlay(
                         text = "Type your note…",
                         fontFamily = FontFamily.Serif,
                         fontSize = 15.sp,
-                        color = OverlayMutedColor,
+                        color = Muted,
                     )
                 },
                 textStyle = TextStyle(
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
-                    color = OverlayInkColor,
+                    color = Ink,
                 ),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = OverlayPaperColor,
-                    unfocusedContainerColor = OverlayPaperColor,
-                    cursorColor = OverlayInkColor,
+                    focusedContainerColor = Paper,
+                    unfocusedContainerColor = Paper,
+                    cursorColor = Ink,
                 ),
             )
             Spacer(Modifier.height(4.dp))
@@ -126,15 +119,15 @@ fun AddNoteOverlay(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onCancel) {
-                    Text("Cancel", color = OverlayInkColor)
+                    Text("Cancel", color = Ink)
                 }
                 Spacer(Modifier.padding(horizontal = 4.dp))
                 Button(
                     enabled = note.isNotBlank(),
                     onClick = { onSave(note) },
-                    colors = ButtonDefaults.buttonColors(containerColor = OverlayInkColor),
+                    colors = ButtonDefaults.buttonColors(containerColor = Ink),
                 ) {
-                    Text("Save", color = OverlayPaperColor)
+                    Text("Save", color = Paper)
                 }
             }
         }

@@ -6,15 +6,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-private val DialogInk = Color(0xFF000000)
-private val DialogPaper = Color(0xFFFFFFFF)
 
 /**
  * A dialog that looks like it belongs in this book.
@@ -42,11 +38,11 @@ internal fun InkDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.border(width = 1.dp, color = DialogInk),
+        modifier = Modifier.border(width = 1.dp, color = Ink),
         shape = RectangleShape,
-        containerColor = DialogPaper,
-        titleContentColor = DialogInk,
-        textContentColor = DialogInk,
+        containerColor = Paper,
+        titleContentColor = Ink,
+        textContentColor = Ink,
         // Tonal elevation is how M3 tints a surface by "lifting" it. At zero
         // the container stays the white it was told to be.
         tonalElevation = 0.dp,
@@ -57,7 +53,7 @@ internal fun InkDialog(
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 lineHeight = 24.sp,
-                color = DialogInk,
+                color = Ink,
             )
         },
         text = content,
@@ -74,7 +70,7 @@ private fun DialogButton(label: String, onClick: () -> Unit) {
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
-            color = DialogInk,
+            color = Ink,
         )
     }
 }
