@@ -96,6 +96,9 @@ fun paginate(
     // the original block's height has already been shown.
     var carry: Block.Paragraph? = null
     var carriedPx = 0
+    // Set when an opener was placed on an empty page and its content would
+    // not fit beside it: the next block joins it regardless. See below.
+    var forceNext = false
 
     while (i < blocks.size) {
         val block = carry ?: blocks[i]
@@ -138,11 +141,33 @@ fun paginate(
             h
         }
 
-        if (height + requiredHeight <= budget) {
+        if (forceNext || height + requiredHeight <= budget) {
             pages.last().add(PageItem(block, i, carriedPx))
             height += h
             carry = null
             carriedPx = 0
+            forceNext = false
+            i++
+            continue
+        }
+
+        // An opener alone on a page is not a page. The chapter's byline and
+        // its title were landing on a sheet of their own whenever the title
+        // and its cover picture would not fit beside them — a long title in
+        // Russian plus a 4:3 cover does it — so the reader opened the chapter
+        // on one grey line and blank paper, with the title overleaf.
+        //
+        // Done HERE rather than by gluing the two pages together afterwards,
+        // which was the first attempt: a page laid out to fill the budget
+        // does not have room for a byline added on top, and the last line of
+        // its paragraph came back clipped. Forcing the pair during layout
+        // lets everything after it re-flow against what is actually left.
+        if (atTop && opensSomething) {
+            pages.last().add(PageItem(block, i, carriedPx))
+            height += h
+            carry = null
+            carriedPx = 0
+            forceNext = true
             i++
             continue
         }
@@ -177,8 +202,63 @@ fun paginate(
         }
         newPage()
     }
-    return pages.map { it.toList() }
+    return mergeLonelyOpeners(pages.map { it.toList() })
 }
+
+/**
+ * A page that is only a byline is not a page — the backstop.
+ *
+ * The rule that actually prevents this lives in [paginate]'s loop, where an
+ * opener left alone on an empty page pulls the next block onto it and
+ * everything after re-flows. This pass catches whatever that cannot: it glues
+ * pages that are already laid out, so the page it produces can run slightly
+ * over the height budget, which is why it is the second line of defence and
+ * not the first.
+ *
+ * The reader always prepends one synthetic `meta` block — it cannot be
+ * dropped, because every annotation, bookmark and ink stroke is indexed
+ * against a block list that includes it. When the model wrote the chapter's
+ * own title, that meta carries nothing but the byline ("Chapter 1 · ~60 min ·
+ * Day 1–2"), and the title and cover picture ride on the heading after it.
+ *
+ * The keep-with-next rule tries to hold the two together and gives up when
+ * the pair will not fit, which is exactly what a long title plus a 4:3 cover
+ * does. The reader then opens on a page holding one grey line and an
+ * otherwise blank sheet — observed on the Boox with a Russian chapter whose
+ * title runs to three lines, 2026-09-23.
+ *
+ * So: any page that carries nothing but blocks which OPEN something, and
+ * which is not the last page, gives them to the page that follows. The cost
+ * is that the following page runs slightly over the height budget — but that
+ * budget is a 10% safety margin for measurement slop, and spending a line of
+ * it to avoid a blank page is the better trade. Blocks keep their order and
+ * their indices, so anchors, bookmarks and ink are untouched.
+ */
+internal fun mergeLonelyOpeners(pages: List<List<PageItem>>): List<List<PageItem>> {
+    if (pages.size < 2) return pages
+    val out = mutableListOf<List<PageItem>>()
+    var carried = emptyList<PageItem>()
+    pages.forEachIndexed { index, page ->
+        val merged = carried + page
+        val isLast = index == pages.lastIndex
+        if (!isLast && merged.isNotEmpty() && merged.all { it.opensSomething }) {
+            // Nothing here but a byline and headings: hold them for the page
+            // that has the content they introduce.
+            carried = merged
+        } else {
+            carried = emptyList()
+            if (merged.isNotEmpty()) out += merged
+        }
+    }
+    // A trailing run of openers with nothing after it stays where it is —
+    // there is no page to give it to, and dropping it would lose the block.
+    if (carried.isNotEmpty()) out += carried
+    return out
+}
+
+/** Blocks that introduce what follows and read as broken without it. */
+private val PageItem.opensSomething: Boolean
+    get() = block is Block.Heading || (block is Block.CustomFence && block.kind == "meta")
 
 /** [head] fits the space offered; [tail] is what is left to place. */
 private data class SplitParagraph(
