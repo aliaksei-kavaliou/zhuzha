@@ -15,8 +15,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.focusable
@@ -58,6 +62,7 @@ import com.inkfirst.core.Annotation
 import com.inkfirst.core.Bookmark
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
+import com.inkfirst.core.currentChapter
 import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.QaTranscript
 import com.inkfirst.core.ReaderNotes
@@ -124,15 +129,6 @@ fun CourseDetailScreen(
 ) {
     val courseStore = rememberCourseStore()
     var course by remember { mutableStateOf<Course?>(null) }
-    // Fallback for the "you are here" indicator when the user opens Contents
-    // from Library (no currentChapterSlug is passed). Reading state as it
-    // stands after Reader recorded it, so it points at the most recently
-    // opened chapter — not every chapter marked READING.
-    val lastReadChapterSlug = remember(slug) {
-        courseStore.readLastRead()
-            ?.takeIf { it.courseSlug == slug }
-            ?.chapterSlug
-    }
     LaunchedEffect(slug) { course = courseStore.load(slug) }
 
     // In-place remove that also updates local state so the TOC re-renders
@@ -171,7 +167,15 @@ fun CourseDetailScreen(
                 return@Column
             }
 
-            val effectiveCurrentSlug = currentChapterSlug ?: lastReadChapterSlug
+            // Arriving from the Reader, the chapter we came from wins — it is
+            // the most precise answer there is. Arriving from the Library,
+            // the BOOK says where it is up to.
+            //
+            // That fallback used to read `last_read.json`, which is one
+            // pointer for the whole library: it could only be right about the
+            // most recently opened book, so every other book's Contents showed
+            // no marker at all even though its own course.json knew.
+            val effectiveCurrentSlug = currentChapterSlug ?: c.currentChapter?.slug
             val readerNoteCount = remember(c) {
                 ReaderNotes.parse(courseStore.readReaderNotes(c.slug)).sumOf {
                     it.observations.size
@@ -725,16 +729,17 @@ private fun MarkEntryRow(
             modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 2.dp),
         )
         // Small delete affordance — its own clickable so the outer row's
-        // navigation tap doesn't fire when the user aims for the ×.
-        Text(
-            text = "×",
-            fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp,
-            color = Muted,
+        // navigation tap doesn't fire when the user aims for the bin. A bin
+        // rather than an ×, for the reason given in [LibraryScreen]: × means
+        // dismiss everywhere else, which on a row reads as "close this".
+        Icon(
+            imageVector = Icons.Outlined.Delete,
+            contentDescription = "Delete this note",
+            tint = Muted,
             modifier = Modifier
                 .clickable { onDelete() }
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 8.dp)
+                .size(18.dp),
         )
     }
 }

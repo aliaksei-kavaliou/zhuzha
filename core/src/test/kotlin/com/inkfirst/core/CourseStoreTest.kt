@@ -37,6 +37,112 @@ class CourseStoreTest {
         created = created,
     )
 
+    // --- where a book is up to ---------------------------------------------
+
+    @Test
+    fun `each book knows its own position, whichever was opened last`(@TempDir tmp: File) {
+        // The bug this replaces: "you are here" came from last_read.json, one
+        // pointer for the whole library, so opening a second book erased the
+        // first book's marker even though its course.json still knew.
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        store.createTest("python")
+        store.updateChapterStatus("kotlin", 2, ChapterStatus.READING)
+        store.updateChapterStatus("python", 1, ChapterStatus.READING)
+        store.writeLastRead("python", "01-intro")
+
+        assertEquals(2, store.load("kotlin")?.currentChapter?.n)
+        assertEquals(1, store.load("python")?.currentChapter?.n)
+    }
+
+    @Test
+    fun `the furthest chapter being read is the one the book is up to`(@TempDir tmp: File) {
+        // Going back to re-read chapter 1 leaves it READING too. With no
+        // per-chapter timestamps, furthest is the better guess.
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        store.updateChapterStatus("kotlin", 1, ChapterStatus.READING)
+        store.updateChapterStatus("kotlin", 2, ChapterStatus.READING)
+
+        assertEquals(2, store.load("kotlin")?.currentChapter?.n)
+    }
+
+    @Test
+    fun `a finished chapter still says how far the book got`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        store.updateChapterStatus("kotlin", 1, ChapterStatus.DONE)
+        store.updateChapterProgress("kotlin", 1, 42)
+
+        assertEquals(1, store.load("kotlin")?.currentChapter?.n)
+    }
+
+    @Test
+    fun `a book never opened is not marked hopefully at chapter one`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        assertNull(store.load("kotlin")?.currentChapter)
+    }
+
+    @Test
+    fun `the shelf carries each book's progress`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        store.createTest("python")
+        store.updateChapterStatus("kotlin", 1, ChapterStatus.DONE)
+        store.updateChapterStatus("kotlin", 2, ChapterStatus.READING)
+
+        val shelf = store.list().associateBy { it.slug }
+
+        assertEquals(1, shelf.getValue("kotlin").chaptersDone)
+        assertEquals(2, shelf.getValue("kotlin").currentChapterN)
+        assertEquals(0, shelf.getValue("python").chaptersDone)
+        assertNull(shelf.getValue("python").currentChapterN)
+    }
+
+    // --- pictures ---------------------------------------------------------
+
+    @Test
+    fun `a cover's saved brief is never mistaken for the cover`(@TempDir tmp: File) {
+        // Both files share a base name — <slug>-cover.jpg and -cover.txt —
+        // so a lookup by base name alone comes back with whichever the
+        // filesystem listed first. That is a book whose cover loads on one
+        // device and not on another.
+        val store = CourseStore(tmp)
+        val course = store.createTest("kotlin")
+        val figures = File(tmp, "kotlin/figures").apply { mkdirs() }
+        File(figures, "01-intro-cover.txt").writeText("a brief nobody can draw")
+        File(figures, "01-intro-cover.jpg").writeBytes(byteArrayOf(1, 2, 3))
+
+        val cover = store.coverFile(course.slug, "01-intro")
+
+        assertEquals("01-intro-cover.jpg", cover?.name)
+    }
+
+    @Test
+    fun `a book wears the first chapter picture it has`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        val course = store.createTest("kotlin")
+        val figures = File(tmp, "kotlin/figures").apply { mkdirs() }
+        // Chapter 1 has none yet; chapter 2 does. The book still has a face.
+        File(figures, "02-null-cover.png").writeBytes(byteArrayOf(1))
+
+        assertEquals("02-null-cover.png", store.bookCoverFile(course.slug)?.name)
+
+        // Once chapter 1 is drawn it takes over, and the face stops moving.
+        File(figures, "01-intro-cover.png").writeBytes(byteArrayOf(1))
+        assertEquals("01-intro-cover.png", store.bookCoverFile(course.slug)?.name)
+    }
+
+    @Test
+    fun `a book with nothing drawn has no face, rather than a broken one`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        val course = store.createTest("kotlin")
+
+        assertNull(store.bookCoverFile(course.slug))
+    }
+
     @Test
     fun `archiveChapter sets the old body aside`(@TempDir tmp: File) {
         val store = CourseStore(tmp)

@@ -1,5 +1,8 @@
 package com.inkfirst.app.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,10 +11,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,11 +33,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.inkfirst.app.data.rememberCourseStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.CourseStore
 import com.inkfirst.core.CourseSummary
@@ -45,7 +60,19 @@ fun LibraryScreen(
     // means no dialog is up.
     var pendingDelete by remember { mutableStateOf<CourseSummary?>(null) }
 
+    // Faces for the shelf, resolved once off the main thread. A miss is a
+    // real answer — a book with no illustrated chapter yet has no face — so
+    // the map holds nulls rather than being retried on every recomposition.
+    var covers by remember { mutableStateOf<Map<String, ImageBitmap?>>(emptyMap()) }
+
     LaunchedEffect(Unit) { summaries = store.list() }
+
+    LaunchedEffect(summaries) {
+        if (summaries.isEmpty()) return@LaunchedEffect
+        covers = withContext(Dispatchers.IO) {
+            summaries.associate { it.slug to thumbnail(store.bookCoverFile(it.slug)) }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -81,28 +108,42 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        BookFace(
+                            cover = covers[summary.slug],
+                            title = summary.title,
+                            modifier = Modifier
+                                .clickable { onOpenCourse(summary.slug) }
+                                .padding(vertical = 8.dp, horizontal = 2.dp),
+                        )
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { onOpenCourse(summary.slug) }
-                                .padding(vertical = 8.dp),
+                                .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
                         ) {
                             Text(summary.title, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = "${summary.chapterCount} chapters · ${summary.created}",
+                                text = shelfLine(summary),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        // Its own clickable, so aiming for the × never opens
-                        // the book instead. Same shape as the note delete in
-                        // the Contents.
-                        Text(
-                            text = "×",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
+                        // Its own clickable, so aiming for the bin never
+                        // opens the book instead. Same shape as the note
+                        // delete in the Contents.
+                        //
+                        // A bin rather than the × this used to be: × is the
+                        // DISMISS glyph everywhere else in software, so on a
+                        // row it reads as "close this", which is the opposite
+                        // of what it does. Outlined rather than filled, to sit
+                        // with the rest of the line art.
+                        Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = "Remove this book",
+                            tint = Ink,
                             modifier = Modifier
                                 .clickable { pendingDelete = summary }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .size(22.dp),
                         )
                     }
                 }
@@ -138,6 +179,95 @@ fun LibraryScreen(
         }
     }
 }
+
+/**
+ * The line under a book's title: how long it is, and how far in you are.
+ *
+ * The date it was created is gone from it. It answered a question nobody asks
+ * of their own shelf, and the answer people do want — "where was I?" — was
+ * not on this screen at all. Both numbers come from the book's own
+ * course.json, so every book on the shelf can say where it is up to; the
+ * marker used to come from one root-level pointer and could therefore only
+ * ever be right about the last book opened.
+ */
+private fun shelfLine(summary: CourseSummary): String {
+    val chapters = "${summary.chapterCount} chapters"
+    val current = summary.currentChapterN
+    return when {
+        current != null -> "$chapters · reading ${current}"
+        summary.chaptersDone >= summary.chapterCount && summary.chapterCount > 0 ->
+            "$chapters · finished"
+        else -> "$chapters · not started"
+    }
+}
+
+/**
+ * A book's face on the shelf: its first drawn chapter picture, or its initial
+ * lettered on a plain card while it has none.
+ *
+ * Portrait, cropped from the 4:3 the pictures are drawn at, because a book is
+ * portrait and a shelf of landscape rectangles does not read as books. The
+ * crop takes the middle, which is where the house style puts the subject —
+ * "ZOOM IN CLOSE, the subject fills the frame" — so the sides it loses are
+ * the empty ones.
+ *
+ * The lettered fallback is not a placeholder to be replaced later. A book
+ * with no chapter written yet HAS no picture, and an initial on a bordered
+ * card is what an unjacketed book looks like anyway.
+ */
+@Composable
+private fun BookFace(cover: ImageBitmap?, title: String, modifier: Modifier = Modifier) {
+    val face = modifier
+        .width(FACE_WIDTH)
+        .height(FACE_HEIGHT)
+        .border(width = 1.dp, color = Hairline)
+    if (cover != null) {
+        Image(
+            bitmap = cover,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = face,
+        )
+    } else {
+        Box(modifier = face, contentAlignment = Alignment.Center) {
+            Text(
+                text = title.trim().take(1).uppercase(),
+                fontFamily = FontFamily.Serif,
+                fontSize = 22.sp,
+                color = Muted,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** A shelf-sized face. Portrait, in the proportions of a paperback. */
+private val FACE_WIDTH = 44.dp
+private val FACE_HEIGHT = 60.dp
+
+/**
+ * Decodes a picture down to shelf size.
+ *
+ * Downsampled while reading rather than after: the source is a 1K square from
+ * the image model, and decoding a dozen of those at full size to draw them at
+ * 44dp would cost tens of megabytes for pictures nobody can see the detail of.
+ * `inSampleSize` halves per step, so this asks the decoder for the smallest
+ * power-of-two reduction that still covers the face.
+ */
+private fun thumbnail(file: File?): ImageBitmap? {
+    if (file == null || !file.isFile) return null
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= FACE_DECODE_PX) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        BitmapFactory.decodeFile(file.absolutePath, options)?.asImageBitmap()
+    }.getOrNull()
+}
+
+/** Roughly the widest a face is drawn on the densest screen we target. */
+private const val FACE_DECODE_PX = 160
 
 /**
  * A plain-English inventory of what deleting a course destroys, for the

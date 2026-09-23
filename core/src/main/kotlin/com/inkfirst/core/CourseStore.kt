@@ -83,6 +83,8 @@ class CourseStore(private val root: File) {
                     title = course.title,
                     chapterCount = course.chapters.size,
                     created = course.created,
+                    chaptersDone = course.chapters.count { it.status == ChapterStatus.DONE },
+                    currentChapterN = course.currentChapter?.n,
                 )
             }
             .sortedByDescending { it.created }
@@ -511,22 +513,50 @@ class CourseStore(private val root: File) {
      * beside the figures because it is one — it just has no fence in the
      * Markdown pointing at it, so it is addressed by chapter slug instead.
      */
-    fun coverFile(courseSlug: String, chapterSlug: String): File? {
-        val dir = File(root, "$courseSlug/figures")
-        if (!dir.isDirectory) return null
-        return dir.listFiles().orEmpty().firstOrNull {
-            it.isFile && it.length() > 0L && it.nameWithoutExtension == "$chapterSlug-cover"
-        }
+    fun coverFile(courseSlug: String, chapterSlug: String): File? =
+        pictureNamed(courseSlug, "$chapterSlug-cover")
+
+    /**
+     * The book's face for the Library — the opening picture of its earliest
+     * chapter that has one, or null while it has none.
+     *
+     * Not a separately generated thing. Every chapter already gets an opening
+     * picture standing for the problem it solves, and the first one is as
+     * close to "what this book is about" as the course owns; drawing another
+     * would be three cents to say the same thing. Earliest rather than any,
+     * so a book's face does not change when chapter 4 gets illustrated.
+     */
+    fun bookCoverFile(courseSlug: String): File? {
+        val course = load(courseSlug) ?: return null
+        return course.chapters
+            .sortedBy { it.n }
+            .firstNotNullOfOrNull { coverFile(courseSlug, it.slug) }
     }
 
     /**
      * The chapter's closing picture — the cover's payoff — or null.
      */
-    fun tailFile(courseSlug: String, chapterSlug: String): File? {
+    fun tailFile(courseSlug: String, chapterSlug: String): File? =
+        pictureNamed(courseSlug, "$chapterSlug-tail")
+
+    /**
+     * A picture in this course's `figures/` by base name, whatever extension
+     * the model's bytes turned out to be.
+     *
+     * The extension filter is not decoration. The cover's BRIEF is saved
+     * beside the cover as `<slug>-cover.txt`, so matching on base name alone
+     * matches two files, and which one comes back is whatever order the
+     * filesystem listed them in — a book whose cover silently fails to load
+     * on one device and loads on another. Only an image can be a picture.
+     */
+    private fun pictureNamed(courseSlug: String, baseName: String): File? {
         val dir = File(root, "$courseSlug/figures")
         if (!dir.isDirectory) return null
         return dir.listFiles().orEmpty().firstOrNull {
-            it.isFile && it.length() > 0L && it.nameWithoutExtension == "$chapterSlug-tail"
+            it.isFile &&
+                it.length() > 0L &&
+                it.nameWithoutExtension == baseName &&
+                it.extension.lowercase() in PICTURE_EXTENSIONS
         }
     }
 
@@ -764,5 +794,10 @@ class CourseStore(private val root: File) {
         var n = 2
         while (File(root, "$base-$n").exists()) n++
         return "$base-$n"
+    }
+
+    private companion object {
+        /** What the image model can hand back, lower-cased. */
+        val PICTURE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
     }
 }

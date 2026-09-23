@@ -147,12 +147,38 @@ enum class ChapterStatus {
     @SerialName("done") DONE,
 }
 
+/**
+ * Where the reader is in THIS book, from the book's own record.
+ *
+ * It used to be answered by `last_read.json`, which is a single pointer at
+ * the root of the library — so it could only ever be right about ONE book.
+ * Open a second and the first lost its marker, though its own `course.json`
+ * had known all along. A book's position belongs to the book.
+ *
+ * Read as "how far this book got": the furthest chapter still being read,
+ * or failing that the furthest one with any progress recorded. Several
+ * chapters can carry READING at once — jumping back to re-read chapter 2
+ * leaves it READING — and with no timestamps per chapter the furthest is the
+ * better guess at where the book is up to.
+ *
+ * Null for a book never opened. Nothing is marked in that case rather than
+ * chapter 1 being marked hopefully: the same rule as the bookmark ribbon,
+ * which is hidden when unset instead of shown as an empty outline.
+ */
+val Course.currentChapter: PersistedChapter?
+    get() = chapters.filter { it.status == ChapterStatus.READING }.maxByOrNull { it.n }
+        ?: chapters.filter { it.lastBlockIndex > 0 }.maxByOrNull { it.n }
+
 /** A lightweight projection for the Library screen — avoids re-reading full chapter lists. */
 data class CourseSummary(
     val slug: String,
     val title: String,
     val chapterCount: Int,
     val created: String,
+    /** Chapters the reader has finished. */
+    val chaptersDone: Int = 0,
+    /** The chapter number this book is up to, or null if it was never opened. */
+    val currentChapterN: Int? = null,
 )
 
 /**
