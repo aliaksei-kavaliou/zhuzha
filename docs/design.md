@@ -408,6 +408,15 @@ offers to draw it — so the last few pictures become a decision instead of a ch
 ceiling bounds one automatic PASS; the menu path passes no ceiling at all, because there the
 count and the price are printed on the row being tapped.
 
+**A chapter arrives looking like a chapter (2026-09-23).** Its opening and closing pictures are
+drawn during the compile, not left behind a menu row. They were menu-only until then, and in
+practice that meant most chapters had neither: it took knowing they existed, opening the menu
+and tapping twice. The evidence was a book read for weeks whose footer still said "still to
+draw: chapter picture". Both are drawn only if missing, which is what keeps a rewrite safe —
+a rewrite deliberately keeps them, since they come from the outline rather than the body — and
+both are skipped entirely under the policies that do not draw automatically. They count toward
+the book estimate now: two a chapter, fixed, on top of whatever figures the model asks for.
+
 **Every row that spends says what it will cost** — "Draw 4 figures · ~12¢", "Draw opening
 picture · ~3¢" — and the outline review page, the last screen before a book exists, carries a
 range for the whole book. The rate is a constant tracking the default image model, and every

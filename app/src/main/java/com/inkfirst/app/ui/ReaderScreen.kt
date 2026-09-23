@@ -4370,6 +4370,67 @@ private fun drawCourseBadges(
  * a cover has no fence in the Markdown — nothing to rewrite, nothing to make
  * idempotent beyond "does the file exist".
  */
+/**
+ * Draws the chapter's opening and closing pictures if it has none, inside
+ * whichever coroutine is already compiling it.
+ *
+ * These used to be menu rows only, which meant that in practice most chapters
+ * had neither: drawing them took knowing they existed, opening the menu, and
+ * tapping twice, and a picture you have to go and find is a picture the book
+ * does not have. The evidence was on the device — a book read for weeks whose
+ * footer still said "still to draw: chapter picture".
+ *
+ * Best-effort like every other picture pass, and after the prose is saved, so
+ * a failure costs a picture rather than a chapter. Missing only: a chapter
+ * that already has a cover keeps it, which is what makes this safe on a
+ * rewrite — a rewrite deliberately keeps the cover and the closing picture,
+ * since both come from the outline rather than from the body.
+ *
+ * The closing picture needs the cover: it is the cover's scene resolved, and
+ * takes the cover's own brief and image as input. So it is drawn second, and
+ * skipped entirely if the cover did not come back.
+ */
+private suspend fun drawChapterPictures(
+    client: GeminiClient,
+    imageModel: String,
+    course: Course,
+    chapter: PersistedChapter,
+    apiKey: String,
+    store: com.inkfirst.core.CourseStore,
+    onState: (CompileState) -> Unit,
+) {
+    val illustrator = ChapterIllustrator(client, imageModel)
+
+    if (store.coverFile(course.slug, chapter.slug) == null) {
+        onState(CompileState.Illustrating(0, 1, "the chapter picture"))
+        illustrator.drawCover(
+            course = course,
+            chapter = chapter,
+            apiKey = apiKey,
+            textModel = course.model,
+            saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
+            saveBrief = { brief -> store.saveCoverBrief(course.slug, chapter.slug, brief) },
+        )
+    }
+
+    val cover = store.coverFile(course.slug, chapter.slug) ?: return
+    if (store.tailFile(course.slug, chapter.slug) != null) return
+
+    onState(CompileState.Illustrating(0, 1, "the closing picture"))
+    illustrator.drawTail(
+        course = course,
+        chapter = chapter,
+        apiKey = apiKey,
+        textModel = course.model,
+        coverBrief = store.readCoverBrief(course.slug, chapter.slug),
+        coverImage = GeneratedImage(
+            bytes = cover.readBytes(),
+            mimeType = if (cover.extension == "jpg") "image/jpeg" else "image/png",
+        ),
+        saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
+    )
+}
+
 private fun drawChapterCover(
     course: Course,
     chapter: PersistedChapter,
@@ -4571,6 +4632,29 @@ private fun compileChapter(
                 } else {
                     markdown
                 }
+                // The chapter's own two pictures, drawn with it rather than
+                // waiting behind a menu nobody opens. A chapter arrives
+                // looking like a chapter.
+                if (drawsNow) {
+                    try {
+                        drawChapterPictures(
+                            client = client,
+                            imageModel = apiKeyStore.getImageModelName(),
+                            course = course,
+                            chapter = chapter,
+                            apiKey = apiKey,
+                            store = store,
+                            onState = onState,
+                        )
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        System.err.println(
+                            "chapter pictures failed: ${e::class.simpleName}: ${e.message}",
+                        )
+                    }
+                }
+
                 // Badges too, if this course has none yet — it is a one-time
                 // cost on the first chapter, and then every exercise and
                 // recap in the book has its mark. Failures are swallowed

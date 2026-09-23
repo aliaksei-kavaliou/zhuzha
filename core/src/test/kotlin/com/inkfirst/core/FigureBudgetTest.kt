@@ -58,9 +58,10 @@ class FigureBudgetTest {
     fun `a book's estimate is a range, because the count is the model's call`() {
         val estimate = bookPictureEstimate(chapters = 12, policy = figurePolicyFor("as-needed"))
 
-        assertTrue(estimate.contains("24–72 pictures"), estimate)
-        assertTrue(estimate.contains("~72¢"), estimate)
-        assertTrue(estimate.contains("~$2.16"), estimate)
+        // 12 chapters x (2..6 figures + an opening and a closing picture).
+        assertTrue(estimate.contains("48–96 pictures"), estimate)
+        assertTrue(estimate.contains("~$1.44"), estimate)
+        assertTrue(estimate.contains("~$2.88"), estimate)
     }
 
     @Test

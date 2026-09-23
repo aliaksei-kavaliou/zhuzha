@@ -129,17 +129,21 @@ fun pictureCost(count: Int): String {
  *
  * A range, and deliberately not a precise number: how many figures a chapter
  * carries is the model's call within the ceiling, so the honest answer is
- * "between a couple a chapter and the ceiling". Opening and closing pictures
- * are not counted — they are drawn from the reader's menu one at a time,
- * where each says its own price.
+ * "between a couple a chapter and the ceiling".
+ *
+ * The opening and closing pictures ARE counted, since 2026-09-23 — they are
+ * drawn with the chapter now rather than waiting behind a menu, so they are
+ * part of what a book costs rather than a pair of optional extras. Two a
+ * chapter, fixed, whatever the ceiling says: they come from the outline and
+ * the model does not get to ask for more.
  */
 fun bookPictureEstimate(chapters: Int, policy: FigurePolicy): String = when {
     policy.maxPerChapter == 0 -> "No pictures, nothing to pay for."
     !policy.automatic ->
         "Nothing is drawn until you ask for it, chapter by chapter — ${pictureCost(1)} a picture."
     else -> {
-        val low = chapters * TYPICAL_FIGURES_PER_CHAPTER
-        val high = chapters * policy.maxPerChapter
+        val low = chapters * (TYPICAL_FIGURES_PER_CHAPTER + CHAPTER_PICTURES)
+        val high = chapters * (policy.maxPerChapter + CHAPTER_PICTURES)
         "About $low–$high pictures over $chapters chapters — ${pictureCost(low)} to " +
             "${pictureCost(high)}, spent as each chapter is written."
     }
@@ -147,3 +151,6 @@ fun bookPictureEstimate(chapters: Int, policy: FigurePolicy): String = when {
 
 /** What an unremarkable chapter asks for, used as the low end of an estimate. */
 private const val TYPICAL_FIGURES_PER_CHAPTER = 2
+
+/** The opening picture and the closing one: every chapter gets both. */
+private const val CHAPTER_PICTURES = 2
