@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -286,6 +288,9 @@ fun ReaderScreen(
     var textAlign by remember { mutableStateOf(readerPrefs.getTextAlign()) }
     var horizontalPadding by remember { mutableStateOf(readerPrefs.getHorizontalPadding()) }
     var showFormatMenu by remember { mutableStateOf(false) }
+    // Which pane of the menu is open. Reset when the menu closes, so it
+    // always opens on reading.
+    var menuPane by remember { mutableStateOf(MenuPane.READING) }
     // null = closed. "" = open general chat. non-empty = open with quoted passage.
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
     // When non-null, an AddNote overlay is up with this quoted passage.
@@ -689,8 +694,8 @@ fun ReaderScreen(
                     courseDaySchedule(c).firstOrNull { it.chapterN == chapter!!.n }?.label
                 }
                 CompilePrompt(
+                        chapter = chapter!!,
                     horizontalPadding = horizontalPadding,
-                    chapter = chapter!!,
                     chapterCount = course?.chapters?.size ?: 0,
                     dayLabel = pendingDayLabel,
                     compileState = compileState,
@@ -762,16 +767,16 @@ fun ReaderScreen(
 
             CompositionLocalProvider(LocalTextToolbar provides askToolbar) {
                 PagedContent(
+                    fontScale = fontScale,
+                    lineSpacing = lineSpacing,
+                    textAlign = textAlign,
                     horizontalPadding = horizontalPadding,
                     blocks = blocks,
                     annotations = chapterAnnotations,
                     course = course,
                     chapterSlug = chapterSlug,
                     pictureVersion = pictureVersion,
-                    fontScale = fontScale,
-                    lineSpacing = lineSpacing,
-                    textAlign = textAlign,
-                    anchorBlockIndex = effectiveAnchor,
+                                anchorBlockIndex = effectiveAnchor,
                     focusRequester = focusRequester,
                     strokes = strokes,
                     fingerDraws = fingerDraws,
@@ -842,7 +847,10 @@ fun ReaderScreen(
                         anchorBlockIndex = it
                         anchorMoved = true
                     },
-                    onToggleMenu = { showFormatMenu = !showFormatMenu },
+                    onToggleMenu = {
+                        showFormatMenu = !showFormatMenu
+                        if (!showFormatMenu) menuPane = MenuPane.READING
+                    },
                 )
             }
         }
@@ -1100,12 +1108,8 @@ fun ReaderScreen(
             }
         }
 
-        if (showFormatMenu) {
+        if (showFormatMenu && menuPane == MenuPane.READING) {
             FormatMenu(
-                fontScale = fontScale,
-                lineSpacing = lineSpacing,
-                textAlign = textAlign,
-                horizontalPadding = horizontalPadding,
                 isBookmarked = headerBookmarked,
                 canBookmark = headerFirstBlock >= 0 && course != null,
                 onOpenContents = {
@@ -1124,71 +1128,9 @@ fun ReaderScreen(
                     showFormatMenu = false
                     onSearch()
                 },
-                pendingFigures = pendingFigures,
-                figureSlots = figureSlots,
                 figureStatus = figureStatus,
-                busyDrawing = compileBusy,
-                pendingBadges = pendingBadges,
-                hasCover = hasCover,
-                hasTail = hasTail,
-                onDrawTail = {
-                    val c = course ?: return@FormatMenu
-                    val ch = chapter ?: return@FormatMenu
-                    drawChapterTail(
-                        course = c,
-                        chapter = ch,
-                        scope = scope,
-                        store = store,
-                        apiKeyStore = apiKeyStore,
-                        onState = { compileState = it },
-                        onDone = { pictureVersion++ },
-                    )
-                },
-                onDrawCover = {
-                    val c = course ?: return@FormatMenu
-                    val ch = chapter ?: return@FormatMenu
-                    drawChapterCover(
-                        course = c,
-                        chapter = ch,
-                        scope = scope,
-                        store = store,
-                        apiKeyStore = apiKeyStore,
-                        onState = { compileState = it },
-                        onDone = { pictureVersion++ },
-                    )
-                },
-                onRewriteChapter = {
-                    showFormatMenu = false
-                    confirmingRewrite = true
-                },
-                onDrawBadges = {
-                    val c = course ?: return@FormatMenu
-                    drawCourseBadges(
-                        course = c,
-                        kinds = neededBadges,
-                        scope = scope,
-                        store = store,
-                        apiKeyStore = apiKeyStore,
-                        onState = { compileState = it },
-                        onDone = { pictureVersion++ },
-                    )
-                },
-                onIllustrate = {
-                    // Menu deliberately stays open — it is where progress shows.
-                    val c = course ?: return@FormatMenu
-                    val ch = chapter ?: return@FormatMenu
-                    val md = markdown ?: return@FormatMenu
-                    illustrateExistingChapter(
-                        course = c,
-                        chapter = ch,
-                        markdown = md,
-                        scope = scope,
-                        store = store,
-                        apiKeyStore = apiKeyStore,
-                        onState = { compileState = it },
-                        onDone = { newMarkdown -> markdown = newMarkdown },
-                    )
-                },
+                onOpenTypeTools = { menuPane = MenuPane.TYPE },
+                onOpenChapterTools = { menuPane = MenuPane.CHAPTER },
                 onToggleBookmark = {
                     showFormatMenu = false
                     val c = course ?: return@FormatMenu
@@ -1200,6 +1142,16 @@ fun ReaderScreen(
                     }
                     course = updated ?: course
                 },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        if (showFormatMenu && menuPane == MenuPane.TYPE) {
+            TypeToolsMenu(
+                fontScale = fontScale,
+                lineSpacing = lineSpacing,
+                textAlign = textAlign,
+                horizontalPadding = horizontalPadding,
                 onFontSmaller = {
                     val idx = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale)
                     if (idx > 0) {
@@ -1226,6 +1178,79 @@ fun ReaderScreen(
                     horizontalPadding = newPad
                     readerPrefs.setHorizontalPadding(newPad)
                 },
+                onBack = { menuPane = MenuPane.READING },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        if (showFormatMenu && menuPane == MenuPane.CHAPTER) {
+            ChapterToolsMenu(
+                onRewriteChapter = {
+                    showFormatMenu = false
+                    confirmingRewrite = true
+                },
+                onIllustrate = {
+                    // Menu deliberately stays open — it is where progress shows.
+                    val c = course ?: return@ChapterToolsMenu
+                    val ch = chapter ?: return@ChapterToolsMenu
+                    val md = markdown ?: return@ChapterToolsMenu
+                    illustrateExistingChapter(
+                        course = c,
+                        chapter = ch,
+                        markdown = md,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { newMarkdown -> markdown = newMarkdown },
+                    )
+                },
+                onDrawCover = {
+                    val c = course ?: return@ChapterToolsMenu
+                    val ch = chapter ?: return@ChapterToolsMenu
+                    drawChapterCover(
+                        course = c,
+                        chapter = ch,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { pictureVersion++ },
+                    )
+                },
+                onDrawTail = {
+                    val c = course ?: return@ChapterToolsMenu
+                    val ch = chapter ?: return@ChapterToolsMenu
+                    drawChapterTail(
+                        course = c,
+                        chapter = ch,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { pictureVersion++ },
+                    )
+                },
+                onDrawBadges = {
+                    val c = course ?: return@ChapterToolsMenu
+                    drawCourseBadges(
+                        course = c,
+                        kinds = neededBadges,
+                        scope = scope,
+                        store = store,
+                        apiKeyStore = apiKeyStore,
+                        onState = { compileState = it },
+                        onDone = { pictureVersion++ },
+                    )
+                },
+                pendingFigures = pendingFigures,
+                figureSlots = figureSlots,
+                figureStatus = figureStatus,
+                busyDrawing = compileBusy,
+                pendingBadges = pendingBadges,
+                hasCover = hasCover,
+                hasTail = hasTail,
+                onBack = { menuPane = MenuPane.READING },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -2048,40 +2073,23 @@ private fun ReaderHeader(
  * anywhere outside (handled by the parent tap detector) or via one of its
  * own controls without an explicit close button (feels lighter that way).
  */
+/** Which pane of the reader's menu is showing. */
+private enum class MenuPane { READING, TYPE, CHAPTER }
+
 @Composable
 private fun FormatMenu(
-    fontScale: Float,
-    lineSpacing: Float,
-    textAlign: TextAlignPref,
-    horizontalPadding: Float,
     isBookmarked: Boolean,
     canBookmark: Boolean,
     onOpenContents: () -> Unit,
     onAskAboutChapter: () -> Unit,
     onOpenReaderNotes: () -> Unit,
     onSearch: () -> Unit,
-    pendingFigures: Int,
-    figureSlots: Int,
-    pendingBadges: Int,
-    hasCover: Boolean,
-    hasTail: Boolean,
     figureStatus: String?,
-    busyDrawing: Boolean,
-    onIllustrate: () -> Unit,
-    onDrawBadges: () -> Unit,
-    onDrawCover: () -> Unit,
-    onDrawTail: () -> Unit,
-    onRewriteChapter: () -> Unit,
+    onOpenChapterTools: () -> Unit,
     onToggleBookmark: () -> Unit,
-    onFontSmaller: () -> Unit,
-    onFontLarger: () -> Unit,
-    onLineSpacingChange: (Float) -> Unit,
-    onTextAlignChange: (TextAlignPref) -> Unit,
-    onHorizontalPaddingChange: (Float) -> Unit,
+    onOpenTypeTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val canShrink = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) > 0
-    val canGrow = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) < ReaderPrefs.FONT_SCALES.lastIndex
 
     Column(
         modifier = modifier
@@ -2177,6 +2185,131 @@ private fun FormatMenu(
         MenuDivider()
 
         // Font size
+        // How the page is set — size, spacing, alignment, margins — behind one
+        // row. Four rows of options do not fit a 320dp screen beside anything
+        // else: "Relaxed" and "Notebook" wrap to a second line each, and the
+        // rows below them fall off the bottom. It costs a tap, which font
+        // size can afford: it is a set-once decision in practice (design.md
+        // §11), unlike Contents or Ask which are used on every page.
+        MenuRow(label = "Type") {
+            Box(
+                modifier = Modifier
+                    .clickable { onOpenTypeTools() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Size, spacing, margins →",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
+                )
+            }
+        }
+
+        MenuDivider()
+
+        // Everything that PRODUCES the book — rewriting it, drawing its
+        // pictures — lives in a panel of its own now. Those rows are used a
+        // handful of times per chapter and are the only ones that spend
+        // money; the rows above are used on every page. Thirteen rows in one
+        // sheet also did not fit a 320x640 screen, and the third that fell
+        // off the bottom was all of these.
+        //
+        // The row carries the drawing status when there is one, so progress
+        // is visible from here without opening the panel to watch it.
+        MenuRow(label = "Chapter") {
+            Box(
+                modifier = Modifier
+                    .clickable { onOpenChapterTools() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = figureStatus ?: "Pictures and rewrite →",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A hairline between groups of menu rows.
+ *
+ * The menu had grown to thirteen rows in one flat list, mixing "what do I
+ * want to do" (contents, search, ask, bookmark) with "how should this look"
+ * (font, spacing, align, margin) and with things touched twice a year
+ * (rewrite). Every row carried equal weight in the same label gutter, so
+ * finding either meant reading all thirteen. Two rules cost two pixels and
+ * turn one list into three short ones; headings would have cost back the
+ * height this is trying to save, and the rows are already labelled.
+ */
+@Composable
+private fun MenuDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(Hairline),
+    )
+}
+
+/**
+ * How the page is set: type size, line spacing, alignment, margins.
+ *
+ * The third pane of the reader's menu, and the last one to be split off
+ * (2026-09-23). Four rows of options need more width than a 320dp screen has
+ * beside anything else — "Relaxed" and "Notebook" each wrap to a second line,
+ * which is what pushed the rows below them past the bottom edge.
+ *
+ * Splitting these out costs a tap on a setting that design.md §11 already
+ * observes is made once and then left alone, which is why it is these rows
+ * that moved rather than Contents or Ask.
+ */
+@Composable
+private fun TypeToolsMenu(
+    fontScale: Float,
+    lineSpacing: Float,
+    textAlign: TextAlignPref,
+    horizontalPadding: Float,
+    onFontSmaller: () -> Unit,
+    onFontLarger: () -> Unit,
+    onLineSpacingChange: (Float) -> Unit,
+    onTextAlignChange: (TextAlignPref) -> Unit,
+    onHorizontalPaddingChange: (Float) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val canShrink = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) > 0
+    val canGrow = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) < ReaderPrefs.FONT_SCALES.lastIndex
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Paper)
+            .border(width = 1.dp, color = Hairline)
+            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MenuRow(label = "Back") {
+            Box(
+                modifier = Modifier
+                    .clickable { onBack() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "← Reading",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
+                )
+            }
+        }
+
+        MenuDivider()
+
         MenuRow(label = "Font") {
             TextButton(onClick = onFontSmaller, enabled = canShrink) {
                 Text("A−", fontSize = 16.sp, color = if (canShrink) Ink else Muted)
@@ -2224,7 +2357,70 @@ private fun FormatMenu(
                     onClick = { onHorizontalPaddingChange(v) },
                 )
             }
+        }    }
+}
+
+/**
+ * What this chapter still needs made: its pictures, and the option to have it
+ * written again.
+ *
+ * Split out of [FormatMenu] on 2026-09-23, when thirteen rows in one sheet
+ * turned out not to fit a 320x640 screen — the bottom third, all of it these
+ * rows, could not be reached at all, and nobody saw it on the Boox because
+ * that screen is tall enough. The size was the symptom. These rows PRODUCE
+ * the book: used a handful of times per chapter, the only ones that spend
+ * money, and about the chapter rather than about reading it. The rows they
+ * sat among — contents, search, ask, bookmark, type size — are used on every
+ * page.
+ *
+ * A second panel rather than a scrolling sheet, deliberately: with the menu
+ * open a finger drag means "close the menu" in [resolveSwipe], so making the
+ * sheet scroll would mean teaching the one rule for touch that a drag
+ * beginning inside the menu means something else. Splitting the rows costs
+ * nothing and leaves both panels short enough to need no scrolling at all.
+ */
+@Composable
+private fun ChapterToolsMenu(
+    pendingFigures: Int,
+    figureSlots: Int,
+    pendingBadges: Int,
+    hasCover: Boolean,
+    hasTail: Boolean,
+    figureStatus: String?,
+    busyDrawing: Boolean,
+    onIllustrate: () -> Unit,
+    onDrawBadges: () -> Unit,
+    onDrawCover: () -> Unit,
+    onDrawTail: () -> Unit,
+    onRewriteChapter: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Paper)
+            .border(width = 1.dp, color = Hairline)
+            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Names where it goes back to, like every other header in this app.
+        MenuRow(label = "Back") {
+            Box(
+                modifier = Modifier
+                    .clickable { onBack() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "← Reading",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
+                )
+            }
         }
+
         MenuDivider()
 
         // The repair mechanism the generate-a-book premise needs: the model
@@ -2337,27 +2533,6 @@ private fun FormatMenu(
 }
 
 /**
- * A hairline between groups of menu rows.
- *
- * The menu had grown to thirteen rows in one flat list, mixing "what do I
- * want to do" (contents, search, ask, bookmark) with "how should this look"
- * (font, spacing, align, margin) and with things touched twice a year
- * (rewrite). Every row carried equal weight in the same label gutter, so
- * finding either meant reading all thirteen. Two rules cost two pixels and
- * turn one list into three short ones; headings would have cost back the
- * height this is trying to save, and the rows are already labelled.
- */
-@Composable
-private fun MenuDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(Hairline),
-    )
-}
-
-/**
  * One tappable word in the menu — or, when there is nothing left to do, the
  * same row saying so in grey. Sharing it keeps "offer" and "report" looking
  * like one control rather than two, which is the point: the reader should not
@@ -2379,6 +2554,7 @@ private fun MenuAction(text: String, enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MenuRow(label: String, content: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2391,7 +2567,13 @@ private fun MenuRow(label: String, content: @Composable () -> Unit) {
             // to be wide enough for the longest word in it.
             modifier = Modifier.width(82.dp),
         )
-        content()
+        // Options WRAP rather than squeeze. A plain Row let a narrow screen
+        // hyphenate the chips into "Rela xed" and "Wi de", and pushed the
+        // fourth margin off the row entirely — "Notebook" could not be
+        // chosen at all at 320dp, which is a setting you cannot reach rather
+        // than a setting that looks cramped. There is vertical room in a
+        // panel; there is no horizontal room to invent.
+        FlowRow(verticalArrangement = Arrangement.Center) { content() }
     }
 }
 
