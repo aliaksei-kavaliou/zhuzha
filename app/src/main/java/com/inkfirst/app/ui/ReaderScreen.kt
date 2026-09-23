@@ -294,6 +294,9 @@ fun ReaderScreen(
     // Which pane of the menu is open. Reset when the menu closes, so it
     // always opens on reading.
     var menuPane by remember { mutableStateOf(MenuPane.READING) }
+    // Which picture the reader has asked to redraw, held until they confirm:
+    // false is the opening picture, true the closing one, null neither.
+    var confirmingRedraw by remember { mutableStateOf<Boolean?>(null) }
     // null = closed. "" = open general chat. non-empty = open with quoted passage.
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
     // When non-null, an AddNote overlay is up with this quoted passage.
@@ -1068,6 +1071,58 @@ fun ReaderScreen(
             )
         }
 
+        confirmingRedraw?.let { closing ->
+            // A confirm, because this spends money and throws away a picture
+            // that cannot be got back — the model does not draw the same one
+            // twice. Same shape as the delete confirms elsewhere: name what
+            // goes, and what it costs.
+            val c = course
+            val ch = chapter
+            if (c == null || ch == null) {
+                confirmingRedraw = null
+            } else {
+                InkDialog(
+                    title = t("Redraw this picture?"),
+                    onDismiss = { confirmingRedraw = null },
+                    confirmLabel = t("Redraw") + " · ${pictureCost(1)}",
+                    onConfirm = {
+                        confirmingRedraw = null
+                        store.deleteChapterPicture(c.slug, ch.slug, closing = closing)
+                        pictureVersion++
+                        if (closing) {
+                            drawChapterTail(
+                                course = c,
+                                chapter = ch,
+                                scope = scope,
+                                store = store,
+                                apiKeyStore = apiKeyStore,
+                                onState = { compileState = it },
+                                onDone = { pictureVersion++ },
+                            )
+                        } else {
+                            drawChapterCover(
+                                course = c,
+                                chapter = ch,
+                                scope = scope,
+                                store = store,
+                                apiKeyStore = apiKeyStore,
+                                onState = { compileState = it },
+                                onDone = { pictureVersion++ },
+                            )
+                        }
+                    },
+                    dismissLabel = t("Cancel"),
+                ) {
+                    Text(
+                        text = t("The one you have is replaced. This cannot be undone."),
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                }
+            }
+        }
+
         if (confirmingRewrite) {
             val c = course
             val ch = chapter
@@ -1259,6 +1314,8 @@ fun ReaderScreen(
                 pendingBadges = pendingBadges,
                 hasCover = hasCover,
                 hasTail = hasTail,
+                onRedrawCover = { confirmingRedraw = false },
+                onRedrawTail = { confirmingRedraw = true },
                 onBack = { menuPane = MenuPane.READING },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -2403,6 +2460,8 @@ private fun ChapterToolsMenu(
     onDrawBadges: () -> Unit,
     onDrawCover: () -> Unit,
     onDrawTail: () -> Unit,
+    onRedrawCover: () -> Unit,
+    onRedrawTail: () -> Unit,
     onRewriteChapter: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -2462,16 +2521,13 @@ private fun ChapterToolsMenu(
         // state, and the individual rows only when something is genuinely
         // outstanding — which is exactly when you need them separately
         // anyway, because each one is a different action.
-        val picturesSettled = figureStatus == null &&
-            pendingFigures == 0 &&
-            hasCover &&
-            hasTail &&
-            pendingBadges == 0
-        if (picturesSettled) {
-            MenuRow(label = "Pictures") {
-                MenuAction(text = t("all drawn"), enabled = false, onClick = {})
-            }
-        } else {
+        // The rows used to collapse to one line — "Pictures · all drawn" —
+        // whenever there was nothing outstanding, because thirteen rows in
+        // one sheet was too tall to read. The pane split fixed the height,
+        // and the collapse now hides the only path to a REDRAW: a picture
+        // that is drawn and wrong is exactly the case where the row matters,
+        // and "all drawn" was a dead end saying everything is fine.
+        run {
             // The picture rows below REPORT before they offer. Each one used to
             // disappear the moment its work finished, which reads as "not done
             // yet" exactly as easily as "done" — so a reader whose figures and
@@ -2500,10 +2556,14 @@ private fun ChapterToolsMenu(
             // unrelated things. Opening/Closing reads as the pair it is.
             MenuRow(label = t("Opening")) {
                 MenuAction(
-                    text = if (hasCover) "picture drawn"
+                    // A row that reports can also offer. Drawn rows used to be
+                    // dead ends: the only way to replace a picture was to
+                    // rewrite the chapter, which deliberately KEEPS its
+                    // pictures, so a wrong one was permanent.
+                    text = if (hasCover) t("Redraw") + " · ${pictureCost(1)}"
                     else t("Draw opening picture") + " · ${pictureCost(1)}",
-                    enabled = !busyDrawing && !hasCover,
-                    onClick = onDrawCover,
+                    enabled = !busyDrawing,
+                    onClick = if (hasCover) onRedrawCover else onDrawCover,
                 )
             }
 
@@ -2513,12 +2573,12 @@ private fun ChapterToolsMenu(
             MenuRow(label = t("Closing")) {
                 MenuAction(
                     text = when {
-                        hasTail -> "picture drawn"
+                        hasTail -> t("Redraw") + " · ${pictureCost(1)}"
                         !hasCover -> t("needs the chapter picture first")
                         else -> t("Draw closing picture") + " · ${pictureCost(1)}"
                     },
-                    enabled = !busyDrawing && hasCover && !hasTail,
-                    onClick = onDrawTail,
+                    enabled = !busyDrawing && hasCover,
+                    onClick = if (hasTail) onRedrawTail else onDrawTail,
                 )
             }
 

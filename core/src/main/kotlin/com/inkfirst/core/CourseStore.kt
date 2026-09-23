@@ -610,6 +610,33 @@ class CourseStore(private val root: File) {
      * idea about the chapter, so it needs the original wording — the image
      * alone would let the model drift to a different metaphor.
      */
+    /**
+     * Throws away a chapter's opening or closing picture so it can be drawn
+     * again.
+     *
+     * The second destructive operation in this store, and held to the same
+     * rule as the first: it addresses files by a name it builds itself, in
+     * one known directory, and a slug carrying a path separator resolves to
+     * nothing rather than to somewhere else.
+     *
+     * Deleting a COVER takes its brief with it. The brief is what the closing
+     * picture is written from, so leaving a stale one behind would redraw the
+     * cover from a fresh idea and then pay off the old one — and, the reason
+     * this exists at all, a brief written before the book's language was
+     * passed to the brief writer would keep producing an English speech
+     * bubble however many times the picture was redrawn.
+     */
+    fun deleteChapterPicture(courseSlug: String, chapterSlug: String, closing: Boolean): Boolean {
+        if (courseSlug.isBlank() || chapterSlug.isBlank()) return false
+        if (listOf(courseSlug, chapterSlug).any { it.contains('/') || it.contains('\\') }) return false
+        val dir = File(root, "$courseSlug/figures")
+        if (!dir.isDirectory) return false
+        val base = "$chapterSlug-" + if (closing) "tail" else "cover"
+        val doomed = dir.listFiles().orEmpty().filter { it.isFile && it.nameWithoutExtension == base }
+        if (doomed.isEmpty()) return false
+        return doomed.all { it.delete() }
+    }
+
     fun saveCoverBrief(courseSlug: String, chapterSlug: String, brief: String) {
         if (brief.isBlank()) return
         val dir = File(root, "$courseSlug/figures").apply { mkdirs() }

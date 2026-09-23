@@ -104,6 +104,62 @@ class CourseStoreTest {
     // --- pictures ---------------------------------------------------------
 
     @Test
+    fun `redrawing a cover takes its brief with it`(@TempDir tmp: File) {
+        // The brief is what the CLOSING picture is written from, and a brief
+        // written before the language reached the brief writer would keep
+        // producing an English speech bubble however often it was redrawn.
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        val figures = File(tmp, "kotlin/figures").apply { mkdirs() }
+        File(figures, "01-intro-cover.jpg").writeBytes(byteArrayOf(1))
+        File(figures, "01-intro-cover.txt").writeText("a brief in the wrong language")
+        File(figures, "01-intro-tail.jpg").writeBytes(byteArrayOf(1))
+
+        assertTrue(store.deleteChapterPicture("kotlin", "01-intro", closing = false))
+
+        assertNull(store.coverFile("kotlin", "01-intro"))
+        assertEquals("", store.readCoverBrief("kotlin", "01-intro"))
+        // The closing picture is a separate decision and is left alone.
+        assertNotNull(store.tailFile("kotlin", "01-intro"))
+    }
+
+    @Test
+    fun `redrawing the closing picture leaves the cover alone`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        val figures = File(tmp, "kotlin/figures").apply { mkdirs() }
+        File(figures, "01-intro-cover.jpg").writeBytes(byteArrayOf(1))
+        File(figures, "01-intro-cover.txt").writeText("keep me")
+        File(figures, "01-intro-tail.jpg").writeBytes(byteArrayOf(1))
+
+        assertTrue(store.deleteChapterPicture("kotlin", "01-intro", closing = true))
+
+        assertNull(store.tailFile("kotlin", "01-intro"))
+        assertNotNull(store.coverFile("kotlin", "01-intro"))
+        assertEquals("keep me", store.readCoverBrief("kotlin", "01-intro"))
+    }
+
+    @Test
+    fun `a slug that tries to leave the figures directory deletes nothing`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+        val figures = File(tmp, "kotlin/figures").apply { mkdirs() }
+        File(figures, "01-intro-cover.jpg").writeBytes(byteArrayOf(1))
+
+        assertFalse(store.deleteChapterPicture("kotlin", "../../01-intro", closing = false))
+        assertFalse(store.deleteChapterPicture("kotlin/..", "01-intro", closing = false))
+        assertNotNull(store.coverFile("kotlin", "01-intro"))
+    }
+
+    @Test
+    fun `deleting a picture that was never drawn is not an error`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("kotlin")
+
+        assertFalse(store.deleteChapterPicture("kotlin", "01-intro", closing = false))
+    }
+
+    @Test
     fun `a cover's saved brief is never mistaken for the cover`(@TempDir tmp: File) {
         // Both files share a base name — <slug>-cover.jpg and -cover.txt —
         // so a lookup by base name alone comes back with whichever the
