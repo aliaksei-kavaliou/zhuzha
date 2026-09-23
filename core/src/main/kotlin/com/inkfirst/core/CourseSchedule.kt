@@ -13,7 +13,20 @@ data class ChapterDay(
 ) {
     /** "Day 3" or "Day 5–6" — an en-dash separates a range. */
     val label: String
-        get() = if (startDay == endDay) "Day $startDay" else "Day $startDay–$endDay"
+        get() = labelIn(UiLabels.ENGLISH)
+
+    /**
+     * The same in the book's language. Two shapes rather than one string
+     * built here, because a language may want the number somewhere else —
+     * and because a day label is furniture, like every other word around the
+     * page.
+     */
+    fun labelIn(labels: UiLabels): String =
+        if (startDay == endDay) {
+            labels.t("Day {n}", "n" to startDay)
+        } else {
+            labels.t("Day {from}–{to}", "from" to startDay, "to" to endDay)
+        }
 }
 
 /**

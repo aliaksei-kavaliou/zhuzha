@@ -775,6 +775,50 @@ still pills — M3 takes that shape from `CornerFull`, not from `Shapes`, so squ
 saying so at each call site, and whether the shelf should look as square as the page is an open
 question rather than an oversight.
 
+## 17. The book's own language (2026-09-23)
+
+A course written in Russian used to sit inside English furniture: "≡ Contents", "Page 12 of 28",
+"Bookmark this page". The prose was the reader's language and everything holding it was not.
+
+**The English string is the key.** There is no registry of `contents_title` identifiers to
+invent and keep in step — a site says `t("Bookmark this page")` and
+`<courses-root>/labels/<language>.json` maps that sentence to its translation. New UI therefore
+appears in English until the labels are regenerated, which is the right failure: one English row
+in a Russian book, never a blank one. The cost is drift — a string used with `t()` but missing
+from `BOOK_CHROME_STRINGS` is never sent for translation, which happened twice while building
+this and both times showed up as one stubbornly English line on the screen.
+
+**Labels belong to the LANGUAGE, not the book.** One file per language at the library root, so
+the second Russian book reuses the first one's words rather than paying for its own — and, more
+to the point, agrees with it. Two Russian books disagreeing about the word for "Contents" would
+be worse than leaving both in English. The file is plain JSON, meant to be edited by hand when
+the model picks a clumsy word.
+
+**Only BOOK chrome.** The reader, its contents, its notes, its search. The Library, Settings,
+New course and Backup stay in the reader's own language: they belong to the person using the
+app rather than to any one book, the same line already drawn for `language`, `units` and
+`figures`.
+
+**Three things the first Russian run taught.**
+
+- **Plurals are dodged, not solved.** Russian needs three forms for a counted noun and the app
+  has no way to choose. The prompt asks for phrasings correct for ANY number, and the model
+  obliged exactly as an e-reader would: `Стр. {n} из {total}`, `Гл. {n}/{total}`, `День {n}`.
+  Counted rows also drop the noun the row's own gutter already carries — "Figures | Draw 4" —
+  so there is nothing left to inflect.
+- **English-as-key carries no context, and "Draw" is also a noun.** The first run returned
+  `Рисунок {n}` — "Drawing 4" — where the row means "draw four of them". A translator would have
+  asked; `STRING_CONTEXT` is the answer to the question they would have asked, and the second run
+  returned `Нарисовать: {n}`. Two single words, "Type" and "Back", came back untranslated twice
+  and were rewritten in English instead: ambiguity is cheaper to remove at the source.
+- **A translation that lands after the first compose has to invalidate what was built from it.**
+  The table of contents is cached, and the labels it was built with were not one of its keys, so
+  the headings stayed English while everything around them turned.
+
+**Verified on the emulator against a real translation**: header, byline, day labels, section
+headings, footer and all three menu panes in Russian, generated in one call and reused from
+disk on every later open.
+
 ## 12. Open questions (revisit while building)
 
 - Exercise answers: reveal-in-place vs. end-of-chapter answer pages?

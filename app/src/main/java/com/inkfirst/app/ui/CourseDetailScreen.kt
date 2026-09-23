@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -57,11 +59,13 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.inkfirst.app.data.ApiKeyStore
 import com.inkfirst.app.data.rememberCourseStore
 import com.inkfirst.core.Annotation
 import com.inkfirst.core.Bookmark
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Course
+import com.inkfirst.core.UiLabels
 import com.inkfirst.core.currentChapter
 import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.QaTranscript
@@ -127,9 +131,29 @@ fun CourseDetailScreen(
     onSearch: () -> Unit,
     onReadChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
+    val context = LocalContext.current
     val courseStore = rememberCourseStore()
     var course by remember { mutableStateOf<Course?>(null) }
     LaunchedEffect(slug) { course = courseStore.load(slug) }
+
+    // This screen is the book's front matter, so it speaks the book's
+    // language. [buildTocBlocks] is handed the same words rather than
+    // reaching for them itself: it is a pure function over a course and
+    // stays one.
+    // Bumped when a translation lands, so the labels below are re-read.
+    var labelsVersion by remember { mutableStateOf(0) }
+    val labels = remember(course?.language, labelsVersion) {
+        course?.language?.let { courseStore.readLabels(it) } ?: UiLabels.ENGLISH
+    }
+
+    // A book whose language has never been translated gets its chrome
+    // translated when it is opened. That covers every book made before this
+    // existed, which is the only way the Russian book already on the device
+    // would ever get Russian furniture.
+    val apiKeyStore = remember { ApiKeyStore(context) }
+    LaunchedEffect(course?.language) {
+        if (ensureLabels(courseStore, apiKeyStore, course?.language)) labelsVersion++
+    }
 
     // In-place remove that also updates local state so the TOC re-renders
     // without a full course reload. The store still owns the disk write.
@@ -141,6 +165,7 @@ fun CourseDetailScreen(
         }
     }
 
+    CompositionLocalProvider(LocalLabels provides labels) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -154,7 +179,7 @@ fun CourseDetailScreen(
                 // Same idea as the Reader's "≡ Contents" — label the destination
                 // instead of the direction. Popping back from Contents lands on
                 // the Library shelf.
-                TextButton(onClick = onBack) { Text("≡ Library", color = Ink) }
+                TextButton(onClick = onBack) { Text("≡ " + t("Library"), color = Ink) }
             }
 
             val c = course
@@ -202,8 +227,8 @@ fun CourseDetailScreen(
                             .toMap()
                     }
             }
-            val tocBlocks = remember(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter) {
-                buildTocBlocks(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter)
+            val tocBlocks = remember(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter, labels) {
+                buildTocBlocks(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter, labels)
             }
 
             PagedContents(
@@ -226,6 +251,7 @@ fun CourseDetailScreen(
             )
         }
     }
+    }
 }
 
 internal fun buildTocBlocks(
@@ -233,16 +259,23 @@ internal fun buildTocBlocks(
     currentChapterSlug: String?,
     readerNoteCount: Int,
     questionsByChapter: Map<String, Map<String, String>> = emptyMap(),
+    /** The book's own words for its section headings — see [LocalLabels]. */
+    labels: UiLabels = UiLabels.ENGLISH,
 ): List<TocBlock> {
     val blocks = mutableListOf<TocBlock>()
     val totalDays = totalCourseDays(course)
     blocks += TocBlock.BookTitle(
         title = course.title,
-        subtitle = "${course.chapters.size} chapters · ${course.dailyMinutes} min/day · ~$totalDays days",
+        subtitle = labels.t(
+            "{chapters} chapters · {minutes} min/day · ~{days} days",
+            "chapters" to course.chapters.size,
+            "minutes" to course.dailyMinutes,
+            "days" to totalDays,
+        ),
     )
     blocks += TocBlock.SearchEntry
     blocks += TocBlock.ReaderNotesEntry(readerNoteCount)
-    blocks += TocBlock.SectionHeader("Contents")
+    blocks += TocBlock.SectionHeader(labels.t("Contents"))
     val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
     val schedule = courseDaySchedule(course).associateBy { it.chapterN }
     course.chapters.forEach { chapter ->
@@ -256,7 +289,7 @@ internal fun buildTocBlocks(
             chapter = chapter,
             isCurrent = isCurrent,
             hasNotes = chapter.slug in chaptersWithNotes,
-            dayLabel = schedule[chapter.n]?.label.orEmpty(),
+            dayLabel = schedule[chapter.n]?.labelIn(labels).orEmpty(),
         )
     }
     // Group by chapter order; within a chapter, by when it was made. `at` is
@@ -278,12 +311,12 @@ internal fun buildTocBlocks(
     // words rather than a passage they pointed at.
     val notes = inReadingOrder(course.annotations.filter { it.kind != "ask" })
     if (notes.isNotEmpty()) {
-        blocks += TocBlock.SectionHeader("Notes")
+        blocks += TocBlock.SectionHeader(labels.t("Notes"))
         notes.forEach { blocks += TocBlock.NoteEntry(it, chapterLabel(it)) }
     }
     val questions = inReadingOrder(course.annotations.filter { it.kind == "ask" })
     if (questions.isNotEmpty()) {
-        blocks += TocBlock.SectionHeader("Questions")
+        blocks += TocBlock.SectionHeader(labels.t("Questions"))
         questions.forEach { a ->
             blocks += TocBlock.QuestionEntry(
                 annotation = a,
@@ -293,7 +326,7 @@ internal fun buildTocBlocks(
         }
     }
     if (course.bookmarks.isNotEmpty()) {
-        blocks += TocBlock.SectionHeader("Bookmarks")
+        blocks += TocBlock.SectionHeader(labels.t("Bookmarks"))
         course.bookmarks.forEach { bm ->
             val title = course.chapters.firstOrNull { it.slug == bm.chapterSlug }?.let {
                 "Ch ${it.n}: ${it.title}"
@@ -439,12 +472,13 @@ private fun PagedContents(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = if (pages.size <= 1) "" else "Page ${pageIndex + 1} of ${pages.size}",
+                    text = if (pages.size <= 1) ""
+                    else t("Page {n} of {total}", "n" to pageIndex + 1, "total" to pages.size),
                     style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = if (pages.size > 1) "tap ← / → edges to turn" else "",
+                    text = if (pages.size > 1) t("tap ← / → edges to turn") else "",
                     style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     textAlign = TextAlign.End,
                 )
@@ -486,13 +520,13 @@ private fun SearchEntryBlock(onTap: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Search this book",
+                text = t("Search this book"),
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
                 color = Ink,
             )
             Text(
-                text = "chapters, notes and questions",
+                text = t("chapters, notes and questions"),
                 fontFamily = FontFamily.Serif,
                 fontStyle = FontStyle.Italic,
                 fontSize = 12.sp,
@@ -514,14 +548,14 @@ private fun ReaderNotesEntryBlock(entry: TocBlock.ReaderNotesEntry, onTap: () ->
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "How the reading has gone",
+                text = t("How the reading has gone"),
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
                 color = Ink,
             )
             Text(
                 text = when (entry.count) {
-                    0 -> "nothing recorded yet"
+                    0 -> t("nothing recorded yet")
                     1 -> "1 observation · feeds the next chapter"
                     else -> "${entry.count} observations · feed the next chapter"
                 },
@@ -778,7 +812,12 @@ private fun BookmarkEntryBlock(entry: TocBlock.BookmarkEntry, onTap: (Bookmark) 
     }
 }
 
-internal fun statusLabel(status: ChapterStatus): String = when (status) {
+internal fun statusLabel(
+    status: ChapterStatus,
+    labels: UiLabels = UiLabels.ENGLISH,
+): String = labels.t(englishStatusLabel(status))
+
+private fun englishStatusLabel(status: ChapterStatus): String = when (status) {
     ChapterStatus.PENDING -> "not compiled"
     ChapterStatus.GENERATED -> "unread"
     ChapterStatus.READING -> "reading"

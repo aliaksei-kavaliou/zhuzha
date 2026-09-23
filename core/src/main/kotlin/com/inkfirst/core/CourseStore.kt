@@ -1,6 +1,8 @@
 package com.inkfirst.core
 
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
@@ -255,6 +257,47 @@ class CourseStore(private val root: File) {
     }
 
     /** Reads memory.md, or empty string if never written. Never null — callers pass it as prompt input. */
+    /**
+     * The book chrome's words in one language, or [UiLabels.ENGLISH] if this
+     * language has none yet.
+     *
+     * Stored per LANGUAGE at `<root>/labels/<language>.json` rather than per
+     * course, which is the whole point: the second Russian book reuses the
+     * first one's words instead of paying for its own, and — more important —
+     * agrees with it. Two Russian books that disagreed about the word for
+     * "Contents" would be worse than leaving both in English.
+     *
+     * Plain JSON of English source string to translation, meant to be edited
+     * by hand when the model picks a clumsy word, like `reader.md` and every
+     * other file this app writes.
+     */
+    fun readLabels(language: String): UiLabels {
+        val file = labelsFile(language)
+        if (!file.isFile) return UiLabels.ENGLISH
+        return try {
+            UiLabels(json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), file.readText()))
+        } catch (_: SerializationException) {
+            // A hand-edit that broke the JSON should cost the translation,
+            // not the book: English is always a working fallback.
+            UiLabels.ENGLISH
+        }
+    }
+
+    fun writeLabels(language: String, translations: Map<String, String>) {
+        if (translations.isEmpty()) return
+        val file = labelsFile(language)
+        file.parentFile?.mkdirs()
+        file.writeText(
+            json.encodeToString(MapSerializer(String.serializer(), String.serializer()), translations),
+        )
+    }
+
+    /** Whether this language has been translated already. */
+    fun hasLabels(language: String): Boolean = labelsFile(language).isFile
+
+    private fun labelsFile(language: String): File =
+        File(root, "labels/${labelsFileName(language)}")
+
     fun readMemory(courseSlug: String): String {
         val file = File(root, "$courseSlug/memory.md")
         return if (file.exists()) file.readText() else ""

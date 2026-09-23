@@ -117,6 +117,7 @@ import com.inkfirst.core.CourseMemory
 import com.inkfirst.core.ChapterStatus
 import com.inkfirst.core.Annotation
 import com.inkfirst.core.Course
+import com.inkfirst.core.UiLabels
 import com.inkfirst.core.CourseStore
 import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.figurePolicy
@@ -258,6 +259,8 @@ fun ReaderScreen(
     val scope = rememberCoroutineScope()
 
     var course by remember { mutableStateOf<Course?>(null) }
+    // The book's own words, re-read when the book (and so the language) changes.
+    val labels = rememberBookLabels(store, course)
     var markdown by remember { mutableStateOf<String?>(null) }
     // Chapter-scoped freehand strokes. Load in the same effect that pulls
     // the chapter markdown so both are ready by the time PagedContent runs.
@@ -509,17 +512,18 @@ fun ReaderScreen(
             // Small italic intro line — shows est-minutes + day range + status
             // once at the start of the chapter so the TOC can stay clean.
             val dayLabel = course?.let { c ->
-                courseDaySchedule(c).firstOrNull { it.chapterN == chapter.n }?.label
+                courseDaySchedule(c).firstOrNull { it.chapterN == chapter.n }?.labelIn(labels)
             }
             // "Chapter N" leads the byline so every chapter is numbered the
             // same way, whatever the model wrote. Some chapters opened with
             // "# Chapter 5: …" and others with a bare title, because the
             // number only ever existed when the model happened to type it.
             val metaBody = buildString {
-                append("Chapter ${chapter.n}")
-                append(" · ~${chapter.estMinutes} min")
+                append(labels.t("Chapter {n}", "n" to chapter.n))
+                append(" · ")
+                append(labels.t("~{n} min", "n" to chapter.estMinutes))
                 if (!dayLabel.isNullOrEmpty()) append(" · $dayLabel")
-                append(" · ${statusLabel(chapter.status)}")
+                append(" · ${statusLabel(chapter.status, labels)}")
             }
             // The chapter model usually opens with "# Chapter N: Title", but
             // not always — two of six chapters in the first real course came
@@ -671,6 +675,11 @@ fun ReaderScreen(
 
     val isPending = chapter != null && chapter.status == ChapterStatus.PENDING && markdown == null
 
+    // Everything from here down is the BOOK, so it speaks the book's
+    // language — the header, the page numbers, the menu over the page. The
+    // Library and Settings that got here are not part of this and stay in
+    // the reader's own language. See [LocalLabels].
+    CompositionLocalProvider(LocalLabels provides labels) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -691,7 +700,7 @@ fun ReaderScreen(
                 val pendingPrev = course?.chapters?.getOrNull(pendingChapterIndex - 1)
                 val pendingNext = course?.chapters?.getOrNull(pendingChapterIndex + 1)
                 val pendingDayLabel = course?.let { c ->
-                    courseDaySchedule(c).firstOrNull { it.chapterN == chapter!!.n }?.label
+                    courseDaySchedule(c).firstOrNull { it.chapterN == chapter!!.n }?.labelIn(labels)
                 }
                 CompilePrompt(
                         chapter = chapter!!,
@@ -1254,6 +1263,7 @@ fun ReaderScreen(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
     }
 }
 
@@ -1969,7 +1979,8 @@ private fun PagedContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = if (pages.isEmpty()) "" else "Page ${pageIndex + 1} of ${pages.size}",
+                        text = if (pages.isEmpty()) ""
+                        else t("Page {n} of {total}", "n" to pageIndex + 1, "total" to pages.size),
                         style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                         modifier = Modifier.weight(1f),
                     )
@@ -2029,11 +2040,11 @@ private fun ReaderHeader(
         // cold-start pushes Reader directly on top of Library with no
         // Contents in between, so a back-pop would land on Library. The
         // button label says Contents; it should always go to Contents.
-        TextButton(onClick = onOpenContents) { Text("≡ Contents", color = Ink) }
+        TextButton(onClick = onOpenContents) { Text("≡ " + t("Contents"), color = Ink) }
         Spacer(Modifier.weight(1f))
         if (chapterN != null && chapterCount != null) {
             Text(
-                text = "Ch $chapterN/$chapterCount",
+                text = t("Ch {n}/{total}", "n" to chapterN, "total" to chapterCount),
                 style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                 modifier = Modifier.padding(end = 8.dp),
             )
@@ -2102,14 +2113,14 @@ private fun FormatMenu(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // Contents jump
-        MenuRow(label = "Go to") {
+        MenuRow(label = t("Go to")) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenContents() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "Contents",
+                    text = t("Contents"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2123,7 +2134,7 @@ private fun FormatMenu(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "Search",
+                    text = t("Search"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2135,14 +2146,14 @@ private fun FormatMenu(
         // cross a line out. Reachable from the page as well as from Contents
         // on purpose: the moment you want to argue with an observation is the
         // moment you are reading the chapter it shaped.
-        MenuRow(label = "Reading") {
+        MenuRow(label = t("Reading")) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenReaderNotes() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "How it has gone",
+                    text = t("How it has gone"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2151,14 +2162,14 @@ private fun FormatMenu(
         }
 
         // Ask about this chapter (general Q&A, no selection)
-        MenuRow(label = "Ask") {
+        MenuRow(label = t("Ask")) {
             Box(
                 modifier = Modifier
                     .clickable { onAskAboutChapter() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "About this chapter",
+                    text = t("About this chapter"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2167,14 +2178,14 @@ private fun FormatMenu(
         }
 
         // Bookmark toggle for the current page.
-        MenuRow(label = "Mark") {
+        MenuRow(label = t("Mark")) {
             Box(
                 modifier = Modifier
                     .clickable(enabled = canBookmark) { onToggleBookmark() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = if (isBookmarked) "Remove bookmark" else "Bookmark this page",
+                    text = if (isBookmarked) t("Remove bookmark") else t("Bookmark this page"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (canBookmark) Ink else Muted,
@@ -2191,14 +2202,14 @@ private fun FormatMenu(
         // rows below them fall off the bottom. It costs a tap, which font
         // size can afford: it is a set-once decision in practice (design.md
         // §11), unlike Contents or Ask which are used on every page.
-        MenuRow(label = "Type") {
+        MenuRow(label = t("Text")) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenTypeTools() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "Size, spacing, margins →",
+                    text = t("Size, spacing, margins →"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2217,14 +2228,14 @@ private fun FormatMenu(
         //
         // The row carries the drawing status when there is one, so progress
         // is visible from here without opening the panel to watch it.
-        MenuRow(label = "Chapter") {
+        MenuRow(label = t("Chapter")) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenChapterTools() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = figureStatus ?: "Pictures and rewrite →",
+                    text = figureStatus ?: t("Pictures and rewrite →"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2293,14 +2304,14 @@ private fun TypeToolsMenu(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MenuRow(label = "Back") {
+        MenuRow(label = "") {
             Box(
                 modifier = Modifier
                     .clickable { onBack() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "← Reading",
+                    text = "← " + t("Reading"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2310,7 +2321,7 @@ private fun TypeToolsMenu(
 
         MenuDivider()
 
-        MenuRow(label = "Font") {
+        MenuRow(label = t("Font")) {
             TextButton(onClick = onFontSmaller, enabled = canShrink) {
                 Text("A−", fontSize = 16.sp, color = if (canShrink) Ink else Muted)
             }
@@ -2325,7 +2336,7 @@ private fun TypeToolsMenu(
         }
 
         // Line spacing
-        MenuRow(label = "Spacing") {
+        MenuRow(label = t("Spacing")) {
             ReaderPrefs.LINE_SPACINGS.forEachIndexed { i, v ->
                 SelectableChip(
                     label = ReaderPrefs.LINE_SPACING_LABELS[i],
@@ -2336,7 +2347,7 @@ private fun TypeToolsMenu(
         }
 
         // Alignment
-        MenuRow(label = "Align") {
+        MenuRow(label = t("Align")) {
             TextAlignPref.entries.forEach { pref ->
                 SelectableChip(
                     label = pref.label,
@@ -2349,7 +2360,7 @@ private fun TypeToolsMenu(
         // Margin — symmetric side padding. "Wide" doubles as marginalia
         // space for pen notes; "Narrow" maximizes text density. Reflows the
         // whole chapter on change (paginator reads content width).
-        MenuRow(label = "Margin") {
+        MenuRow(label = t("Margin")) {
             ReaderPrefs.HORIZONTAL_PADDINGS.forEachIndexed { i, v ->
                 SelectableChip(
                     label = ReaderPrefs.HORIZONTAL_PADDING_LABELS[i],
@@ -2406,14 +2417,14 @@ private fun ChapterToolsMenu(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // Names where it goes back to, like every other header in this app.
-        MenuRow(label = "Back") {
+        MenuRow(label = "") {
             Box(
                 modifier = Modifier
                     .clickable { onBack() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "← Reading",
+                    text = "← " + t("Reading"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2426,14 +2437,14 @@ private fun ChapterToolsMenu(
         // The repair mechanism the generate-a-book premise needs: the model
         // will occasionally write a dud, and without this the reader's only
         // option is to live with it for the rest of the course.
-        MenuRow(label = "Chapter") {
+        MenuRow(label = t("Chapter")) {
             Box(
                 modifier = Modifier
                     .clickable(enabled = !busyDrawing) { onRewriteChapter() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "Rewrite this chapter",
+                    text = t("Rewrite this chapter"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (busyDrawing) Muted else Ink,
@@ -2458,7 +2469,7 @@ private fun ChapterToolsMenu(
             pendingBadges == 0
         if (picturesSettled) {
             MenuRow(label = "Pictures") {
-                MenuAction(text = "all drawn", enabled = false, onClick = {})
+                MenuAction(text = t("all drawn"), enabled = false, onClick = {})
             }
         } else {
             // The picture rows below REPORT before they offer. Each one used to
@@ -2468,14 +2479,13 @@ private fun ChapterToolsMenu(
             // and redrew what he already had (2026-09-21). A finished row says
             // so and is not clickable; only genuinely outstanding work is.
             if (figureSlots > 0) {
-                MenuRow(label = "Figures") {
+                MenuRow(label = t("Figures")) {
                     MenuAction(
                         text = figureStatus ?: when {
                             pendingFigures == 0 ->
                                 "all $figureSlots drawn"
                             else ->
-                                "Draw $pendingFigures figure" +
-                                    (if (pendingFigures == 1) "" else "s") +
+                                t("Draw {n}", "n" to pendingFigures) +
                                     " · ${pictureCost(pendingFigures)}"
                         },
                         enabled = !busyDrawing && pendingFigures > 0 && figureStatus == null,
@@ -2488,10 +2498,10 @@ private fun ChapterToolsMenu(
             // disappears when drawn, it sits permanently above Rewrite, which is
             // also a chapter-level action — two rows labelled "Chapter" doing
             // unrelated things. Opening/Closing reads as the pair it is.
-            MenuRow(label = "Opening") {
+            MenuRow(label = t("Opening")) {
                 MenuAction(
                     text = if (hasCover) "picture drawn"
-                    else "Draw opening picture · ${pictureCost(1)}",
+                    else t("Draw opening picture") + " · ${pictureCost(1)}",
                     enabled = !busyDrawing && !hasCover,
                     onClick = onDrawCover,
                 )
@@ -2500,12 +2510,12 @@ private fun ChapterToolsMenu(
             // The closing picture is the cover's scene resolved rather than a
             // picture in its own right, so it cannot be drawn first. Saying that
             // beats offering nothing and leaving the gap unexplained.
-            MenuRow(label = "Closing") {
+            MenuRow(label = t("Closing")) {
                 MenuAction(
                     text = when {
                         hasTail -> "picture drawn"
-                        !hasCover -> "needs the chapter picture first"
-                        else -> "Draw closing picture · ${pictureCost(1)}"
+                        !hasCover -> t("needs the chapter picture first")
+                        else -> t("Draw closing picture") + " · ${pictureCost(1)}"
                     },
                     enabled = !busyDrawing && hasCover && !hasTail,
                     onClick = onDrawTail,
@@ -2515,13 +2525,12 @@ private fun ChapterToolsMenu(
             // The book's mascot badges — the small marks on exercise and recap
             // blocks. Drawn once for the whole course, so after the first chapter
             // this row is a report rather than an offer.
-            MenuRow(label = "Badges") {
+            MenuRow(label = t("Badges")) {
                 MenuAction(
                     text = if (pendingBadges == 0) {
                         "all drawn"
                     } else {
-                        "Draw $pendingBadges book badge" +
-                            (if (pendingBadges == 1) "" else "s") +
+                        t("Draw {n}", "n" to pendingBadges) +
                             " · ${pictureCost(pendingBadges)}"
                     },
                     enabled = !busyDrawing && pendingBadges > 0,
@@ -4090,7 +4099,7 @@ private fun CompilePrompt(
         TextButton(onClick = onBack) { Text("← Back", color = Ink) }
         Spacer(Modifier.weight(1f))
         Text(
-            text = "Ch ${chapter.n}/$chapterCount",
+            text = t("Ch {n}/{total}", "n" to chapter.n, "total" to chapterCount),
             style = MaterialTheme.typography.bodySmall.copy(color = Muted),
         )
     }

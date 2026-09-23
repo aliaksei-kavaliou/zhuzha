@@ -218,14 +218,20 @@ fun NewCourseScreen(
             OutlinedTextField(
                 value = priorKnowledge,
                 onValueChange = { priorKnowledge = it },
-                label = { Text("Prior knowledge (optional)") },
+                label = { Text("Who's reading, and what they already know") },
+                placeholder = {
+                    Text("optional — \"she's 6, knows her letters but can't blend them yet\"")
+                },
                 modifier = Modifier.fillMaxWidth().height(120.dp),
             )
 
             OutlinedTextField(
                 value = expectations,
                 onValueChange = { expectations = it },
-                label = { Text("What you want to be able to do (optional)") },
+                label = { Text("What they should be able to do afterwards") },
+                placeholder = {
+                    Text("optional — \"read simple three-letter words on her own\"")
+                },
                 modifier = Modifier.fillMaxWidth().height(120.dp),
             )
 
