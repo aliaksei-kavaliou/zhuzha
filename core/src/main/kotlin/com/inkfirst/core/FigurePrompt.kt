@@ -112,6 +112,12 @@ internal fun buildFigurePrompt(
         appendLine(context.trim())
     }
     appendLine()
+    // Belt and braces: the brief usually arrives already written in the
+    // book's language, but every rule above and below this line is in
+    // English, which is enough on its own to pull the lettering back to
+    // English. Said explicitly, for every picture, not just covers.
+    appendLine(languageRule(course.language))
+    appendLine()
     appendLine("STYLE — follow every rule exactly:")
     append(houseStyleFor(kind))
 }
@@ -156,8 +162,36 @@ internal fun buildCoverBriefPrompt(course: Course, chapter: PersistedChapter): S
     appendLine("short words is welcome if it sharpens the joke — short ones, because the")
     appendLine("artist hand-letters them and long words come back misspelled.")
     appendLine()
+    // The cover is the one picture whose words are invented HERE rather than
+    // by the chapter model, which is told what language the book is in. Say
+    // it again or the brief comes back in English and a Russian book opens
+    // with a character shouting "HOW DOES THIS FIT?!" — observed on the Boox,
+    // 2026-09-23, while the chapter's own figures lettered clean Cyrillic.
+    appendLine("${languageRule(course.language)}")
+    appendLine()
     appendLine("Reply with the scene description only — one or two sentences, nothing else.")
 }
+
+/**
+ * What language the words inside a picture are written in.
+ *
+ * Said to every model that can put words in a picture, because each of them
+ * would otherwise default to the language these instructions are written in.
+ * The escape hatch matters as much as the rule: a script the model cannot
+ * letter cleanly produces gibberish that looks like damage, and a wordless
+ * picture is better than a spoiled one. It has not been needed for Cyrillic,
+ * which comes back correctly spelled.
+ */
+internal fun languageRule(language: String): String =
+    if (!needsTranslation(language)) {
+        "Any words in the picture are in English."
+    } else {
+        "IMPORTANT: this book is written in $language, so every word inside the picture — " +
+            "speech bubble or label — must be in $language, in that language's own alphabet, " +
+            "spelled correctly. Never write them in English. If you cannot letter that " +
+            "alphabet cleanly, draw the picture with NO words at all rather than with " +
+            "malformed ones."
+    }
 
 /**
  * The image brief for a chapter cover. Same house style as any other figure:
@@ -212,6 +246,8 @@ internal fun buildClosingBriefPrompt(
     appendLine("Do NOT invent a new metaphor, a new place or a new cast. Do not simply")
     appendLine("remove the problem — show the same objects mastered, so the pair reads as")
     appendLine("before and after.")
+    appendLine()
+    appendLine("${languageRule(course.language)}")
     appendLine()
     appendLine("Reply with the scene description only — one or two sentences, nothing else.")
 }

@@ -160,6 +160,49 @@ class ChapterIllustratorTest {
     }
 
     @Test
+    fun `the cover's brief writer is told the language too`() {
+        // This was the actual bug. A chapter's own figures get their briefs
+        // from the chapter model, which is told the book's language, so they
+        // lettered clean Cyrillic. The COVER is written by a second call that
+        // never mentioned it, so the brief came back in English — including
+        // the words for the speech bubble — and the picture followed.
+        val russian = course.copy(language = "Russian")
+
+        val brief = buildCoverBriefPrompt(russian, chapter)
+        val closing = buildClosingBriefPrompt(russian, chapter, coverBrief = "A bewildered beginner…")
+
+        assertTrue(brief.contains("must be in Russian"), brief)
+        assertTrue(closing.contains("must be in Russian"), closing)
+    }
+
+    @Test
+    fun `a book in another language says so to the illustrator`() = runTest {
+        // A Russian book opened with a character shouting "HOW DOES THIS
+        // FIT?!" — observed on the Boox 2026-09-23. The picture model letters
+        // Cyrillic perfectly well; nothing had told it which language to
+        // letter in, and every instruction it was given was in English.
+        val client = FakeImageClient()
+
+        ChapterIllustrator(client)
+            .illustrate(course.copy(language = "Russian"), chapter, markdown, apiKey = "k") { _, _ -> }
+
+        val prompt = client.prompts.first()
+        assertTrue(prompt.contains("must be in Russian"), prompt)
+        // And an out, because a script it cannot letter cleanly is worse than
+        // no lettering at all.
+        assertTrue(prompt.contains("NO words at all"), prompt)
+    }
+
+    @Test
+    fun `an English book is not lectured about language`() = runTest {
+        val client = FakeImageClient()
+
+        ChapterIllustrator(client).illustrate(course, chapter, markdown, apiKey = "k") { _, _ -> }
+
+        assertTrue(client.prompts.first().contains("words in the picture are in English"))
+    }
+
+    @Test
     fun `one failing figure does not stop the others`() = runTest {
         val client = FakeImageClient(failOn = setOf(1))
         val saved = mutableMapOf<String, ByteArray>()
