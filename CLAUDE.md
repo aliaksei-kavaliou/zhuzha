@@ -6,11 +6,12 @@ AI-generated study books for e-ink readers. Personal project by Aliaksei (aliaks
 
 Chat AI is a bad container for learning: answers scroll away, there's no pacing, no structure, no way to go back and forth. InkFirst inverts this — the AI **compiles a book**, and the chat lives *around* the book instead of *being* the product.
 
-The user says "I want to learn X, I have N minutes/day." The app (via Gemini API) generates a course outline, then chapters one at a time, in a pedagogical style the user picks from built-in presets at course-creation time. Presets ship in `:core` as named system-prompt templates:
+The user says "I want to learn X, I have N minutes/day." The app (via Gemini API) generates a course outline, then chapters one at a time, in a pedagogical style chosen at course-creation time — either a built-in preset or one described in the user's own words. Presets ship in `:core` as named system-prompt templates:
 
 - **headfirst-inspired** (default) — conversational, redundant on purpose, exercises every few pages, concrete-before-abstract. Inspired by the Head First pedagogy (do NOT use O'Reilly's "Head First" branding or trade dress; that's their IP).
 - **textbook** — structured, formal, definition → example → practice.
 - **practical** — minimal theory, code/hands-on heavy, project-oriented.
+- **custom** — the user describes it ("told as a fairy tale"), and the sentence is expanded into a full instruction once, at creation, then stored in `course.json` and editable by hand. See design.md §3.
 
 The chosen style key is stored in `course.json` and drives prompt selection for all generation calls. The user reads paginated chapters, selects text to ask the AI about it, takes notes (typed first, stylus handwriting later), and tracks progress chapter by chapter.
 
@@ -174,6 +175,21 @@ yet" note that used to live here was two months stale.
       carry — shape and arrangement, never colour or browning — because nothing did, and
       "the finished risotto, creamy and golden" is a brief no illustrator can fill here.
       design.md §7.
+- [x] **A style you describe rather than pick (2026-09-24)** — the fourth choice is a
+      sentence, expanded into a system instruction once and stored beside the wish that
+      produced it, so the two can be compared. Three fields because three consumers need
+      three things: the wish (never sent, kept so the expansion is reviewable), the prompt,
+      and a mascot line, since badges branch on the style KEY and a described style matches
+      no arm. The expansion runs before the outline so chapter titles land in the style too,
+      and once per WISH rather than per attempt — re-expanding on "Try again" would mean
+      approving an outline in one style while a differently-worded one got stored. Two rules
+      in its prompt are load-bearing: it must not touch language, chapter length, Markdown or
+      pictures (it lands in the SYSTEM channel and would outrank them), and a named series
+      becomes its pedagogy, never its name — same trademark handling as Head First, applied
+      at the one place a user-typed brand name could reach an illustrator. It THROWS where
+      `LabelGenerator` swallows, and `StylePresets.CUSTOM` is deliberately absent from `ALL`
+      so `byKey` can never hand back a preset with an empty system prompt. design.md §3.
+
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,
