@@ -727,6 +727,21 @@ fun ReaderScreen(
                                 if (updatedCourse != null && newMarkdown != null) {
                                     course = updatedCourse
                                     markdown = newMarkdown
+                                    // The compile drew this chapter's cover,
+                                    // its closing picture and the book's
+                                    // badges, and everything that ASKS
+                                    // whether those exist is keyed on
+                                    // pictureVersion. The page is keyed on
+                                    // markdown instead, so it re-reads the
+                                    // disk and shows them — which is how the
+                                    // two came to disagree: pictures on the
+                                    // page, a footer still saying "still to
+                                    // draw: chapter picture", and a menu
+                                    // offering to draw one that was already
+                                    // there, at full price. Until covers were
+                                    // drawn at compile time this path had
+                                    // nothing stale to invalidate.
+                                    pictureVersion++
                                 }
                             },
                         )
