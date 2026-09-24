@@ -3,6 +3,7 @@ package com.inkfirst.core
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -14,6 +15,8 @@ private class CheckClient(
     var lastUserPrompt: String? = null
     var lastSystem: String? = null
     var calls = 0
+
+    var lastTemperature: Double? = null
 
     override suspend fun generateJson(
         model: String,
@@ -27,6 +30,18 @@ private class CheckClient(
         lastUserPrompt = userPrompt
         fail?.let { throw it }
         return response
+    }
+
+    override suspend fun generateJson(
+        model: String,
+        systemInstruction: String,
+        userPrompt: String,
+        responseSchema: JsonObject,
+        apiKey: String,
+        temperature: Double,
+    ): String {
+        lastTemperature = temperature
+        return generateJson(model, systemInstruction, userPrompt, responseSchema, apiKey)
     }
 
     override suspend fun generateText(
@@ -165,7 +180,7 @@ class TopicCheckerTest {
         TopicChecker(client).check(SOURDOUGH, "k")
         val prompt = client.lastUserPrompt!!
 
-        assertTrue(prompt.contains("a manual for"))
+        assertTrue(prompt.contains("a MANUAL FOR"))
         assertTrue(prompt.contains("THIS DOES NOT DEPEND ON HOW SPECIFIC THE REQUEST IS"))
         assertTrue(prompt.contains("Vagueness makes"))
         // The list must read as examples, or it becomes the definition again.
@@ -229,6 +244,69 @@ class TopicCheckerTest {
 
         assertNull(Regex("^Who is reading.*$", RegexOption.MULTILINE).find(client.lastUserPrompt!!))
         assertTrue(client.lastUserPrompt!!.contains("Topic: sourdough bread"))
+    }
+
+    /**
+     * The defect behind "we need more serious protection": nothing set a
+     * temperature anywhere, so the check ran at the model's default (~1.0) and
+     * the same request came back refused on one run and allowed on the next.
+     * A verdict that is not reproducible is not a verdict.
+     */
+    @Test
+    fun `the check is pinned to a judging temperature, not left to sample`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).check(SOURDOUGH, "k")
+
+        assertEquals(0.0, client.lastTemperature)
+    }
+
+    /**
+     * The second gate. The outline is the model's own reading of the request,
+     * written out as chapter titles, and it is far more concrete than the
+     * sentence that produced it — which is what the first gate has least to go
+     * on.
+     */
+    @Test
+    fun `the outline is screened as the strongest evidence when present`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).check(
+            SOURDOUGH.copy(outline = "1. Choosing Your Moment\n   - pick an exit"),
+            "k",
+        )
+        val prompt = client.lastUserPrompt!!
+
+        assertTrue(prompt.contains("WHAT THE BOOK WOULD ACTUALLY CONTAIN"))
+        assertTrue(prompt.contains("Choosing Your Moment"))
+        assertTrue(prompt.contains("Judge it over the"))
+    }
+
+    @Test
+    fun `without an outline the prompt does not pretend to have one`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).check(SOURDOUGH, "k")
+
+        assertFalse(client.lastUserPrompt!!.contains("WHAT THE BOOK WOULD ACTUALLY CONTAIN"))
+    }
+
+    /**
+     * "How to rubber the bank" rendered an outline. The refuse principle only
+     * covered physical harm to PEOPLE, so a robbery manual sat outside it —
+     * the model applied the rule correctly and the rule was too narrow.
+     */
+    @Test
+    fun `the refuse principle covers serious crime, not only physical harm`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).check(SOURDOUGH, "k")
+        val prompt = client.lastUserPrompt!!
+
+        assertTrue(prompt.contains("seriously criminal"))
+        assertTrue(prompt.contains("robbery, burglary, theft"))
+        // And the counterweight, or this is where false refusals start.
+        assertTrue(prompt.contains("UNDERSTANDING either family is allowed"))
+        assertTrue(prompt.contains("how a con works so"))
+        val table = prompt.substringAfter("CALIBRATION")
+        assertTrue(table.contains("how to rob a bank"))
+        assertTrue(table.contains("the history of bank robbery"))
     }
 }
 

@@ -34,6 +34,9 @@ import kotlinx.serialization.json.Json
  * dropped. A gate that blocks on infrastructure failure gets resented and
  * then routed around, which costs more than it ever saved.
  */
+/** Sampling temperature for calls that decide something. See [TopicChecker]. */
+const val JUDGING_TEMPERATURE: Double = 0.0
+
 class TopicChecker(
     private val client: GeminiClient,
     private val model: String = DEFAULT_GEMINI_MODEL,
@@ -50,6 +53,11 @@ class TopicChecker(
                 userPrompt = buildTopicCheckPrompt(inputs),
                 responseSchema = TOPIC_CHECK_SCHEMA,
                 apiKey = apiKey,
+                // Pinned, because this JUDGES rather than writes. At the
+                // model's default temperature the same request came back
+                // refused on one run and allowed on the next — which is not a
+                // gate, it is a coin toss with a good prompt attached.
+                temperature = JUDGING_TEMPERATURE,
             )
         } catch (e: kotlinx.coroutines.CancellationException) {
             // Cancellation is the reader tapping Cancel, not a check failure,

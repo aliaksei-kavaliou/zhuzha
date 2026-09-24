@@ -67,6 +67,21 @@ interface GeminiClient {
         apiKey: String,
     ): String
 
+    /**
+     * The same, at a pinned [temperature]. For calls that JUDGE rather than
+     * write — a verdict that changes between two identical runs is not a
+     * verdict. Defaulted to delegate, so a fake that only cares about the
+     * prompt needs no change.
+     */
+    suspend fun generateJson(
+        model: String,
+        systemInstruction: String,
+        userPrompt: String,
+        responseSchema: JsonObject,
+        apiKey: String,
+        temperature: Double,
+    ): String = generateJson(model, systemInstruction, userPrompt, responseSchema, apiKey)
+
     /** Plain-text output — for prose like chapter Markdown or memory summaries. */
     suspend fun generateText(
         model: String,
@@ -140,6 +155,25 @@ class KtorGeminiClient(
         systemInstruction = systemInstruction,
         userPrompt = userPrompt,
         generationConfig = GenerationConfig(
+            responseMimeType = "application/json",
+            responseSchema = responseSchema,
+        ),
+        apiKey = apiKey,
+    ).textOrThrow()
+
+    override suspend fun generateJson(
+        model: String,
+        systemInstruction: String,
+        userPrompt: String,
+        responseSchema: JsonObject,
+        apiKey: String,
+        temperature: Double,
+    ): String = postGenerate(
+        model = model,
+        systemInstruction = systemInstruction,
+        userPrompt = userPrompt,
+        generationConfig = GenerationConfig(
+            temperature = temperature,
             responseMimeType = "application/json",
             responseSchema = responseSchema,
         ),

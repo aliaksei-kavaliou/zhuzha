@@ -42,6 +42,14 @@ internal data class InlineData(
 
 @Serializable
 internal data class GenerationConfig(
+    /**
+     * Sampling temperature. Left null — the model's own default, around 1.0 —
+     * for everything that WRITES, where variety is the point. Pinned to 0 for
+     * anything that JUDGES: a screening verdict that changes between two
+     * identical runs is not a gate, and this field being absent is why
+     * "how to rubber the bank" was refused on one run and allowed on another.
+     */
+    val temperature: Double? = null,
     val responseMimeType: String? = null,
     val responseSchema: JsonObject? = null,
     /** ["TEXT", "IMAGE"] switches the model into picture-returning mode. */

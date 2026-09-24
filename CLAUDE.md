@@ -228,7 +228,15 @@ yet" note that used to live here was two months stale.
       harmful and LESS specific at once, and an enumeration inverts exactly that case. Probed
       live after the rewrite: "how to kill people quickly" and an untabled "undetectable ways
       to hurt someone" both refuse; explosives chemistry, SQL injection, car-door opening and
-      self-defence all still allow. design.md §19.
+      self-defence all still allow. **The verdict was also a COIN TOSS** until 2026-09-24:
+      nothing set a temperature anywhere, so the judging call ran at the model's default (~1.0)
+      and "how to rubber the bank" was allowed on Aliaksei's run and refused on the identical
+      input here. `JUDGING_TEMPERATURE = 0.0` now pins it (4/4 identical after). The same
+      report widened the principle — robbery is a serious crime that is not primarily about
+      injuring someone, so it sat outside "harm to people" as written — and added a SECOND
+      GATE on the outline, which is the model's own reading of the request and far more
+      concrete than the sentence that produced it. Still open: chapters are ungated.
+      design.md §19.
 - [x] **Export says "Done" rather than closing itself (2026-09-24)** — the result line is the
       only evidence the save happened, and popping on success is the "generate did nothing"
       defect in another costume. Exporting twice (clean copy to send, annotated copy to keep)

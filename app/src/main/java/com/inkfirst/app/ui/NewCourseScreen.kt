@@ -86,7 +86,7 @@ private sealed interface OutlineUiState {
      * not work", and this is "it worked, and it has a question for you". The
      * reader is the one who settles it.
      */
-    data class Queried(val reason: String) : OutlineUiState
+    data class Queried(val reason: String, val pending: CourseOutline? = null) : OutlineUiState
 }
 
 /**
@@ -226,10 +226,31 @@ fun NewCourseScreen(
                 style
             }
 
-            uiState = runOutline(
+            val outlined = runOutline(
                 topic, minutes, priorKnowledge, expectations, effective, language,
                 units, model, key,
             )
+
+            // THE SECOND GATE. The outline is the model's own reading of the
+            // request, in chapter titles and objectives, and it is far more
+            // concrete than the sentence that produced it — which is exactly
+            // what the first gate has least of to go on. Screened before it is
+            // shown, so a refusal never renders a plan for the thing.
+            uiState = if (outlined is OutlineUiState.Ready) {
+                val onOutline = KtorGeminiClient().use {
+                    TopicChecker(it, model).check(
+                        request.copy(outline = describeOutline(outlined.outline)),
+                        key,
+                    )
+                }
+                when (onOutline.verdict) {
+                    TopicVerdict.REFUSE -> OutlineUiState.Failed(onOutline.reason)
+                    TopicVerdict.ASK -> OutlineUiState.Queried(onOutline.reason, outlined.outline)
+                    TopicVerdict.ALLOW -> outlined
+                }
+            } else {
+                outlined
+            }
         }
     }
 
@@ -281,7 +302,10 @@ fun NewCourseScreen(
             reason = s.reason,
             onWriteAnyway = {
                 clearedRequest = checkInputs().toString()
-                generate(skipCheck = true)
+                // An outline already written is shown rather than paid for
+                // again; a query raised before one exists has to generate.
+                val held = s.pending
+                if (held != null) uiState = OutlineUiState.Ready(held) else generate(skipCheck = true)
             },
             onEdit = { uiState = OutlineUiState.Idle },
         )
@@ -736,6 +760,19 @@ private fun OutlinePreview(outline: CourseOutline) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The outline as evidence for the second gate — what the book would contain,
+ * flattened to text. Titles and objectives, because those are where an
+ * intention that the topic line kept vague becomes explicit.
+ */
+private fun describeOutline(outline: CourseOutline): String = buildString {
+    appendLine(outline.title)
+    outline.chapters.forEach { c ->
+        appendLine("${c.n}. ${c.title}")
+        c.objectives.forEach { appendLine("   - $it") }
     }
 }
 

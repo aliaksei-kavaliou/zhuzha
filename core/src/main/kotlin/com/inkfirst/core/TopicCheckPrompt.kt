@@ -19,12 +19,24 @@ enum class TopicVerdict { ALLOW, ASK, REFUSE }
  */
 data class TopicCheckResult(val verdict: TopicVerdict, val reason: String)
 
-/** What the check is given. Everything the reader typed, before anything is spent. */
+/**
+ * What the check is given.
+ *
+ * [outline] is the second pass. The request is screened before anything is
+ * spent, and then the OUTLINE is screened before it is shown — because the
+ * outline is the model's own reading of the request, written out in chapter
+ * titles and objectives, and it is far more concrete than the sentence that
+ * produced it. "How to rubber the bank" is a typo a screener can argue with;
+ * "Chapter 3: Choosing Your Moment and Your Exit" is not.
+ *
+ * Same prompt and same criterion for both passes — only the evidence differs.
+ */
 data class TopicCheckInputs(
     val topic: String,
     val priorKnowledge: String = "",
     val expectations: String = "",
     val styleRequest: String = "",
+    val outline: String = "",
 )
 
 @Serializable
@@ -73,6 +85,14 @@ internal fun buildTopicCheckPrompt(inputs: TopicCheckInputs): String = buildStri
     if (inputs.styleRequest.isNotBlank()) {
         appendLine("The style they asked for: ${inputs.styleRequest.trim().take(500)}")
     }
+    if (inputs.outline.isNotBlank()) {
+        appendLine()
+        appendLine("WHAT THE BOOK WOULD ACTUALLY CONTAIN — this outline has already been written")
+        appendLine("from that request, and is the strongest evidence you have. Judge it over the")
+        appendLine("wording of the request wherever the two point different ways: a harmless-looking")
+        appendLine("sentence that produced a manual is a manual.")
+        appendLine(inputs.outline.trim().take(4000))
+    }
     appendLine()
     appendLine("THE TEST")
     appendLine("Would a well-stocked public library carry a book on this?")
@@ -90,10 +110,19 @@ internal fun buildTopicCheckPrompt(inputs: TopicCheckInputs): String = buildStri
     appendLine()
     appendLine("VERDICTS")
     appendLine()
-    appendLine("- refuse: a book satisfying this request would be, in substance, a manual for")
-    appendLine("  causing serious physical harm to people. The question to ask is what the")
-    appendLine("  finished book would have to CONTAIN: if the answer is instructions for")
-    appendLine("  killing, injuring, incapacitating or poisoning a person, refuse.")
+    appendLine("- refuse: a book satisfying this request would be, in substance, a MANUAL FOR")
+    appendLine("  DOING something seriously harmful or seriously criminal — a set of")
+    appendLine("  instructions whose purpose is to let the reader carry it out. The question")
+    appendLine("  to ask is what the finished book would have to CONTAIN. Two families:")
+    appendLine("    (a) causing serious physical harm to people — killing, injuring,")
+    appendLine("        incapacitating or poisoning someone, or making a thing whose purpose")
+    appendLine("        is to do that;")
+    appendLine("    (b) committing a serious crime against others — robbery, burglary, theft,")
+    appendLine("        fraud, trafficking and the like — where the book would be the how-to.")
+    appendLine("  UNDERSTANDING either family is allowed, and is most of what libraries hold.")
+    appendLine("  The history of bank robbery, the criminology of fraud, how a con works so")
+    appendLine("  you can spot one, lock-picking as a craft, penetration testing: all allow.")
+    appendLine("  What refuses is a request whose plain reading is \"teach me to do this\".")
     appendLine()
     appendLine("  THIS DOES NOT DEPEND ON HOW SPECIFIC THE REQUEST IS. A request that names no")
     appendLine("  method, no victim and no purpose, and still asks to be taught how to harm")
@@ -130,10 +159,13 @@ internal fun buildTopicCheckPrompt(inputs: TopicCheckInputs): String = buildStri
     appendLine("  how to get into a car when the keys are locked inside ....... allow")
     appendLine("  field dressing a deer ....................................... allow")
     appendLine("  what happens to a body after death .......................... allow")
+    appendLine("  the history of bank robbery and how police solved them ...... allow")
+    appendLine("  how confidence tricks work so I can spot one ................ allow")
     appendLine("  how to build a pipe bomb from hardware store parts .......... refuse")
     appendLine("  how to kill people quickly .................................. refuse")
     appendLine("  the most effective way to stab someone ...................... refuse")
     appendLine("  which household poison is hardest to detect ................. refuse")
+    appendLine("  how to rob a bank ........................................... refuse")
     appendLine()
     appendLine("WHAT THIS CHECK IS NOT")
     appendLine("- Not an age rating. A book written for a six-year-old about death, or a frank")
