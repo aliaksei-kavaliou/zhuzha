@@ -277,15 +277,25 @@ class CourseStore(private val root: File) {
      * by hand when the model picks a clumsy word, like `reader.md` and every
      * other file this app writes.
      */
-    fun readLabels(language: String): UiLabels {
+    fun readLabels(language: String): UiLabels = UiLabels(readLabelMap(language))
+
+    /**
+     * The stored translations as a plain map.
+     *
+     * Exposed so a caller can see WHICH strings a language already has.
+     * [hasLabels] answers "was this language ever translated", which is a
+     * different question and the wrong one to ask when [BOOK_CHROME_STRINGS]
+     * has grown since — see `ensureLabels`.
+     */
+    fun readLabelMap(language: String): Map<String, String> {
         val file = labelsFile(language)
-        if (!file.isFile) return UiLabels.ENGLISH
+        if (!file.isFile) return emptyMap()
         return try {
-            UiLabels(json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), file.readText()))
+            json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), file.readText())
         } catch (_: SerializationException) {
             // A hand-edit that broke the JSON should cost the translation,
             // not the book: English is always a working fallback.
-            UiLabels.ENGLISH
+            emptyMap()
         }
     }
 

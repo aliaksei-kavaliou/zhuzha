@@ -134,6 +134,7 @@ import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.findFigureSlots
 import com.inkfirst.core.parseInlines
 import com.inkfirst.core.parseMarkdown
+import com.inkfirst.core.splitExerciseBody
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -3323,17 +3324,6 @@ private fun TailBlock(f: Block.CustomFence, loadFigure: (String) -> ImageBitmap?
 @Composable
 private fun RuleBlock() {
     Spacer(Modifier.height(10.dp))
-}
-
-private fun splitExerciseBody(body: String): Pair<String, String> {
-    val lines = body.lines()
-    val answerIdx = lines.indexOfFirst { it.trim().lowercase().startsWith("answer:") }
-    if (answerIdx == -1) return body.trim() to ""
-    val question = lines.take(answerIdx).joinToString("\n").trim()
-    val answerLine = lines[answerIdx].substringAfter(":").trim()
-    val extra = lines.drop(answerIdx + 1).joinToString("\n").trim()
-    val answer = if (extra.isEmpty()) answerLine else "$answerLine\n$extra"
-    return question to answer
 }
 
 /**

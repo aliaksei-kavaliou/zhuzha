@@ -190,6 +190,25 @@ yet" note that used to live here was two months stale.
       `LabelGenerator` swallows, and `StylePresets.CUSTOM` is deliberately absent from `ALL`
       so `byKey` can never hand back a preset with an empty system prompt. design.md §3.
 
+- [x] **Export (2026-09-24)** — a book leaves the app as an EPUB, from the Contents screen.
+      EPUB rather than PDF because it reflows and is already the shape of what is stored; a PDF
+      means owning pagination against a bare canvas, and the reader's paginator does not
+      transfer (it paginates to a SCREEN). Answers move to the back of each chapter, numbered
+      and linked both ways, because a reflowable book has no "next page" to hide one on.
+      Annotations are opt-in and default OFF: export is irreversible, and a file handed to
+      someone carries whatever is in it. Ink never travels at all — strokes are anchored to
+      block indices — and the screen says so rather than letting it be discovered. The four
+      things that bite (mimetype first + STORED, XHTML is XML so `&` must be escaped, xml:lang
+      needs a CODE not a language name, extension must agree with the picker's mime type) are
+      each a test. Verified by exporting every real book off the emulator and validating the
+      files, then again end to end through the picker. design.md §18.
+- [x] **Labels are topped up, not skipped (2026-09-24)** — `ensureLabels` asked "has this
+      language been translated?", so every string added to `BOOK_CHROME_STRINGS` after a
+      language's first translation stayed English in that book forever, silently. It now asks
+      which strings are MISSING and translates only those; anything that comes back unusable is
+      stored as itself, because `keepUsable`'s rejections are deterministic and retrying costs a
+      call per app open. Found while checking a Russian EPUB.
+
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

@@ -873,3 +873,66 @@ disk on every later open.
 - Should daily pacing split chapters into "sessions" (reading positions with time estimates), or is chapter granularity enough for v1? (Lean: chapter granularity is enough.)
 - ~~Regeneration UX: "this chapter didn't land, redo it with feedback" — where does user feedback slot into the prompt?~~ **Settled 2026-09-21**: its own `THIS IS A REWRITE` section after the chapter spec, carrying the reader's reason verbatim and asking for a different route to the same objectives. Not noted in `memory.md` — that file records what the book taught, and a rejected draft taught nothing.
 - Gemini structured-output mode for outline JSON vs. parse-from-text? (Lean: structured output.)
+
+## 18. Export (built 2026-09-24)
+
+`EpubExport` in `:core` writes a course as an EPUB 3 file, through Android's `CreateDocument`
+picker. Reached from the Contents screen — per BOOK, where backup is per device, and this screen
+is the book's front matter.
+
+**EPUB, not PDF.** An EPUB is reflowable, so it reads at any font size on any device, and
+structurally it is already what this app stores: text, pictures, a manifest, zipped. A PDF is
+fixed-layout, which means owning pagination, fonts and image placement against Android's bare
+`PdfDocument` canvas — and the reader's own paginator does not transfer, because it paginates to a
+SCREEN with screen typography. If a PDF is ever wanted, converting this file is the honest route.
+
+**Answers go to the back of the chapter**, numbered, linked both ways. An EPUB reflows, so "put
+the answer on the next page" is not a place that exists; and printing it under its exercise means
+you cannot not read it. This is what a printed textbook does, plus the round-trip link that paper
+cannot do. `splitExerciseBody` moved from `ReaderScreen` to `:core` for this — both need it now,
+and a second copy would drift.
+
+**Annotations are opt-in and default OFF.** The reason is not taste: export is irreversible. A
+file handed to someone carries whatever is in it, and a reader's questions are the most private
+thing this app stores. Opting in costs one tap; opting out after the file is sent costs nothing
+that can be done. When on, notes and the Q&A transcript go in at the end of each chapter and the
+title page says so — whoever opens the file next may not be the person who chose to include them.
+
+Three kinds of user content never travel, whatever the switch says:
+
+- **Ink**, because strokes are anchored to block indices and an EPUB reflows. They would land
+  correctly at exactly one font size and wrongly at every other. The screen says so rather than
+  leaving it to be discovered.
+- **Bookmarks**, which are app state.
+- **`reader.md`**, which is an input to generation rather than part of the book.
+
+Badges are left out too, for a different reason: a badge is a ~120px mark tuned for an e-ink block
+heading, and at an unknown size in a reflowable book it is a smudge beside a paragraph. CSS gives
+the block a rule and an indent instead — which is the job the badge was doing.
+
+Things that bite, all of them now covered by tests:
+
+1. **The `mimetype` entry must be FIRST and STORED**, not deflated. It is the single most common
+   way a hand-built EPUB fails to open, and strict readers reject it with no useful error.
+2. **XHTML is XML, not HTML.** An unescaped `&` makes the whole book fail to open rather than
+   rendering oddly — and "R&D" or a chapter called "Gluten & Structure" is not exotic input.
+3. **`xml:lang` needs a code, not a name.** `course.json` stores a human-readable language name,
+   free text; `langCode` maps the likely ones and falls back to `en`, because a `xml:lang` of
+   "Belarusian" is invalid and some readers reject the file outright.
+4. **The file name's extension and the picker's mime type must agree** — the same trap as §15.
+   `application/epub+zip` ↔ `.epub`.
+5. **Only pictures a chapter actually references are shipped.** A course accumulates figures
+   across rewrites, and shipping the orphans quietly inflates the file.
+
+### Labels are topped up, not skipped
+
+Found while checking a Russian export. `ensureLabels` used to bail on `store.hasLabels(language)` —
+"has this language been translated?" — which is the wrong question as soon as `BOOK_CHROME_STRINGS`
+grows. Every string added after a language's first translation stayed English in that book forever,
+with nothing anywhere saying so. It now asks which strings are MISSING (`CourseStore.readLabelMap`)
+and translates only those.
+
+Anything requested that does not come back usable is stored as ITSELF. English is the right
+fallback either way, and writing it down is what stops the string being re-requested on every
+open: `keepUsable`'s rejections are deterministic — a translation that lost its `{n}` will lose it
+again — so retrying buys nothing and costs a call.

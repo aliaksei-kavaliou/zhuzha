@@ -117,3 +117,43 @@ class UiLabelsTest {
         assertEquals("Contents", CourseStore(tmp).readLabels("Russian").t("Contents"))
     }
 }
+
+/**
+ * Reading back the raw map, which is what makes topping-up possible.
+ *
+ * `hasLabels` answers "was this language ever translated" — the wrong
+ * question once BOOK_CHROME_STRINGS has grown, because it reports true for a
+ * file that is missing every string added since it was written.
+ */
+class LabelMapTest {
+
+    @org.junit.jupiter.api.Test
+    fun `a stored language reports exactly the strings it holds`(
+        @org.junit.jupiter.api.io.TempDir tmp: java.io.File,
+    ) {
+        val store = CourseStore(tmp)
+        store.writeLabels("Russian", mapOf("Contents" to "Содержание"))
+
+        val stored = store.readLabelMap("Russian")
+        assertEquals(mapOf("Contents" to "Содержание"), stored)
+        // The gap this exists to expose: translated, and yet missing a string.
+        assertTrue(store.hasLabels("Russian"))
+        assertTrue(BOOK_CHROME_STRINGS.any { it !in stored })
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `an untranslated language reports an empty map, not a broken one`(
+        @org.junit.jupiter.api.io.TempDir tmp: java.io.File,
+    ) {
+        assertEquals(emptyMap<String, String>(), CourseStore(tmp).readLabelMap("Russian"))
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `a hand-edit that broke the JSON costs the translation, not the book`(
+        @org.junit.jupiter.api.io.TempDir tmp: java.io.File,
+    ) {
+        java.io.File(tmp, "labels").mkdirs()
+        java.io.File(tmp, "labels/russian.json").writeText("{ not json")
+        assertEquals(emptyMap<String, String>(), CourseStore(tmp).readLabelMap("Russian"))
+    }
+}

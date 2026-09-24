@@ -141,6 +141,14 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "Save",
     "Show answer",
     "Delete this note",
+    // The exported book — see [EpubExport]. An EPUB is still the book, so it
+    // speaks the book's language like every other piece of its furniture.
+    "Export this book",
+    "an EPUB for any e-reader",
+    "Answers",
+    "Your notes",
+    "Your questions",
+    "This copy includes your notes and questions.",
 )
 
 /** Whether a book's language needs any of this at all. */

@@ -5,6 +5,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.inkfirst.app.data.ApiKeyStore
+import com.inkfirst.core.BOOK_CHROME_STRINGS
 import com.inkfirst.core.Course
 import com.inkfirst.core.CourseStore
 import com.inkfirst.core.KtorGeminiClient
@@ -78,16 +79,31 @@ internal suspend fun ensureLabels(
     language: String?,
 ): Boolean {
     if (language == null || !needsTranslation(language)) return false
-    if (store.hasLabels(language)) return false
+
+    // Which strings this language is MISSING, not whether it has a file.
+    // BOOK_CHROME_STRINGS grows every time a screen gains a word, and the
+    // old test — "has this language been translated?" — meant every string
+    // added after a language's first translation stayed English in that
+    // book forever, with nothing anywhere saying so.
+    val existing = store.readLabelMap(language)
+    val missing = BOOK_CHROME_STRINGS.filter { it !in existing }
+    if (missing.isEmpty()) return false
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     if (apiKey.isBlank()) return false
 
     return try {
         KtorGeminiClient().use { client ->
             val translated = LabelGenerator(client, apiKeyStore.getModelName())
-                .translate(language = language, apiKey = apiKey)
+                .translate(language = language, apiKey = apiKey, strings = missing)
             if (translated.isEmpty()) return false
-            store.writeLabels(language, translated)
+            // Anything asked for that did not come back usable is stored as
+            // ITSELF. English is the right fallback either way, and writing
+            // it down is what stops the string being requested again on every
+            // single open: keepUsable's rejections are deterministic — a
+            // translation that lost its {n} or ran to forty characters will
+            // lose it again — so retrying buys nothing and costs a call.
+            val settled = missing.associateWith { it } + translated
+            store.writeLabels(language, existing + settled)
             true
         }
     } catch (e: kotlinx.coroutines.CancellationException) {

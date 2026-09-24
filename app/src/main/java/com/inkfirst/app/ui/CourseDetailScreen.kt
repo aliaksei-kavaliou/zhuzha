@@ -120,6 +120,16 @@ internal sealed interface TocBlock {
 
     /** The way into whole-book search. */
     data object SearchEntry : TocBlock
+
+    /**
+     * The way out — this book as an EPUB anyone can open.
+     *
+     * Here rather than in Settings because export is per BOOK, where backup
+     * is per device, and this screen is the book's front matter. It sits with
+     * Search and "How the reading has gone": the three things you do TO a
+     * book rather than inside a chapter of it.
+     */
+    data object ExportEntry : TocBlock
 }
 
 @Composable
@@ -129,6 +139,7 @@ fun CourseDetailScreen(
     onBack: () -> Unit,
     onOpenReaderNotes: () -> Unit,
     onSearch: () -> Unit,
+    onExport: () -> Unit,
     onReadChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
 ) {
     val context = LocalContext.current
@@ -248,6 +259,7 @@ fun CourseDetailScreen(
                 onNoteDelete = onDeleteAnnotation,
                 onReaderNotesTap = onOpenReaderNotes,
                 onSearchTap = onSearch,
+                onExportTap = onExport,
             )
         }
     }
@@ -275,6 +287,7 @@ internal fun buildTocBlocks(
     )
     blocks += TocBlock.SearchEntry
     blocks += TocBlock.ReaderNotesEntry(readerNoteCount)
+    blocks += TocBlock.ExportEntry
     blocks += TocBlock.SectionHeader(labels.t("Contents"))
     val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
     val schedule = courseDaySchedule(course).associateBy { it.chapterN }
@@ -348,6 +361,7 @@ private fun PagedContents(
     onNoteDelete: (Annotation) -> Unit,
     onReaderNotesTap: () -> Unit,
     onSearchTap: () -> Unit,
+    onExportTap: () -> Unit,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -452,6 +466,7 @@ private fun PagedContents(
                             onNoteDelete = onNoteDelete,
                             onReaderNotesTap = onReaderNotesTap,
                             onSearchTap = onSearchTap,
+                            onExportTap = onExportTap,
                         )
                     }
                 }
@@ -496,6 +511,7 @@ private fun RenderTocBlock(
     onNoteDelete: (Annotation) -> Unit,
     onReaderNotesTap: () -> Unit,
     onSearchTap: () -> Unit,
+    onExportTap: () -> Unit,
 ) {
     when (block) {
         is TocBlock.BookTitle -> BookTitleBlock(block)
@@ -506,6 +522,43 @@ private fun RenderTocBlock(
         is TocBlock.QuestionEntry -> QuestionEntryBlock(block, onNoteTap, onNoteDelete)
         is TocBlock.ReaderNotesEntry -> ReaderNotesEntryBlock(block, onReaderNotesTap)
         is TocBlock.SearchEntry -> SearchEntryBlock(onSearchTap)
+        is TocBlock.ExportEntry -> ExportEntryBlock(onExportTap)
+    }
+}
+
+@Composable
+private fun ExportEntryBlock(onTap: () -> Unit) {
+    EntryRow(
+        title = t("Export this book"),
+        subtitle = t("an EPUB for any e-reader"),
+        onTap = onTap,
+    )
+}
+
+/**
+ * The shared shape of the three doors at the top of the Contents. They were
+ * three copies of the same Row until Export would have made a fourth.
+ */
+@Composable
+private fun EntryRow(title: String, subtitle: String, onTap: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTap() }
+            .padding(vertical = 10.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontFamily = FontFamily.Serif, fontSize = 16.sp, color = Ink)
+            Text(
+                text = subtitle,
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                fontSize = 12.sp,
+                color = Muted,
+            )
+        }
+        Text(text = "\u203a", fontFamily = FontFamily.Serif, fontSize = 18.sp, color = Muted)
     }
 }
 
@@ -892,7 +945,7 @@ private fun estimateTocBlockHeight(
             val padding = 8.dp.toPx().toInt() * 2
             titleResult.size.height + padding
         }
-        is TocBlock.ReaderNotesEntry, is TocBlock.SearchEntry ->
+        is TocBlock.ReaderNotesEntry, is TocBlock.SearchEntry, is TocBlock.ExportEntry ->
             (16.sp.toPx() * 1.3f).toInt() + (12.sp.toPx() * 1.3f).toInt() +
                 10.dp.toPx().toInt() * 2
         is TocBlock.BookmarkEntry -> {

@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.inkfirst.app.data.courseStoreFor
 import com.inkfirst.app.ui.BackupScreen
+import com.inkfirst.app.ui.ExportScreen
 import com.inkfirst.app.ui.CourseDetailScreen
 import com.inkfirst.app.ui.InkFirstTheme
 import com.inkfirst.app.ui.LibraryScreen
@@ -40,6 +41,8 @@ private object Routes {
     fun readerNotes(slug: String) = "reader-notes/$slug"
     const val SEARCH = "search/{slug}"
     fun search(slug: String) = "search/$slug"
+    const val EXPORT = "export/{slug}"
+    fun export(slug: String) = "export/$slug"
     fun courseDetail(slug: String, currentChapter: String? = null) =
         "course/$slug/${currentChapter?.takeIf { it.isNotBlank() } ?: "-"}"
     fun reader(courseSlug: String, chapterSlug: String, blockIndex: Int = 0) =
@@ -166,6 +169,7 @@ private fun InkFirstApp() {
                 },
                 onOpenReaderNotes = { nav.navigate(Routes.readerNotes(slug)) },
                 onSearch = { nav.navigate(Routes.search(slug)) },
+                onExport = { nav.navigate(Routes.export(slug)) },
                 onReadChapter = { chapterSlug, blockIndex ->
                     nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
                 },
@@ -186,6 +190,20 @@ private fun InkFirstApp() {
                 },
                 onOpenHit = { chapterSlug, blockIndex ->
                     nav.navigate(Routes.reader(slug, chapterSlug, blockIndex))
+                },
+            )
+        }
+        composable(Routes.EXPORT) { entry ->
+            val slug = entry.arguments?.getString("slug").orEmpty()
+            ExportScreen(
+                slug = slug,
+                // Names its destination rather than popping — same rule as
+                // ReaderNotesScreen above, and for the same reason.
+                onBack = {
+                    nav.navigate(Routes.courseDetail(slug)) {
+                        popUpTo(Routes.COURSE_DETAIL) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
