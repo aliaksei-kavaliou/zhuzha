@@ -310,6 +310,97 @@ class TopicCheckerTest {
     }
 }
 
+/**
+ * The last gate, and the only one that sees actual text. Its whole job is
+ * narrower than the request gate's, and its failure is more expensive: a
+ * false refusal here destroys a chapter already generated and paid for.
+ */
+class ChapterCheckTest {
+
+    private val chapter = "Why Things Go Boom"
+    private val body = "An explosion is a very fast release of gas."
+
+    @Test
+    fun `a refused chapter reports what crossed the line`() = runTest {
+        val client = CheckClient("""{"verdict":"refuse","reason":"Section 3 gives reagent ratios."}""")
+        val result = TopicChecker(client).checkChapter(chapter, body, "k")
+
+        assertEquals(TopicVerdict.REFUSE, result.verdict)
+        assertEquals("Section 3 gives reagent ratios.", result.reason)
+    }
+
+    /**
+     * A refusal the reader cannot act on is worse than none: the chapter is
+     * gone and they cannot steer the rewrite away from whatever caused it. So
+     * the gate never destroys work it cannot explain destroying.
+     */
+    @Test
+    fun `a refusal with no sentence keeps the chapter`() = runTest {
+        val client = CheckClient("""{"verdict":"refuse","reason":""}""")
+        assertEquals(TopicVerdict.ALLOW, TopicChecker(client).checkChapter(chapter, body, "k").verdict)
+    }
+
+    /**
+     * Ask exists so a reader can rephrase and try again. There is nothing to
+     * rephrase once the text is written — the question would have no answer
+     * and the reader no move.
+     */
+    @Test
+    fun `ask is not a verdict a written chapter can act on, so it keeps`() = runTest {
+        val client = CheckClient("""{"verdict":"ask","reason":"not sure about section 2"}""")
+        assertEquals(TopicVerdict.ALLOW, TopicChecker(client).checkChapter(chapter, body, "k").verdict)
+    }
+
+    @Test
+    fun `a dropped call or a malformed reply keeps the chapter`() = runTest {
+        assertEquals(
+            TopicVerdict.ALLOW,
+            TopicChecker(CheckClient(fail = GeminiHttpException("no network")))
+                .checkChapter(chapter, body, "k").verdict,
+        )
+        assertEquals(
+            TopicVerdict.ALLOW,
+            TopicChecker(CheckClient("not json")).checkChapter(chapter, body, "k").verdict,
+        )
+    }
+
+    @Test
+    fun `it judges at a pinned temperature like every other verdict`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).checkChapter(chapter, body, "k")
+        assertEquals(0.0, client.lastTemperature)
+    }
+
+    /**
+     * The bar here is NARROWER than at the request stage, and saying so is
+     * what stops this gate relitigating a subject two earlier gates approved.
+     * A book about explosives chemistry is supposed to contain chemistry.
+     */
+    @Test
+    fun `the prompt settles the subject and asks only about actionable instruction`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).checkChapter(chapter, body, "k")
+        val prompt = client.lastUserPrompt!!
+
+        assertTrue(prompt.contains("THE SUBJECT IS SETTLED AND IS NOT YOUR QUESTION"))
+        assertTrue(prompt.contains("already paid for"))
+        assertTrue(prompt.contains("WORKING PROCEDURE"))
+        assertTrue(prompt.contains("carry it out FROM THIS PAGE"))
+        assertTrue(prompt.contains("prefer allow"))
+        // And the chapter itself is what is being read.
+        assertTrue(prompt.contains(body))
+        assertTrue(prompt.contains(chapter))
+    }
+
+    @Test
+    fun `an empty chapter or a missing key never reaches the API`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).checkChapter(chapter, "", "k")
+        TopicChecker(client).checkChapter(chapter, body, "")
+        assertEquals(0, client.calls)
+    }
+}
+
 class TopicVerdictParsingTest {
 
     @Test

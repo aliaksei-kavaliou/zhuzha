@@ -199,3 +199,54 @@ internal val TOPIC_CHECK_SCHEMA: JsonObject = buildJsonObject {
         put("reason", typed("STRING"))
     })
 }
+
+/**
+ * Screening a chapter that has just been written, before it is saved.
+ *
+ * A DIFFERENT JOB from screening a request, and the difference is the whole
+ * design. By the time this runs, the request and the outline have both been
+ * screened and allowed, so the SUBJECT is settled and is not up for
+ * relitigation — a book about the chemistry of explosives is supposed to
+ * contain chemistry. What is being judged is narrower: whether this
+ * particular text crossed from explaining a thing into being a working
+ * procedure for doing it.
+ *
+ * The bar is deliberately higher than at the request stage, because the cost
+ * of being wrong is higher. A false refusal here destroys a chapter that has
+ * already been generated and paid for, where a false refusal at the door
+ * costs a rephrase. So this asks for one specific thing — actionable
+ * instruction — and is told in as many words that the subject being dangerous
+ * is not a reason.
+ */
+internal fun buildChapterCheckPrompt(chapterTitle: String, markdown: String): String = buildString {
+    appendLine("A chapter of a study book has just been written. Decide whether to keep it.")
+    appendLine()
+    appendLine("The book's subject was already screened and approved before this was written, so")
+    appendLine("THE SUBJECT IS SETTLED AND IS NOT YOUR QUESTION. A chapter about the chemistry of")
+    appendLine("explosives is supposed to contain chemistry; one about how attacks work is")
+    appendLine("supposed to describe attacks; one about poisons is supposed to discuss poisons.")
+    appendLine("None of that is a reason to refuse, and refusing for it would destroy a chapter")
+    appendLine("the reader has already paid for.")
+    appendLine()
+    appendLine("YOUR QUESTION IS NARROWER: has this text crossed from EXPLAINING a thing into")
+    appendLine("being a WORKING PROCEDURE for doing it?")
+    appendLine()
+    appendLine("refuse only if the chapter contains instructions someone could actually follow to")
+    appendLine("cause serious harm or commit a serious crime — a synthesis route, quantities or")
+    appendLine("ratios of reagents, an assembly sequence, a step-by-step method, a specific")
+    appendLine("working technique for hurting a person or getting into somewhere. The test is")
+    appendLine("whether a reader could carry it out FROM THIS PAGE.")
+    appendLine()
+    appendLine("allow everything else, and prefer allow. Mechanism, principle, history, why a")
+    appendLine("thing works, what makes it dangerous, how to recognise it, how to defend against")
+    appendLine("it, what the law says, case studies and consequences — all of that is teaching,")
+    appendLine("and it is what the book is for.")
+    appendLine()
+    appendLine("CHAPTER: ${chapterTitle.trim()}")
+    appendLine()
+    appendLine(markdown.trim().take(30000))
+    appendLine()
+    appendLine("One sentence for the reader. On allow it is never shown — write \"ok\". On refuse,")
+    appendLine("name what in the chapter crossed the line, so they can rewrite with it steered")
+    appendLine("away rather than guessing.")
+}

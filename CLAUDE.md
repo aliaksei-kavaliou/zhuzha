@@ -235,12 +235,22 @@ yet" note that used to live here was two months stale.
       report widened the principle — robbery is a serious crime that is not primarily about
       injuring someone, so it sat outside "harm to people" as written — and added a SECOND
       GATE on the outline, which is the model's own reading of the request and far more
-      concrete than the sentence that produced it. Still open: chapters are ungated.
+      concrete than the sentence that produced it. A THIRD GATE screens the generated
+      chapter before it is saved — the only one that reads actual text — with a deliberately
+      narrower question (the subject is already settled; has this text become a working
+      procedure?), sitting ABOVE the rewrite teardown so a refusal leaves the book untouched.
+      Verified both ways on device: a real explosives-chemistry chapter compiles and saves; a
+      forced refusal shows its reason and leaves the chapter `pending` with nothing on disk.
       design.md §19.
 - [x] **Export says "Done" rather than closing itself (2026-09-24)** — the result line is the
       only evidence the save happened, and popping on success is the "generate did nothing"
       defect in another costume. Exporting twice (clean copy to send, annotated copy to keep)
       is also a real errand worth one toggle rather than a re-navigation.
+
+- [ ] **`CompilePrompt` does not scroll either** — found 2026-09-24 while testing the chapter
+      gate. It is a `Column(fillMaxSize())`, so on a 320x640 emulator a chapter with several
+      objectives pushes "Compile chapter" off-screen and unreachable. Same class as the menu
+      below, invisible on the Boox. Worked around during testing with `adb shell wm density 110`.
 
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,

@@ -78,6 +78,61 @@ class TopicChecker(
         return settle(TopicCheckResult(verdictOf(reply.verdict), reply.reason.trim()))
     }
 
+    /**
+     * Screens a freshly written chapter before it is saved — the last line,
+     * and the only gate that sees actual text rather than an intention.
+     *
+     * The two gates in front of this one both run before any chapter exists,
+     * so a book whose topic and outline both read as benign reaches the
+     * chapter model unscreened; and that model will write instructions when
+     * asked, which is how this whole area came to be looked at.
+     *
+     * ASK IS TREATED AS ALLOW here. Ask exists so a reader can rephrase and
+     * try again, and there is nothing to rephrase once the text is written —
+     * the question would have no answer and the reader no move. A chapter is
+     * kept or it is not.
+     */
+    suspend fun checkChapter(
+        chapterTitle: String,
+        markdown: String,
+        apiKey: String,
+    ): TopicCheckResult {
+        if (markdown.isBlank() || apiKey.isBlank()) return ALLOWED
+
+        val raw = try {
+            client.generateJson(
+                model = model,
+                systemInstruction = TOPIC_CHECK_SYSTEM,
+                userPrompt = buildChapterCheckPrompt(chapterTitle, markdown),
+                responseSchema = TOPIC_CHECK_SCHEMA,
+                apiKey = apiKey,
+                temperature = JUDGING_TEMPERATURE,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            System.err.println("chapter check failed, keeping: ${e::class.simpleName}: ${e.message}")
+            return ALLOWED
+        }
+
+        val reply = try {
+            json.decodeFromString(TopicCheckReply.serializer(), raw)
+        } catch (e: SerializationException) {
+            System.err.println("chapter check reply was malformed, keeping: ${e.message}")
+            return ALLOWED
+        }
+
+        // A refusal with nothing to act on is worse than none: the chapter is
+        // gone and the reader cannot steer the rewrite. Kept instead, so the
+        // gate never destroys work it cannot explain destroying.
+        val reason = reply.reason.trim()
+        return if (verdictOf(reply.verdict) == TopicVerdict.REFUSE && reason.isNotBlank()) {
+            TopicCheckResult(TopicVerdict.REFUSE, reason)
+        } else {
+            ALLOWED
+        }
+    }
+
     private companion object {
         val ALLOWED = TopicCheckResult(TopicVerdict.ALLOW, "")
     }

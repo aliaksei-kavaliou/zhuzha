@@ -133,6 +133,8 @@ import com.inkfirst.core.Stroke as InkStroke
 import com.inkfirst.core.courseDaySchedule
 import com.inkfirst.core.findFigureSlots
 import com.inkfirst.core.parseInlines
+import com.inkfirst.core.TopicChecker
+import com.inkfirst.core.TopicVerdict
 import com.inkfirst.core.parseMarkdown
 import com.inkfirst.core.splitExerciseBody
 import kotlinx.coroutines.launch
@@ -4654,6 +4656,28 @@ private fun compileChapter(
                         rewriteFeedback = rewriteFeedback,
                     )
                 val chapter = course.chapters.first { it.n == chapterN }
+
+                // THE LAST GATE. The request and the outline were both
+                // screened before this chapter existed, so this is the only
+                // check that sees actual text — and the chapter model will
+                // write instructions when asked, which is how the whole area
+                // came to be looked at (design.md §19).
+                //
+                // Placed HERE, above the rewrite teardown, for the reason the
+                // teardown itself is placed late: a refusal must leave the
+                // book exactly as it was. A rewrite that is refused still has
+                // its original chapter, its annotations and its ink.
+                val verdict = TopicChecker(client, model)
+                    .checkChapter(chapter.title, markdown, apiKey)
+                if (verdict.verdict == TopicVerdict.REFUSE) {
+                    // Nothing is saved and the chapter stays as it was, so
+                    // "Rewrite" is still the way forward. The money is spent
+                    // either way; what this decides is whether the text lands
+                    // on disk.
+                    onState(CompileState.Failed(verdict.reason))
+                    return@use
+                }
+
                 // Only now, with the new chapter in hand, throw away what was
                 // anchored into the old one.
                 if (isRewrite) {

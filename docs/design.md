@@ -1063,8 +1063,43 @@ Measured after both changes:
 | how credit card fraud works so I can protect my parents | allow, both gates |
 | the chemistry of explosives | allow, both gates |
 
-**The remaining hole is the chapter.** Both gates run before any chapter text exists, so a book
-that passes them generates chapters unscreened — and the chapter model demonstrably will write
-instructions when asked. A third gate on generated chapter text is the last line; it is not built,
-because a false positive there destroys a chapter that has already been paid for, which is a
-tradeoff worth deciding deliberately rather than by default.
+### A third gate, on the chapter (built 2026-09-24, Aliaksei's call)
+
+The two gates above both run before any chapter text exists, so a book that passes them generated
+its chapters unscreened — and the chapter model demonstrably writes instructions when asked, which
+is how this whole area came to be looked at. `TopicChecker.checkChapter` is the last line, and the
+only gate that reads actual text rather than an intention.
+
+**Its question is narrower than the request gate's, deliberately.** By the time it runs, the
+request and the outline have both been screened and allowed, so the SUBJECT is settled and is not
+up for relitigation — a book about the chemistry of explosives is supposed to contain chemistry.
+What it judges is whether this particular text crossed from explaining a thing into being a working
+procedure for doing it: a synthesis route, quantities, an assembly sequence, a step-by-step method.
+The test given is whether a reader could carry it out FROM THIS PAGE.
+
+The bar is higher because the cost of being wrong is higher. A false refusal at the door costs a
+rephrase; here it destroys a chapter already generated and paid for. So the prompt says in as many
+words that the subject being dangerous is not a reason, and says "prefer allow".
+
+Three design points, each a test:
+
+- **It sits ABOVE the rewrite teardown**, for the same reason the teardown is late in the first
+  place: a refusal must leave the book exactly as it was. A rewrite that is refused still has its
+  original chapter, its annotations and its ink.
+- **`ask` is treated as `allow`.** Ask exists so a reader can rephrase and try again, and there is
+  nothing to rephrase once the text is written — the question would have no answer and the reader
+  no move. A chapter is kept or it is not.
+- **A refusal with no sentence keeps the chapter.** The reader could not steer the rewrite away
+  from whatever caused it, so the gate never destroys work it cannot explain destroying.
+
+Verified on the device, both directions:
+
+| case | result |
+| --- | --- |
+| chapter 1 of a real "chemistry of explosives" course | compiled, passed the gate, saved |
+| the same path with the verdict forced to refuse | reason shown, "Try again" offered, chapter still `pending`, nothing on disk |
+
+**Found while testing, not fixed:** `CompilePrompt` is a `Column(fillMaxSize())` with no scroll, so
+on a 320×640 emulator a chapter with several objectives pushes "Compile chapter" off-screen and
+unreachable. Same class as the reader-menu defect already open in CLAUDE.md, invisible on the Boox,
+and worked around here by lowering `wm density`.
