@@ -247,10 +247,17 @@ yet" note that used to live here was two months stale.
       defect in another costume. Exporting twice (clean copy to send, annotated copy to keep)
       is also a real errand worth one toggle rather than a re-navigation.
 
-- [ ] **`CompilePrompt` does not scroll either** — found 2026-09-24 while testing the chapter
-      gate. It is a `Column(fillMaxSize())`, so on a 320x640 emulator a chapter with several
-      objectives pushes "Compile chapter" off-screen and unreachable. Same class as the menu
-      below, invisible on the Boox. Worked around during testing with `adb shell wm density 110`.
+- [x] **`CompilePrompt` scrolls its front matter (2026-09-24)** — found while testing the
+      chapter gate: it was a `Column(fillMaxSize())`, so on a 320x640 emulator a chapter with
+      several objectives pushed "Compile chapter" off-screen and the chapter could not be
+      written at all. I first filed it as the same class as the menu below and deferred it;
+      that was wrong — `isPending` does `return@Column` before the ink overlay and TapRouting
+      exist, so there was no gesture-path blocker, only a swipe detector on the same Column.
+      Fixed the way `OutlineReviewPage` already solves this: content scrolls, action is pinned.
+      The detector now ignores a drag a child consumed, or scrolling the objectives also turned
+      the chapter. **Vertical-swipe navigation is gone from this screen** as a result — a
+      vertical drag is the scroll now; edge taps, horizontal swipes and the side buttons all
+      still navigate, and each was checked on device rather than assumed.
 
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,

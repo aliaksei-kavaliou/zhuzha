@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -4066,9 +4068,16 @@ private fun CompilePrompt(
     // attachment, and an unhandled throw here takes the whole screen down.
     LaunchedEffect(chapter.slug) { runCatching { keyFocus.requestFocus() } }
 
-    // Swipe support on the compile prompt: horizontal or vertical swipe still
-    // lets you nav to adjacent chapters. Without this, hitting a pending
-    // chapter via vertical-swipe-forward is a dead end until the user compiles.
+    // Swipe support on the compile prompt, so a pending chapter is not a dead
+    // end until it is compiled.
+    //
+    // A VERTICAL swipe used to navigate here too. It no longer does: the front
+    // matter scrolls now, and a vertical drag inside it is the scroll. That is
+    // the conventional reading of a drag on a scrolling page, and one rule
+    // beats "sometimes scrolls, sometimes turns the chapter" — but it IS a
+    // capability this screen used to have, so the ways out were checked rather
+    // than assumed. Edge taps navigate, horizontal swipes navigate, the side
+    // buttons navigate, and the footer says so in words.
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -4098,13 +4107,19 @@ private fun CompilePrompt(
                     var dx = 0f
                     var dy = 0f
                     var isDrag = false
+                    // Set when a child consumed part of the DRAG — in practice
+                    // the scrolling content below. Without it a swipe that
+                    // scrolled the objectives also turned the chapter, which
+                    // is the same "two things owned one contact" mistake the
+                    // reader's own tap ladder exists to prevent.
+                    var childTookIt = false
                     while (true) {
                         val ev = awaitPointerEvent()
                         val ch = ev.changes.firstOrNull() ?: break
                         if (!ch.pressed) {
                             // A child (Compile / Back / Try again) already took
                             // this tap — don't navigate out from under it.
-                            if (ch.isConsumed) break
+                            if (ch.isConsumed || childTookIt) break
                             if (isDrag) {
                                 if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
                                     if (dx <= -hDrag) onOpenNextChapter?.invoke()
@@ -4138,6 +4153,7 @@ private fun CompilePrompt(
                             }
                             break
                         }
+                        if (ch.isConsumed) childTookIt = true
                         val p = ch.positionChange()
                         dx += p.x
                         dy += p.y
@@ -4171,6 +4187,19 @@ private fun CompilePrompt(
         )
     }
 
+    // The front matter scrolls; the action below never does.
+    //
+    // It used to be one column that sized to its content, so a chapter with
+    // several objectives pushed "Compile chapter" off the bottom of a short
+    // screen and the chapter could not be written at all. Invisible on the
+    // Boox, which is tall enough, and found on a 320x640 emulator — the same
+    // shape of defect as the New course form, and fixed the same way it was:
+    // the button must never be the thing that scrolled away.
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .verticalScroll(rememberScrollState()),
+    ) {
     Spacer(Modifier.height(20.dp))
     Text(
         text = buildString {
@@ -4221,6 +4250,8 @@ private fun CompilePrompt(
             }
         }
     }
+
+    }  // close the scrolling front matter
 
     Spacer(Modifier.height(28.dp))
 
@@ -4283,7 +4314,9 @@ private fun CompilePrompt(
     // Discoverability: the reader teaches "tap the edges to turn", and this
     // screen honours that, but with no page footer there was nothing saying so.
     if (onOpenPrevChapter != null || onOpenNextChapter != null) {
-        Spacer(Modifier.weight(1f))
+        // No weight spacer any more: the scrolling region above takes the
+        // slack, and a second weight in the same column would fight it.
+        Spacer(Modifier.height(16.dp))
         Text(
             text = buildString {
                 if (onOpenPrevChapter != null) append("← tap for previous chapter")
