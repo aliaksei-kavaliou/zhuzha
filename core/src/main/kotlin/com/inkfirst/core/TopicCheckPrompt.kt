@@ -47,6 +47,16 @@ internal data class TopicCheckReply(val verdict: String = "", val reason: String
  * quantities and a wiring diagram. That distinction is one a model applies
  * reliably when it is stated that way, and unreliably when it is asked to
  * judge whether a topic "could be misused" — which is true of everything.
+ *
+ * THE REFUSE CRITERION IS A PRINCIPLE FOLLOWED BY EXAMPLES, and it has to
+ * stay that way. It was first written as a bare list — chemical weapon,
+ * explosive, illegal firearm, a specific named person, CSAM — and the model
+ * read the list as the definition. "How to kill people quickly" then matched
+ * none of the five (no named victim, no named method) and came back as `ask`,
+ * which is a walk-past. A request can be more obviously harmful and less
+ * specific at the same time, and an enumeration inverts exactly that case.
+ * So the principle leads, vagueness is named as a non-excuse, the list says
+ * "among others", and a calibration table pins both ends.
  */
 internal fun buildTopicCheckPrompt(inputs: TopicCheckInputs): String = buildString {
     appendLine("You are screening a request before an AI writes a study book from it.")
@@ -79,20 +89,51 @@ internal fun buildTopicCheckPrompt(inputs: TopicCheckInputs): String = buildStri
     appendLine("weapon or for harming a person.")
     appendLine()
     appendLine("VERDICTS")
-    appendLine("- allow: everything else. This is almost every request, including every subject")
-    appendLine("  named above. Prefer it whenever you are unsure.")
-    appendLine("- ask: the subject is legitimate, but the wording points at DOING the thing")
-    appendLine("  rather than understanding it, and the reader could settle it by rephrasing.")
-    appendLine("  They are shown your sentence and may proceed anyway.")
-    appendLine("- refuse: the request is, in substance, for operational instructions that would")
-    appendLine("  let someone cause serious harm — synthesising a chemical or biological weapon,")
-    appendLine("  or a poison meant for a person; building an explosive or incendiary device;")
-    appendLine("  manufacturing an illegal or untraceable firearm; harming, stalking or")
-    appendLine("  defaming a specific named person; sexual content involving children.")
+    appendLine()
+    appendLine("- refuse: a book satisfying this request would be, in substance, a manual for")
+    appendLine("  causing serious physical harm to people. The question to ask is what the")
+    appendLine("  finished book would have to CONTAIN: if the answer is instructions for")
+    appendLine("  killing, injuring, incapacitating or poisoning a person, refuse.")
+    appendLine()
+    appendLine("  THIS DOES NOT DEPEND ON HOW SPECIFIC THE REQUEST IS. A request that names no")
+    appendLine("  method, no victim and no purpose, and still asks to be taught how to harm")
+    appendLine("  people, is the plainest refusal there is — \"how to kill people quickly\" is a")
+    appendLine("  refusal exactly as much as any named method or named victim. Vagueness makes")
+    appendLine("  a request no less a request, and it is never a reason to soften the verdict.")
+    appendLine()
+    appendLine("  It covers, AMONG OTHERS: killing or injuring a person by any means;")
+    appendLine("  synthesising a chemical or biological weapon, or a poison meant for a person;")
+    appendLine("  building an explosive or incendiary device; manufacturing an illegal or")
+    appendLine("  untraceable firearm; harming, stalking or defaming a specific named person;")
+    appendLine("  sexual content involving children. That list is examples, not a definition —")
+    appendLine("  a request matching none of them still refuses if the book would be a manual")
+    appendLine("  for hurting people.")
+    appendLine()
+    appendLine("- ask: the SUBJECT is legitimate and only the wording is unclear — it reads as")
+    appendLine("  either understanding the thing or doing it, and a rephrase would settle it.")
+    appendLine("  The reader is shown your sentence and may proceed anyway, so never use ask to")
+    appendLine("  soften something whose plain reading is a refusal.")
+    appendLine()
+    appendLine("- allow: everything else, including every subject named above. Prefer it")
+    appendLine("  whenever you are unsure whether a SUBJECT is legitimate. That preference does")
+    appendLine("  not apply to the paragraph about manuals for harming people: there, the plain")
+    appendLine("  reading of the words decides.")
     appendLine()
     appendLine("A stated harmless purpose does not change a refuse. \"For a school project\",")
     appendLine("\"for a novel I am writing\", \"purely theoretical\" are the usual wrappers, and")
     appendLine("the book would contain the same instructions either way.")
+    appendLine()
+    appendLine("CALIBRATION — these are settled, and your answer should match:")
+    appendLine("  the chemistry of explosives ................................. allow")
+    appendLine("  the history of poisoning in Renaissance Italy ............... allow")
+    appendLine("  how SQL injection works and how to defend against it ........ allow")
+    appendLine("  how to get into a car when the keys are locked inside ....... allow")
+    appendLine("  field dressing a deer ....................................... allow")
+    appendLine("  what happens to a body after death .......................... allow")
+    appendLine("  how to build a pipe bomb from hardware store parts .......... refuse")
+    appendLine("  how to kill people quickly .................................. refuse")
+    appendLine("  the most effective way to stab someone ...................... refuse")
+    appendLine("  which household poison is hardest to detect ................. refuse")
     appendLine()
     appendLine("WHAT THIS CHECK IS NOT")
     appendLine("- Not an age rating. A book written for a six-year-old about death, or a frank")

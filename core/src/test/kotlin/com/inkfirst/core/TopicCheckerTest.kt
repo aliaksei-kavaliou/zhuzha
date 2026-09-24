@@ -147,8 +147,51 @@ class TopicCheckerTest {
             "chemistry of explosives", "toxicology", "history of terrorism",
             "lock-picking", "offensive computer security", "harm reduction",
         ).forEach { assertTrue(prompt.contains(it), "prompt does not protect: $it") }
-        assertTrue(prompt.contains("Prefer it whenever you are unsure"))
+        assertTrue(prompt.contains("whenever you are unsure whether a SUBJECT is legitimate"))
         assertTrue(prompt.contains("worse failure than"))
+    }
+
+    /**
+     * The bug this replaces, reported 2026-09-24: "how to kill people quickly"
+     * came back as `ask`, which is a walk-past. The refuse criterion was a
+     * bare list of five categories and the model read it as the definition —
+     * no named victim, no named method, so it matched none of them. A request
+     * can be more obviously harmful and LESS specific at the same time, and an
+     * enumeration inverts exactly that case.
+     */
+    @Test
+    fun `the refuse criterion leads with a principle and says vagueness is no excuse`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).check(SOURDOUGH, "k")
+        val prompt = client.lastUserPrompt!!
+
+        assertTrue(prompt.contains("a manual for"))
+        assertTrue(prompt.contains("THIS DOES NOT DEPEND ON HOW SPECIFIC THE REQUEST IS"))
+        assertTrue(prompt.contains("Vagueness makes"))
+        // The list must read as examples, or it becomes the definition again.
+        assertTrue(prompt.contains("AMONG OTHERS"))
+        assertTrue(prompt.contains("examples, not a definition"))
+        // And ask must not be available as a softener for a plain refusal.
+        assertTrue(prompt.contains("never use ask to"))
+    }
+
+    /**
+     * Both ends pinned by worked examples. Concrete anchors calibrate a model
+     * far better than abstract rules, and the allow rows are load-bearing:
+     * tightening the refuse side is exactly when false refusals appear.
+     */
+    @Test
+    fun `the calibration table pins both ends, including the reported case`() = runTest {
+        val client = CheckClient()
+        TopicChecker(client).check(SOURDOUGH, "k")
+        val prompt = client.lastUserPrompt!!
+        val table = prompt.substringAfter("CALIBRATION")
+
+        assertTrue(table.contains("how to kill people quickly"))
+        listOf("the chemistry of explosives", "field dressing a deer", "what happens to a body")
+            .forEach { assertTrue(table.contains(it), "no allow anchor for: $it") }
+        assertTrue(table.lines().count { it.trim().endsWith("allow") } >= 5)
+        assertTrue(table.lines().count { it.trim().endsWith("refuse") } >= 4)
     }
 
     @Test
@@ -157,7 +200,7 @@ class TopicCheckerTest {
         TopicChecker(client).check(SOURDOUGH, "k")
         val prompt = client.lastUserPrompt!!
 
-        assertTrue(prompt.contains("operational instructions"))
+        assertTrue(prompt.contains("working set of instructions"))
         assertTrue(prompt.contains("Would a well-stocked public library carry a book on this?"))
         // The usual jailbreak wrapper is named, so a claimed purpose cannot buy a pass.
         assertTrue(prompt.contains("A stated harmless purpose does not change a refuse"))

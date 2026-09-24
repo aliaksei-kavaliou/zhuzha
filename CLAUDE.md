@@ -210,18 +210,25 @@ yet" note that used to live here was two months stale.
       call per app open. Found while checking a Russian EPUB.
 
 - [x] **Requests are screened before anything is written (2026-09-24)** — one cheap call at
-      course creation, ahead of the outline. Not mainly protection: the chapter model refuses
-      the genuinely harmful anyway, so what this buys is the FAILURE MODE — a sentence at the
-      moment you typed it, rather than a broken chapter three chapters and several pictures in.
+      course creation, ahead of the outline. It IS the protection, not just a nicer failure
+      mode: the first write-up claimed the chapter model refuses the genuinely harmful anyway,
+      and Aliaksei disproved that the same day — walking past the gate produced chapters with
+      real instructions. It also buys the failure mode (a sentence when you typed it, rather
+      than a broken chapter three chapters and several pictures in).
       The line is OPERATIONAL INSTRUCTIONS, never subjects, and the prompt names the legitimate
       ones (toxicology, military history, lock-picking, offensive security, harm reduction…)
       because a false refusal is the failure nothing downstream catches. It is explicitly not
       an age rating, a taste filter, a quality check or a legality check. Three verdicts:
       refuse stops on the form, ask gets a page with "Write it anyway", allow is everything
       else. It FAILS OPEN on any error — a gate that blocks on a dropped connection gets
-      resented and routed around. Probed live: explosives chemistry, SQL injection and
-      car-door opening all allowed; pipe bomb and home chloroform refused with readable
-      sentences. design.md §19.
+      resented and routed around. **The refuse criterion must stay a PRINCIPLE followed by
+      examples**: written first as a bare list of five categories, the model read the list as
+      the definition, and "how to kill people quickly" matched none of them (no named victim,
+      no named method) so it came back as a walk-past `ask`. A request can be more obviously
+      harmful and LESS specific at once, and an enumeration inverts exactly that case. Probed
+      live after the rewrite: "how to kill people quickly" and an untabled "undetectable ways
+      to hurt someone" both refuse; explosives chemistry, SQL injection, car-door opening and
+      self-defence all still allow. design.md §19.
 - [x] **Export says "Done" rather than closing itself (2026-09-24)** — the result line is the
       only evidence the save happened, and popping on success is the "generate did nothing"
       defect in another costume. Exporting twice (clean copy to send, annotated copy to keep)

@@ -9,16 +9,23 @@ import kotlinx.serialization.json.Json
  * One cheap text call, at course creation, in front of the outline — not per
  * chapter, because chapters descend from an outline that already passed.
  *
- * WHAT THIS IS ACTUALLY FOR is worth being honest about, because it is not
- * mainly protection. A request for a nerve-agent synthesis is refused by the
- * model that would write the chapters, whether or not this exists. What this
- * buys is the FAILURE MODE: without it, a refusal surfaces as a broken or
- * evasive chapter several chapters in, after the outline and the pictures
- * have been paid for. With it, the reader gets a sentence at the moment they
- * typed the thing. The second reason is publication — the moment this app is
- * installed by someone who is not Aliaksei, "the app declines to write that"
- * has to be a property of the app rather than of whichever model version is
- * behind the key.
+ * WHAT THIS IS FOR, corrected 2026-09-24. This was first written down as
+ * "not mainly protection" — the reasoning being that the model writing the
+ * chapters refuses the genuinely harmful anyway, so all this bought was a
+ * better failure mode. THAT WAS WRONG, and Aliaksei disproved it the same
+ * day: "how to kill people quickly" came back from this check as `ask`, and
+ * walking past it produced an outline and chapters that carried real
+ * instructions. The downstream refusal cannot be relied on. For a request
+ * like that one, this check is the only thing between the request and the
+ * book.
+ *
+ * It still buys the failure mode as well — a refusal that surfaces here is a
+ * sentence at the moment you typed the thing, rather than a broken chapter
+ * several chapters and several pictures in — and it still buys "the app
+ * declines to write that" as a property of the app rather than of whichever
+ * model version happens to be behind the key. But protection is now the
+ * first reason, not the third, which is why the verdict boundary in
+ * [buildTopicCheckPrompt] is worth as much care as it has.
  *
  * IT FAILS OPEN. A network blip, a malformed reply, a timeout — all of them
  * return [TopicVerdict.ALLOW] and let the book proceed. Nothing about that
