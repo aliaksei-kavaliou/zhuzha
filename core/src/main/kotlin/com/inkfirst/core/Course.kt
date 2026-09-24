@@ -18,6 +18,39 @@ data class Course(
     val expectations: String = "",
     @SerialName("daily_minutes") val dailyMinutes: Int,
     val style: String,
+    /**
+     * What the reader typed when they chose [StylePresets.CUSTOM_KEY] —
+     * "written as a fairy tale", "a friendly no-jargon beginner's guide".
+     * Verbatim, and never sent to the model.
+     *
+     * It is kept because [stylePrompt] is an expansion of it, and an
+     * expansion you cannot compare against the wish that produced it is
+     * unreviewable: the only way to see that the model heard "fairy tale" as
+     * "whimsical" is to have both on the page. Blank for the built-in styles,
+     * which were chosen rather than described.
+     */
+    @SerialName("style_request") val styleRequest: String = "",
+    /**
+     * The system instruction a custom style actually sends — [styleRequest]
+     * expanded once, at creation, and stored.
+     *
+     * Written once rather than per call for two reasons. It is inspectable
+     * and hand-editable, which is the whole local-first bet; and a one-line
+     * wish re-interpreted freshly by every chapter call drifts, so chapter 12
+     * would not be in the same voice as chapter 1. Blank for the built-in
+     * styles, whose prompt lives in [StylePresets].
+     */
+    @SerialName("style_prompt") val stylePrompt: String = "",
+    /**
+     * One sentence describing the character or mark a custom style wants on
+     * its blocks, written in the same pass as [stylePrompt].
+     *
+     * Badges branch on the style key (see BadgePrompt), so without this a
+     * custom style falls to the friendly-cartoon arm — which is right for a
+     * fairy tale and wrong for anything sober. Blank means "use the arm the
+     * key picks", which is exactly what every pre-existing course wants.
+     */
+    @SerialName("style_mascot") val styleMascot: String = "",
     val model: String,
     // Human-readable language name — "English", "Belarusian", "Español", etc.
     // Threaded into every generation prompt (outline, chapters, Q&A) as a
@@ -217,6 +250,9 @@ fun CourseOutline.toCourse(
     expectations: String,
     dailyMinutes: Int,
     style: String,
+    styleRequest: String = "",
+    stylePrompt: String = "",
+    styleMascot: String = "",
     model: String,
     language: String,
     units: String = DEFAULT_MEASUREMENT_SYSTEM,
@@ -230,6 +266,9 @@ fun CourseOutline.toCourse(
     expectations = expectations,
     dailyMinutes = dailyMinutes,
     style = style,
+    styleRequest = styleRequest,
+    stylePrompt = stylePrompt,
+    styleMascot = styleMascot,
     model = model,
     language = language,
     units = units,

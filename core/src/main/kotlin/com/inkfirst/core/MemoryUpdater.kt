@@ -26,7 +26,7 @@ class MemoryUpdater(
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
         require(chapterMarkdown.isNotBlank()) { "chapterMarkdown must not be blank" }
 
-        val style = StylePresets.byKey(course.style) ?: StylePresets.DEFAULT
+        val style = StylePresets.forCourse(course)
         val prompt = buildMemoryUpdatePrompt(chapter, chapterMarkdown, course.expectations)
 
         return client.generateText(

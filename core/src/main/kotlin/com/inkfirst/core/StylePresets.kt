@@ -4,8 +4,6 @@ package com.inkfirst.core
  * Teaching-style system prompts. See docs/design.md §3.
  * The [key] is what gets stored in course.json; the [systemPrompt] is what
  * the generator injects for outline/chapter calls.
- *
- * Prompts here are stubs — expand them once we're actually calling Gemini.
  */
 data class StylePreset(
     val key: String,
@@ -45,9 +43,50 @@ object StylePresets {
         """.trimIndent(),
     )
 
+    /** What a course.json says when the style was described rather than chosen. */
+    const val CUSTOM_KEY: String = "custom"
+
+    /**
+     * The picker row for "describe it yourself". It carries no prompt of its
+     * own — a custom style has none until one is written for it, and the
+     * written one lives in the course, not here. See [StyleBriefGenerator].
+     *
+     * This is deliberately NOT in [ALL], so [byKey] can never return it: a
+     * preset with an empty systemPrompt reaching a generation call would
+     * silently strip the system instruction from every chapter of the book,
+     * and nothing downstream would look wrong enough to notice.
+     */
+    val CUSTOM = StylePreset(
+        key = CUSTOM_KEY,
+        displayName = "Custom (describe it yourself)",
+        systemPrompt = "",
+    )
+
+    /** The built-in presets — the ones that carry their own prompt. */
     val ALL: List<StylePreset> = listOf(HEADFIRST_INSPIRED, TEXTBOOK, PRACTICAL)
+
+    /** What the course-creation picker offers. [ALL] plus the custom row. */
+    val CHOICES: List<StylePreset> = ALL + CUSTOM
 
     val DEFAULT: StylePreset = HEADFIRST_INSPIRED
 
     fun byKey(key: String): StylePreset? = ALL.firstOrNull { it.key == key }
+
+    /**
+     * The style a given book is written in — the one call every generator
+     * should make.
+     *
+     * Falls back to [DEFAULT] three different ways, and all three are the
+     * same decision: a book must stay writable. An unknown key (a hand-edited
+     * file, a preset we retired), or a custom style whose brief went missing,
+     * gets the house style rather than an exception or an empty system
+     * instruction.
+     */
+    fun forCourse(course: Course): StylePreset {
+        byKey(course.style)?.let { return it }
+        if (course.style == CUSTOM_KEY && course.stylePrompt.isNotBlank()) {
+            return CUSTOM.copy(systemPrompt = course.stylePrompt.trim())
+        }
+        return DEFAULT
+    }
 }

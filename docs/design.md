@@ -43,7 +43,10 @@ Figures are the opposite — the fence carries `src=`.
   "topic_prompt": "the user's original ask, verbatim",
   "prior_knowledge": "user's self-description",
   "daily_minutes": 45,
-  "style": "headfirst-inspired",
+  "style": "headfirst-inspired | textbook | practical | custom",
+  "style_request": "only when style is custom — what the reader typed, verbatim",
+  "style_prompt": "only when style is custom — the instruction that wish was expanded into",
+  "style_mascot": "only when style is custom — one line setting the badge register",
   "model": "gemini-flash-<current>",
   "language": "English",
   "units": "metric",
@@ -256,7 +259,52 @@ Style system-prompts live in `:core` as named presets — prompt changes are cod
 - **textbook** — structured, formal, definition → example → practice.
 - **practical** — minimal theory, code/hands-on heavy, project-oriented.
 
-The `style` field in `course.json` selects the preset; the generation pipeline reads it and injects the matching system prompt. New presets can be added as constants without format changes.
+The `style` field in `course.json` selects the preset; the generation pipeline reads it and
+injects the matching system prompt — through `StylePresets.forCourse`, which is the one call
+every generator makes. New presets can be added as constants without format changes.
+
+### Custom styles
+
+The fourth choice is `custom`: the reader describes the style instead of picking one — "told as
+a fairy tale", "a friendly guide with no jargon". Three fields carry it, and each one exists
+because something downstream needs a different thing:
+
+- `style_request` — the wish, verbatim, never sent to the model. Kept because `style_prompt` is
+  an expansion of it, and an expansion you cannot compare against its source is unreviewable.
+- `style_prompt` — the actual system instruction, written ONCE by `StyleBriefGenerator` at
+  creation time and stored. Once rather than per call because a one-line wish re-interpreted
+  freshly by every chapter call drifts, so chapter 12 would not be in the voice of chapter 1 —
+  and because a stored instruction is inspectable and hand-editable, which is the local-first
+  bet. Edit it in `course.json` and every later chapter follows.
+- `style_mascot` — badges branch on the style key (§9), and a described style matches no arm, so
+  without this every custom book fell through to the friendly-cartoon default. Written in the
+  same pass as the prompt.
+
+The expansion runs BEFORE the outline, so the outline's own chapter titles come out in the style
+too. It happens once per wish, not once per attempt: "Try again" re-rolls the outline against the
+brief already written, because re-expanding there would mean approving an outline written in one
+style while a differently-worded one got stored. The brief is shown on the outline review page —
+the last moment before anything is spent, and the only place the wish and its expansion can be
+read side by side.
+
+Two rules are written into the expansion prompt and are load-bearing:
+
+1. **It must not touch language, chapter length, Markdown syntax or pictures.** The brief lands
+   in the SYSTEM channel, which outranks the user turn, so a brief with an opinion about chapter
+   length would quietly overrule `est_minutes`, and one with an opinion about language would
+   overrule the course's own.
+2. **A named book or series becomes its pedagogy, never its name.** Same handling as
+   headfirst-inspired: describe what makes the teaching work, never the title, branding, trade
+   dress or recurring named features. "For Dummies" is someone's trademark the same way "Head
+   First" is, and the brief writer is where a user-typed brand name would otherwise walk
+   straight into an illustrator prompt.
+
+`StyleBriefGenerator` throws where `LabelGenerator` swallows. A dropped label costs one word in
+the wrong language; a dropped style brief silently writes twelve chapters in the house style when
+a fairy tale was asked for, and nothing on the page says so until they are all paid for. For the
+same reason `StylePresets.CUSTOM` is not in `ALL` and `byKey` can never return it — a preset with
+an empty `systemPrompt` reaching a generation call would strip the system instruction from every
+call the book makes, invisibly.
 
 ## 4. App structure
 

@@ -51,6 +51,9 @@ import com.inkfirst.core.MEASUREMENT_SYSTEMS
 import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.OutlineGenerator
 import com.inkfirst.core.OutlineParseException
+import com.inkfirst.core.StyleBrief
+import com.inkfirst.core.StyleBriefException
+import com.inkfirst.core.StyleBriefGenerator
 import com.inkfirst.core.StylePreset
 import com.inkfirst.core.StylePresets
 import com.inkfirst.core.courseSlug
@@ -60,7 +63,15 @@ import java.time.LocalDate
 
 private sealed interface OutlineUiState {
     data object Idle : OutlineUiState
-    data object Loading : OutlineUiState
+
+    /**
+     * [note] is what the waiting page says it is doing. A custom style adds a
+     * call BEFORE the outline, so a single fixed "Writing the outline…" would
+     * be a lie for the first stretch of a wait that can run to a minute — and
+     * on a panel with no spinner to watch, the sentence is the only evidence
+     * the tap landed at all.
+     */
+    data class Loading(val note: String) : OutlineUiState
     data class Ready(val outline: CourseOutline) : OutlineUiState
     data class Failed(val message: String) : OutlineUiState
 }
@@ -99,6 +110,14 @@ fun NewCourseScreen(
     var priorKnowledge by remember { mutableStateOf("") }
     var expectations by remember { mutableStateOf("") }
     var style by remember { mutableStateOf(StylePresets.DEFAULT) }
+    // What was typed into "Describe the style", and what it was expanded into.
+    var styleRequest by remember { mutableStateOf("") }
+    var styleBrief by remember { mutableStateOf<StyleBrief?>(null) }
+    // The wish [styleBrief] was written from. Holding it is what makes the
+    // expansion happen once per WISH rather than once per attempt: "Try again"
+    // re-rolls the outline, and re-expanding there would mean approving an
+    // outline written in one style while a differently-worded one got stored.
+    var briefFor by remember { mutableStateOf("") }
     var language by remember { mutableStateOf(store.getPreferredLanguage()) }
     var units by remember { mutableStateOf(DEFAULT_MEASUREMENT_SYSTEM) }
     var figures by remember { mutableStateOf(DEFAULT_FIGURE_POLICY) }
@@ -118,18 +137,53 @@ fun NewCourseScreen(
         focusManager.clearFocus()
         val minutes = dailyMinutes.toIntOrNull() ?: return
         val key = apiKey ?: return
-        uiState = OutlineUiState.Loading
+        val custom = style.key == StylePresets.CUSTOM_KEY
+        val wish = styleRequest.trim()
+        if (custom && wish.isBlank()) return
+
+        val needsBrief = custom && (styleBrief == null || wish != briefFor)
+        uiState = OutlineUiState.Loading(
+            if (needsBrief) "Working out the style…" else "Writing the outline…",
+        )
         job = scope.launch {
+            var brief = styleBrief
+            if (needsBrief) {
+                brief = try {
+                    KtorGeminiClient().use { StyleBriefGenerator(it, model).expand(wish, key) }
+                } catch (e: StyleBriefException) {
+                    uiState = OutlineUiState.Failed(
+                        "Gemini couldn't turn that into a teaching style. Try describing it " +
+                            "differently.\n${e.message}",
+                    )
+                    return@launch
+                } catch (e: Exception) {
+                    uiState = OutlineUiState.Failed(geminiErrorLabel(e))
+                    return@launch
+                }
+                styleBrief = brief
+                briefFor = wish
+                uiState = OutlineUiState.Loading("Writing the outline…")
+            }
+
+            // The outline is written in the style too — chapter titles are the
+            // first thing a fairy-tale book should sound like.
+            val effective = if (custom && brief != null) {
+                StylePresets.CUSTOM.copy(systemPrompt = brief.prompt)
+            } else {
+                style
+            }
+
             uiState = runOutline(
-                topic, minutes, priorKnowledge, expectations, style, language,
+                topic, minutes, priorKnowledge, expectations, effective, language,
                 units, model, key,
             )
         }
     }
 
     when (val s = uiState) {
-        OutlineUiState.Loading -> GeneratingPage(
+        is OutlineUiState.Loading -> GeneratingPage(
             topic = topic,
+            note = s.note,
             onCancel = {
                 job?.cancel()
                 job = null
@@ -140,7 +194,13 @@ fun NewCourseScreen(
         is OutlineUiState.Ready -> OutlineReviewPage(
             outline = s.outline,
             figures = figurePolicyFor(figures),
+            // Guarded rather than passed straight through: switching back to a
+            // built-in style after a custom run leaves the brief in state, and
+            // a book must never carry a style it is not written in.
+            brief = styleBrief.takeIf { style.key == StylePresets.CUSTOM_KEY },
             onApprove = {
+                val custom = style.key == StylePresets.CUSTOM_KEY
+                val brief = styleBrief.takeIf { custom }
                 val course = courseStore.create(
                     outline = s.outline,
                     proposedSlug = courseSlug(s.outline.title),
@@ -149,6 +209,9 @@ fun NewCourseScreen(
                     expectations = expectations,
                     dailyMinutes = dailyMinutes.toIntOrNull() ?: 30,
                     style = style.key,
+                    styleRequest = if (custom) styleRequest.trim() else "",
+                    stylePrompt = brief?.prompt.orEmpty(),
+                    styleMascot = brief?.mascot.orEmpty(),
                     model = model,
                     language = language.trim().ifBlank { "English" },
                     units = units,
@@ -237,6 +300,24 @@ fun NewCourseScreen(
 
             StylePicker(current = style, onSelected = { style = it })
 
+            if (style.key == StylePresets.CUSTOM_KEY) {
+                OutlinedTextField(
+                    value = styleRequest,
+                    onValueChange = { styleRequest = it },
+                    label = { Text("Describe the style") },
+                    placeholder = {
+                        Text("\"told as a fairy tale\", \"a friendly guide with no jargon and jokes in the margins\"")
+                    },
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                )
+                Text(
+                    text = "One sentence is enough — it gets written out into a full " +
+                        "instruction before the outline, and you'll see it on the next page. " +
+                        "It's stored with the book in course.json, where you can edit it by hand.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
             LanguagePicker(
                 label = "Language",
                 value = language,
@@ -260,7 +341,8 @@ fun NewCourseScreen(
                 enabled = !apiKey.isNullOrBlank() &&
                     topic.isNotBlank() &&
                     language.isNotBlank() &&
-                    (dailyMinutes.toIntOrNull() ?: 0) > 0,
+                    (dailyMinutes.toIntOrNull() ?: 0) > 0 &&
+                    (style.key != StylePresets.CUSTOM_KEY || styleRequest.isNotBlank()),
                 onClick = { generate() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -278,7 +360,7 @@ fun NewCourseScreen(
  * the panel cannot draw, and it says nothing a sentence cannot say better.
  */
 @Composable
-private fun GeneratingPage(topic: String, onCancel: () -> Unit) {
+private fun GeneratingPage(topic: String, note: String, onCancel: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -286,7 +368,7 @@ private fun GeneratingPage(topic: String, onCancel: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Writing the outline…", style = MaterialTheme.typography.headlineSmall)
+        Text(note, style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
         Text(
             text = topic.trim(),
@@ -314,6 +396,7 @@ private fun GeneratingPage(topic: String, onCancel: () -> Unit) {
 private fun OutlineReviewPage(
     outline: CourseOutline,
     figures: FigurePolicy,
+    brief: StyleBrief?,
     onApprove: () -> Unit,
     onTryAgain: () -> Unit,
     onEdit: () -> Unit,
@@ -332,6 +415,16 @@ private fun OutlineReviewPage(
                 .verticalScroll(rememberScrollState()),
         ) {
             OutlinePreview(outline)
+
+            // The one moment a custom style can be checked against the wish
+            // that produced it, and the last page before anything is spent.
+            // After this it is twelve chapters of a voice nobody read first.
+            if (brief != null) {
+                Spacer(Modifier.height(20.dp))
+                Text("STYLE", style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(6.dp))
+                Text(brief.prompt, style = MaterialTheme.typography.bodySmall)
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -485,7 +578,7 @@ private fun StylePicker(current: StylePreset, onSelected: (StylePreset) -> Unit)
             onDismissRequest = { expanded = false },
             modifier = Modifier.border(width = 1.dp, color = Ink),
         ) {
-            StylePresets.ALL.forEach { preset ->
+            StylePresets.CHOICES.forEach { preset ->
                 DropdownMenuItem(
                     text = { Text(preset.displayName) },
                     onClick = {

@@ -479,6 +479,63 @@ class CourseStoreTest {
     }
 
     @Test
+    fun `a custom style persists its wish, its brief and its mascot line`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+
+        store.create(
+            outline = sampleOutline,
+            proposedSlug = "fairy",
+            topicPrompt = "fractions",
+            priorKnowledge = "",
+            dailyMinutes = 20,
+            style = StylePresets.CUSTOM_KEY,
+            styleRequest = "written as a fairy tale",
+            stylePrompt = "You are writing a chapter of a study book told as a fairy tale.",
+            styleMascot = "a storybook animal in a cloak",
+            model = "gemini-3.7-flash",
+            created = "2026-09-24",
+        )
+
+        val parsed = Json.parseToJsonElement(File(tmp, "fairy/course.json").readText()).jsonObject
+        assertEquals("custom", parsed["style"]?.jsonPrimitive?.content)
+        assertEquals("written as a fairy tale", parsed["style_request"]?.jsonPrimitive?.content)
+        assertTrue(parsed["style_prompt"]!!.jsonPrimitive.content.startsWith("You are writing"))
+
+        // And it comes back as the instruction every generator will send.
+        val reloaded = store.load("fairy")!!
+        assertEquals(
+            "You are writing a chapter of a study book told as a fairy tale.",
+            StylePresets.forCourse(reloaded).systemPrompt,
+        )
+    }
+
+    /**
+     * Every course.json written before custom styles existed has none of the
+     * three fields. They are defaulted rather than required precisely so that
+     * those files keep loading — and keep loading as the books they already
+     * are, which for a built-in key means the style fields are ignored.
+     */
+    @Test
+    fun `a course_json from before custom styles still loads`(@TempDir tmp: File) {
+        val dir = File(tmp, "old").apply { mkdirs() }
+        File(dir, "course.json").writeText(
+            """
+            {
+              "version": 1, "title": "Old Book", "slug": "old",
+              "topic_prompt": "t", "prior_knowledge": "", "daily_minutes": 30,
+              "style": "textbook", "model": "gemini-3.7-flash",
+              "created": "2026-08-01", "chapters": []
+            }
+            """.trimIndent(),
+        )
+
+        val course = CourseStore(tmp).load("old")!!
+        assertEquals("", course.styleRequest)
+        assertEquals("", course.stylePrompt)
+        assertEquals(StylePresets.TEXTBOOK.systemPrompt, StylePresets.forCourse(course).systemPrompt)
+    }
+
+    @Test
     fun `slug collision appends -2 -3 etc`(@TempDir tmp: File) {
         val store = CourseStore(tmp)
 

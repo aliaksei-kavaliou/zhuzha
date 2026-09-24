@@ -36,7 +36,7 @@ class ChapterGenerator(
             ?: throw IllegalArgumentException("Course has no chapter $n")
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
-        val style = StylePresets.byKey(course.style) ?: StylePresets.DEFAULT
+        val style = StylePresets.forCourse(course)
         val prompt = buildChapterPrompt(
             course = course,
             chapter = chapter,

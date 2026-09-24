@@ -43,7 +43,7 @@ internal fun buildQaUserPrompt(
  * the voice stays consistent with the chapter itself.
  */
 internal fun buildQaSystemInstruction(course: Course): String = buildString {
-    val style = StylePresets.byKey(course.style) ?: StylePresets.DEFAULT
+    val style = StylePresets.forCourse(course)
     appendLine(style.systemPrompt)
     appendLine()
     appendLine("You are answering questions from a learner reading this course. Match the chapter's voice. Prefer concrete examples over abstract restatement. If the learner's question can't be answered from the chapter, say so briefly and suggest what to reread.")

@@ -179,6 +179,30 @@ class BookBadgerTest {
         assertTrue(buildBadgePrompt(formal, "recap").contains("no face"))
         assertTrue(buildBadgePrompt(course, "recap").contains("cartoon mascot"))
     }
+
+    /**
+     * The arms above are keyed on the built-in presets, so a described style
+     * matches none of them and every custom book — sober or silly — used to
+     * fall through to the friendly-cartoon arm. The style brief writes this
+     * line in the same pass as the prompt.
+     */
+    @Test
+    fun `a custom style brings its own mascot register`() {
+        val custom = course.copy(
+            style = StylePresets.CUSTOM_KEY,
+            stylePrompt = "You are writing a chapter of a study book told as a fairy tale.",
+            styleMascot = "a storybook animal in a cloak, wide-eyed and friendly",
+        )
+        val prompt = buildBadgePrompt(custom, "recap")
+        assertTrue(prompt.contains("a storybook animal in a cloak"))
+        assertFalse(prompt.contains("cartoon mascot with a face"))
+    }
+
+    @Test
+    fun `a custom style with no mascot line falls back to the key's arm`() {
+        val custom = course.copy(style = StylePresets.CUSTOM_KEY, stylePrompt = "You are writing X.")
+        assertTrue(buildBadgePrompt(custom, "recap").contains("cartoon mascot"))
+    }
 }
 
 class BadgeKindTest {

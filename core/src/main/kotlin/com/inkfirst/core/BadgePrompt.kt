@@ -130,8 +130,18 @@ internal val BADGE_HOUSE_STYLE: String = listOf(
  * Tone of the mascot, following the course's teaching style. A Head First-ish
  * course wants a character with a face; a formal textbook wants an emblem
  * rather than a cartoon, or the page stops looking serious.
+ *
+ * A custom style brings its own line (written with the style itself — see
+ * [StyleBrief]) because the arms below are keyed on the built-in presets and
+ * a described style matches none of them. Without it every custom book, sober
+ * or silly, fell through to the friendly-cartoon arm.
  */
-private fun mascotTone(styleKey: String): String = when (styleKey) {
+private fun mascotTone(course: Course): String {
+    if (course.styleMascot.isNotBlank()) return course.styleMascot.trim()
+    return mascotToneForKey(course.style)
+}
+
+private fun mascotToneForKey(styleKey: String): String = when (styleKey) {
     StylePresets.TEXTBOOK.key ->
         "a simple, restrained emblem — an object rather than a cartoon character, " +
             "no face, calm and formal, the kind of mark a serious textbook would print"
@@ -163,7 +173,7 @@ internal fun buildBadgePrompt(
     appendLine()
     if (!hasReference && mascot.isBlank()) {
         appendLine("INVENT THE BOOK'S MASCOT — this is the first drawing of a set, and every")
-        appendLine("later drawing copies this character. Make it ${mascotTone(course.style)}.")
+        appendLine("later drawing copies this character. Make it ${mascotTone(course)}.")
         appendLine("Base it on what the book is about, but keep it simple enough to redraw:")
         appendLine("  Book: ${course.title}")
         if (course.topicPrompt.isNotBlank()) {
