@@ -209,6 +209,24 @@ yet" note that used to live here was two months stale.
       stored as itself, because `keepUsable`'s rejections are deterministic and retrying costs a
       call per app open. Found while checking a Russian EPUB.
 
+- [x] **Requests are screened before anything is written (2026-09-24)** — one cheap call at
+      course creation, ahead of the outline. Not mainly protection: the chapter model refuses
+      the genuinely harmful anyway, so what this buys is the FAILURE MODE — a sentence at the
+      moment you typed it, rather than a broken chapter three chapters and several pictures in.
+      The line is OPERATIONAL INSTRUCTIONS, never subjects, and the prompt names the legitimate
+      ones (toxicology, military history, lock-picking, offensive security, harm reduction…)
+      because a false refusal is the failure nothing downstream catches. It is explicitly not
+      an age rating, a taste filter, a quality check or a legality check. Three verdicts:
+      refuse stops on the form, ask gets a page with "Write it anyway", allow is everything
+      else. It FAILS OPEN on any error — a gate that blocks on a dropped connection gets
+      resented and routed around. Probed live: explosives chemistry, SQL injection and
+      car-door opening all allowed; pipe bomb and home chloroform refused with readable
+      sentences. design.md §19.
+- [x] **Export says "Done" rather than closing itself (2026-09-24)** — the result line is the
+      only evidence the save happened, and popping on success is the "generate did nothing"
+      defect in another costume. Exporting twice (clean copy to send, annotated copy to keep)
+      is also a real errand worth one toggle rather than a re-navigation.
+
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

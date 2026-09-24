@@ -56,6 +56,9 @@ import com.inkfirst.core.StyleBriefException
 import com.inkfirst.core.StyleBriefGenerator
 import com.inkfirst.core.StylePreset
 import com.inkfirst.core.StylePresets
+import com.inkfirst.core.TopicCheckInputs
+import com.inkfirst.core.TopicChecker
+import com.inkfirst.core.TopicVerdict
 import com.inkfirst.core.courseSlug
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -74,6 +77,16 @@ private sealed interface OutlineUiState {
     data class Loading(val note: String) : OutlineUiState
     data class Ready(val outline: CourseOutline) : OutlineUiState
     data class Failed(val message: String) : OutlineUiState
+
+    /**
+     * The screening check was unsure — see [TopicChecker].
+     *
+     * Its own state rather than a [Failed] with a button, because the two
+     * mean different things to the person reading them: a Failed is "this did
+     * not work", and this is "it worked, and it has a question for you". The
+     * reader is the one who settles it.
+     */
+    data class Queried(val reason: String) : OutlineUiState
 }
 
 /**
@@ -118,6 +131,10 @@ fun NewCourseScreen(
     // re-rolls the outline, and re-expanding there would mean approving an
     // outline written in one style while a differently-worded one got stored.
     var briefFor by remember { mutableStateOf("") }
+    // The exact request the reader has already been asked about and waved
+    // through. Without it, "Write it anyway" would re-run the check, get the
+    // same answer, and ask the same question again — a loop with no way out.
+    var clearedRequest by remember { mutableStateOf<String?>(null) }
     var language by remember { mutableStateOf(store.getPreferredLanguage()) }
     var units by remember { mutableStateOf(DEFAULT_MEASUREMENT_SYSTEM) }
     var figures by remember { mutableStateOf(DEFAULT_FIGURE_POLICY) }
@@ -133,7 +150,16 @@ fun NewCourseScreen(
 
     // A plain local function, not a composable — it runs on a tap rather than
     // during drawing. Both the form and the review page call it.
-    fun generate() {
+    // What the screening check looks at. Everything the reader typed that
+    // could carry a request, style included — a wish is a prompt too.
+    fun checkInputs() = TopicCheckInputs(
+        topic = topic.trim(),
+        priorKnowledge = priorKnowledge.trim(),
+        expectations = expectations.trim(),
+        styleRequest = if (style.key == StylePresets.CUSTOM_KEY) styleRequest.trim() else "",
+    )
+
+    fun generate(skipCheck: Boolean = false) {
         focusManager.clearFocus()
         val minutes = dailyMinutes.toIntOrNull() ?: return
         val key = apiKey ?: return
@@ -141,11 +167,38 @@ fun NewCourseScreen(
         val wish = styleRequest.trim()
         if (custom && wish.isBlank()) return
 
+        val request = checkInputs()
+        // Re-checked whenever the text CHANGES, even after a wave-through:
+        // being cleared to write about one thing is not being cleared to
+        // write about whatever is typed next.
+        val needsCheck = !skipCheck && request.toString() != clearedRequest
         val needsBrief = custom && (styleBrief == null || wish != briefFor)
         uiState = OutlineUiState.Loading(
-            if (needsBrief) "Working out the style…" else "Writing the outline…",
+            when {
+                needsCheck -> "Reading the request…"
+                needsBrief -> "Working out the style…"
+                else -> "Writing the outline…"
+            },
         )
         job = scope.launch {
+            if (needsCheck) {
+                val result = KtorGeminiClient().use { TopicChecker(it, model).check(request, key) }
+                when (result.verdict) {
+                    TopicVerdict.REFUSE -> {
+                        uiState = OutlineUiState.Failed(result.reason)
+                        return@launch
+                    }
+                    TopicVerdict.ASK -> {
+                        uiState = OutlineUiState.Queried(result.reason)
+                        return@launch
+                    }
+                    TopicVerdict.ALLOW -> clearedRequest = request.toString()
+                }
+                uiState = OutlineUiState.Loading(
+                    if (needsBrief) "Working out the style…" else "Writing the outline…",
+                )
+            }
+
             var brief = styleBrief
             if (needsBrief) {
                 brief = try {
@@ -221,6 +274,15 @@ fun NewCourseScreen(
                 onCourseCreated(course.slug)
             },
             onTryAgain = { generate() },
+            onEdit = { uiState = OutlineUiState.Idle },
+        )
+
+        is OutlineUiState.Queried -> QueriedPage(
+            reason = s.reason,
+            onWriteAnyway = {
+                clearedRequest = checkInputs().toString()
+                generate(skipCheck = true)
+            },
             onEdit = { uiState = OutlineUiState.Idle },
         )
 
@@ -381,6 +443,67 @@ private fun GeneratingPage(topic: String, note: String, onCancel: () -> Unit) {
         )
         Spacer(Modifier.height(32.dp))
         TextButton(onClick = onCancel) { Text("Cancel") }
+    }
+}
+
+/**
+ * The screening check was unsure, and is asking.
+ *
+ * A page of its own, like the outline review, because it is a DECISION and
+ * the two answers need room to be equally available. It is also why this is
+ * an ask rather than a refusal: a check that cannot be wrong in an app
+ * somebody owns is a check nobody should ship, and the whole difference
+ * between the two verdicts is whether this button exists.
+ *
+ * Nothing here scolds. The reader is an adult, spending their own API key,
+ * on a book only they will read; they are being told what the check noticed
+ * and asked to settle it.
+ */
+@Composable
+private fun QueriedPage(
+    reason: String,
+    onWriteAnyway: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+    ) {
+        Text("BEFORE WE START", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(12.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Text(
+                text = reason.ifBlank {
+                    "Something about this request looked unclear, but no explanation came back."
+                },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "If that is not what you meant, change the wording. If it is wrong, " +
+                    "carry on — this is your book.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Button(onClick = onWriteAnyway, modifier = Modifier.fillMaxWidth()) {
+            Text("Write it anyway")
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onEdit) { Text("Change the wording") }
+        }
     }
 }
 

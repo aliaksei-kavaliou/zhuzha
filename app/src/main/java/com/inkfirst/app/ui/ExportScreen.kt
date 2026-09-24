@@ -64,6 +64,7 @@ fun ExportScreen(slug: String, onBack: () -> Unit) {
     var includeAnnotations by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf(false) }
 
     val written = remember(course) { course?.chapters?.count { store.readChapter(slug, it.slug) != null } ?: 0 }
     val noteCount = remember(course, slug) {
@@ -81,6 +82,7 @@ fun ExportScreen(slug: String, onBack: () -> Unit) {
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
+        saved = false
         status = "Writing…"
         scope.launch {
             status = withContext(Dispatchers.IO) {
@@ -101,6 +103,7 @@ fun ExportScreen(slug: String, onBack: () -> Unit) {
                     }
                 }.getOrElse { "Could not export: ${it.message}" }
             }
+            saved = status?.startsWith("Saved") == true
             busy = false
         }
     }
@@ -186,6 +189,30 @@ fun ExportScreen(slug: String, onBack: () -> Unit) {
         }
 
         status?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+
+        // WHY THIS SCREEN DOES NOT CLOSE ITSELF on a successful save.
+        //
+        // The result line is the only evidence the export happened, and
+        // popping the moment it appears is the defect this app has already
+        // shipped once: NewCourseScreen's own header records "new course
+        // generate did nothing", where a finished result rendered somewhere
+        // the reader never saw. Nothing on e-ink animates, so a screen that
+        // vanishes leaves no transition to read either.
+        //
+        // The second reason is that exporting TWICE is a real errand — the
+        // clean copy to send someone, then the annotated copy to keep — and
+        // it costs one toggle and one tap while this screen is still here.
+        //
+        // So the exit is explicit instead, and only appears once there is
+        // something to leave.
+        if (saved) {
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+            Text(
+                text = "Or change the switch above and save a second copy.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
