@@ -1,7 +1,12 @@
 package com.inkfirst.core
 
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * Copying courses somewhere they survive this device — and copying them back.
@@ -66,11 +71,17 @@ object CourseBackup {
     /**
      * Decides what needs copying. Pure — it takes two listings and returns a
      * decision, so every rule below is testable without a filesystem.
+     *
+     * [slackMillis] is how much older the destination may be and still count
+     * as current. Zero for ordinary files; two seconds when the destination
+     * listing came out of a zip, whose timestamps are kept in an MS-DOS field
+     * that only counts even seconds.
      */
     fun plan(
         source: List<FileTree.Entry>,
         destination: List<FileTree.Entry>,
         mode: Mode = Mode.INCREMENTAL,
+        slackMillis: Long = 0,
     ): Plan {
         if (mode == Mode.OVERWRITE) return Plan(copy = source, skip = emptyList())
 
@@ -80,7 +91,10 @@ object CourseBackup {
 
         source.forEach { entry ->
             val there = existing[entry.path]
-            if (there != null && there.size == entry.size && there.modified >= entry.modified) {
+            if (there != null &&
+                there.size == entry.size &&
+                there.modified + slackMillis >= entry.modified
+            ) {
                 skip += entry
             } else {
                 copy += entry
@@ -137,6 +151,217 @@ object CourseBackup {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Report = run(from, to, plan(from.list(), to.list(), mode), onProgress)
 
+    // ---------------------------------------------------------------------
+    // Archives: the same backup, packed one file per book.
+    //
+    // Loose files were the honest shape and the wrong one for the device —
+    // see CourseArchive for why. Nothing about WHAT to copy changes; what
+    // changes is the grain. The unit of a decision is now a book rather than
+    // a file, because a zip cannot be written half-way: touch one chapter and
+    // the whole book is repacked.
+    // ---------------------------------------------------------------------
+
+    /**
+     * A group of files that travels as one archive — one course, or [the
+     * shelf][CourseArchive.SHELF] for what sits at the courses root and
+     * belongs to no course.
+     */
+    data class Book(val name: String, val entries: List<FileTree.Entry>) {
+        val file: String get() = CourseArchive.nameFor(name)
+        val bytes: Long get() = entries.sumOf { it.size }
+        val isShelf: Boolean get() = name == CourseArchive.SHELF
+    }
+
+    /**
+     * What an archiving run is about to do. [keep] is the books already
+     * backed up and unchanged — the reason the second run of an evening is
+     * quick even though a book is all-or-nothing.
+     */
+    data class ArchivePlan(
+        val write: List<Book>,
+        val keep: List<Book>,
+    ) {
+        val bytes: Long get() = write.sumOf { it.bytes }
+        val files: Int get() = write.sumOf { it.entries.size }
+        val kept: Int get() = keep.sumOf { it.entries.size }
+    }
+
+    /**
+     * Groups a courses-root listing into the archives it would become.
+     *
+     * A course is a directory holding a `course.json`, by the same rule as
+     * [coursesIn]; everything else at the root — `last_read.json`, the
+     * `labels/` translations, anything a future version drops there — goes in
+     * the shelf archive, so "back up everything" keeps meaning everything.
+     */
+    fun booksIn(source: List<FileTree.Entry>): List<Book> {
+        val slugs = coursesIn(source).toSet()
+        return source
+            .groupBy { entry ->
+                val head = entry.path.substringBefore('/', "")
+                if (head in slugs) head else CourseArchive.SHELF
+            }
+            .map { (name, entries) -> Book(name, entries.sortedBy { it.path }) }
+            .sortedBy { it.name }
+    }
+
+    /**
+     * Decides which books need packing again.
+     *
+     * [archived] is asked what is inside the archive for a book, and answers
+     * null when there is none — or when the one there cannot be read, which
+     * is the case that matters. A run interrupted half-way through a 15 MB
+     * book leaves a truncated zip whose timestamp is NEWER than everything in
+     * the book; judging it by its timestamp would skip it forever. Judging it
+     * by its contents cannot: a damaged archive fails to list, and a short
+     * one is missing a file, and both come back here as "write it again".
+     *
+     * That makes the check and the repair the same act, and it is also the
+     * question a reader actually asks of a backup — not "is it recent?" but
+     * "is everything in it?".
+     */
+    fun planArchives(
+        source: List<FileTree.Entry>,
+        archived: (Book) -> List<FileTree.Entry>?,
+    ): ArchivePlan {
+        val write = mutableListOf<Book>()
+        val keep = mutableListOf<Book>()
+        booksIn(source).forEach { book ->
+            val inside = archived(book)
+            val current = inside != null &&
+                plan(book.entries, inside, slackMillis = CourseArchive.TIME_SLACK_MILLIS)
+                    .copy.isEmpty()
+            if (current) keep += book else write += book
+        }
+        return ArchivePlan(write = write, keep = keep)
+    }
+
+    /**
+     * Reads what is inside the archive for a book, or null if it is not there
+     * or will not open. The shape [planArchives] wants, over a real tree.
+     */
+    fun archiveReader(to: FileTree, deep: Boolean = false): (Book) -> List<FileTree.Entry>? {
+        val present = runCatching { to.list().map { it.path }.toSet() }.getOrDefault(emptySet())
+        return { book ->
+            if (book.file !in present) null
+            else runCatching { to.readStream(book.file).use { CourseArchive.listing(it, deep) } }
+                .getOrNull()
+        }
+    }
+
+    /**
+     * Packs each book in [plan] into its own archive at [to].
+     *
+     * Every archive written is read back before the run reports success. It
+     * doubles the reading, and it is worth it twice over: a zip read back
+     * checks a CRC per file, so this is the difference between "15 MB went
+     * out" and "15 MB arrived, and it is the right 15 MB" — on what may be
+     * the only other copy of a book. The check reuses [plan] against the
+     * book's own listing, so "up to date" and "arrived intact" are one rule
+     * asked twice rather than two rules that can disagree.
+     */
+    fun writeArchives(
+        from: FileTree,
+        to: FileTree,
+        plan: ArchivePlan,
+        verify: Boolean = true,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Report {
+        var copied = 0
+        var bytes = 0L
+        var done = 0
+        val total = plan.files
+        val failed = mutableListOf<Failure>()
+
+        plan.write.forEach { book ->
+            var packed: CourseArchive.Packed? = null
+            try {
+                to.writeStream(book.file) { out ->
+                    packed = CourseArchive.pack(from, book.entries, out) {
+                        done++
+                        onProgress(done, total)
+                    }
+                }
+            } catch (e: IOException) {
+                failed += Failure(book.file, e.message ?: e::class.java.simpleName)
+                // Whatever did not get counted file by file still happened to
+                // the run; the counter must not stall on the broken book.
+                done = minOf(total, done + book.entries.size)
+                onProgress(done, total)
+                return@forEach
+            }
+
+            val result = packed ?: return@forEach
+            failed += result.failed
+            copied += result.files
+            bytes += result.bytes
+
+            if (verify) {
+                val problem = checkArchive(to, book)
+                if (problem != null) failed += Failure(book.file, problem)
+            }
+        }
+        return Report(copied = copied, skipped = plan.kept, bytes = bytes, failed = failed)
+    }
+
+    /** Null when the archive holds the book; a sentence when it does not. */
+    private fun checkArchive(to: FileTree, book: Book): String? {
+        val inside = try {
+            to.readStream(book.file).use { CourseArchive.listing(it, deep = true) }
+        } catch (e: IOException) {
+            return "written, but it could not be read back (${e.message ?: "damaged"})"
+        }
+        val short = plan(book.entries, inside, slackMillis = CourseArchive.TIME_SLACK_MILLIS).copy
+        if (short.isEmpty()) return null
+        return "written, but ${short.size} of ${book.entries.size} files are not in it " +
+            "(${short.first().path})"
+    }
+
+    /**
+     * Copies one book out of its archive and back onto the device.
+     *
+     * Overwrite, always: the reader asked for the backup's copy, and an
+     * incremental restore would skip exactly the files that changed — which
+     * are the ones being restored.
+     */
+    fun restoreArchive(
+        from: FileTree,
+        book: String,
+        to: FileTree,
+        onProgress: (done: Int) -> Unit = { },
+    ): Report {
+        val file = CourseArchive.nameFor(book)
+        return try {
+            var done = 0
+            val out = from.readStream(file).use { stream ->
+                CourseArchive.unpack(stream, to) {
+                    done++
+                    onProgress(done)
+                }
+            }
+            Report(copied = out.files, skipped = 0, bytes = out.bytes, failed = out.failed)
+        } catch (e: IOException) {
+            Report(
+                copied = 0,
+                skipped = 0,
+                bytes = 0,
+                failed = listOf(Failure(file, e.message ?: e::class.java.simpleName)),
+            )
+        }
+    }
+
+    /**
+     * The books a folder holds as archives. Sorted and distinct like
+     * [coursesIn], and the shelf is not one of them — it is not a book and
+     * nothing restores it on its own.
+     */
+    fun archivedIn(entries: List<FileTree.Entry>): List<String> =
+        entries
+            .mapNotNull { CourseArchive.bookIn(it.path) }
+            .filter { it != CourseArchive.SHELF }
+            .distinct()
+            .sorted()
+
     /**
      * The course slugs present in a tree, found the same way the app finds
      * them: a directory directly under the root holding a `course.json`.
@@ -189,6 +414,41 @@ interface FileTree {
     fun write(path: String, bytes: ByteArray)
 
     /**
+     * Reads one file as a stream, for content too big to want twice in
+     * memory — an archive of a whole book. The caller closes it.
+     *
+     * The default reads the bytes and hands back a stream over them, so an
+     * implementation only overrides this if it can do better. [LocalFileTree]
+     * and the document-tree one both can.
+     */
+    fun readStream(path: String): InputStream = ByteArrayInputStream(read(path))
+
+    /**
+     * Writes one file by streaming into it. Same bargain as [readStream]: the
+     * default buffers and falls back to [write], so nothing has to implement
+     * it, but the implementations that matter do — packing a 15 MB book
+     * through a document provider should never hold 15 MB.
+     */
+    fun writeStream(path: String, body: (OutputStream) -> Unit) {
+        val buffer = ByteArrayOutputStream()
+        body(buffer)
+        write(path, buffer.toByteArray())
+    }
+
+    /**
+     * Sets a file's modified time, where that is possible at all.
+     *
+     * A no-op by default, and a no-op forever on the document-tree side —
+     * Android's document API offers no way to stamp a file, which is the
+     * whole reason [CourseBackup.plan] compares "at least as new as" instead
+     * of "the same as". Restoring from an archive DOES use it: the archive
+     * remembers when each file was really written, and putting that back is
+     * what stops a restored book from looking freshly changed and being
+     * repacked in full by the next backup.
+     */
+    fun touch(path: String, modified: Long) = Unit
+
+    /**
      * One file. [modified] is "last modified" in milliseconds since the epoch.
      *
      * Note what is NOT here: a way to SET [modified] on write. Android's
@@ -226,5 +486,17 @@ class LocalFileTree(private val root: File) : FileTree {
         val target = File(root, path)
         target.parentFile?.mkdirs()
         target.writeBytes(bytes)
+    }
+
+    override fun readStream(path: String): InputStream = File(root, path).inputStream().buffered()
+
+    override fun writeStream(path: String, body: (OutputStream) -> Unit) {
+        val target = File(root, path)
+        target.parentFile?.mkdirs()
+        FileOutputStream(target).buffered().use(body)
+    }
+
+    override fun touch(path: String, modified: Long) {
+        if (modified > 0) File(root, path).setLastModified(modified)
     }
 }

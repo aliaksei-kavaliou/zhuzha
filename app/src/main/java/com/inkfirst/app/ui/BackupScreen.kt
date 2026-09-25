@@ -55,6 +55,13 @@ import kotlinx.coroutines.withContext
  * Backing up is one button and takes everything, because a backup you have to
  * curate is one you stop taking. Restoring is per book and asks first,
  * because it is the direction that can destroy something.
+ *
+ * A book travels as one zip. It used to travel as its own files, which is the
+ * shape §1 argues for — and on a Boox those files are indexed: ninety-six of
+ * them turned up in the reader's Images and Documents libraries, a chapter
+ * away from being swept into the bin during a tidy-up. One file per book
+ * keeps the folder legible and keeps a zip out of the picture galleries, and
+ * costs a double-click to read. See [CourseArchive].
  */
 @Composable
 fun BackupScreen(onDone: () -> Unit) {
@@ -68,6 +75,10 @@ fun BackupScreen(onDone: () -> Unit) {
     var shelfHere by remember { mutableStateOf<String?>(null) }
     var shelfThere by remember { mutableStateOf<String?>(null) }
     var backupCourses by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Which of them are packed as a zip — the rest are folders an older
+    // backup wrote, and restoring those still works.
+    var packedThere by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var superseded by remember { mutableStateOf<List<String>>(emptyList()) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var pendingRestore by remember { mutableStateOf<String?>(null) }
@@ -108,9 +119,12 @@ fun BackupScreen(onDone: () -> Unit) {
             // folder deleted. Say so instead of offering an empty backup.
             shelfThere = "This folder cannot be read any more. Choose it again."
             backupCourses = emptyList()
+            superseded = emptyList()
         } else {
-            shelfThere = describeShelf(there)
-            backupCourses = CourseBackup.coursesIn(there)
+            shelfThere = describeBackup(there)
+            backupCourses = booksInBackup(there)
+            packedThere = CourseBackup.archivedIn(there).toSet()
+            superseded = supersededCopies(there)
         }
     }
 
@@ -130,6 +144,16 @@ fun BackupScreen(onDone: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
             )
 
+            if (folderUri == null) {
+                Text(
+                    text = "${BackupFolder.SUGGESTED_PATH} is a good place — the picker " +
+                        "starts in ${BackupFolder.SUGGESTED_PARENT}, and the folder icon at " +
+                        "the top makes a new one. Any folder works; a memory card is the " +
+                        "safest one.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = folderLabel?.let { "Folder: $it" } ?: "No folder chosen",
@@ -138,7 +162,7 @@ fun BackupScreen(onDone: () -> Unit) {
                 )
                 TextButton(
                     enabled = !busy,
-                    onClick = { picker.launch(null) },
+                    onClick = { picker.launch(folder.suggestion()) },
                 ) { Text(if (folderUri == null) "Choose folder" else "Change") }
             }
 
@@ -154,11 +178,10 @@ fun BackupScreen(onDone: () -> Unit) {
                     scope.launch {
                         busy = true
                         val here = LocalFileTree(coursesRootFor(context))
-                        status = copyAcross(
+                        status = packAcross(
                             from = here,
                             to = DocumentTreeFileTree(context, uri),
                             source = withContext(Dispatchers.IO) { here.list() },
-                            mode = CourseBackup.Mode.INCREMENTAL,
                             setStatus = { status = it },
                         )
                         busy = false
@@ -169,7 +192,9 @@ fun BackupScreen(onDone: () -> Unit) {
 
             if (folderUri != null) {
                 Text(
-                    text = "Only what has changed is copied, so the second backup is quick.",
+                    text = "Each book becomes one file, so the folder stays tidy and the " +
+                        "reader's library does not fill up with pages. Only books that " +
+                        "changed are packed again.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -183,6 +208,16 @@ fun BackupScreen(onDone: () -> Unit) {
 
                 Text("In the backup", style = MaterialTheme.typography.titleMedium)
                 Text(shelfThere ?: "Reading the folder…", style = MaterialTheme.typography.bodySmall)
+
+                if (superseded.isNotEmpty()) {
+                    Text(
+                        text = "${superseded.size} of these are also still here the old way, " +
+                            "as folders of separate files. Nothing needs them now — you can " +
+                            "delete those folders with any file manager, and the books stay " +
+                            "in their zips.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
 
                 backupCourses.forEach { slug ->
                     Row(
@@ -229,22 +264,31 @@ fun BackupScreen(onDone: () -> Unit) {
                 val uri = folderUri
                 pendingRestore = null
                 if (uri != null) {
+                    val packed = slug in packedThere
                     scope.launch {
                         busy = true
                         val there = DocumentTreeFileTree(context, uri)
-                        status = copyAcross(
-                            from = there,
-                            to = LocalFileTree(coursesRootFor(context)),
-                            source = withContext(Dispatchers.IO) {
-                                entriesForCourse(there.list(), slug)
-                            },
-                            // The reader asked for the backup's copy, so take
-                            // it whatever is sitting here — an incremental
-                            // restore would skip exactly the files that got
-                            // changed, which are the ones being restored.
-                            mode = CourseBackup.Mode.OVERWRITE,
-                            setStatus = { status = it },
-                        )
+                        val here = LocalFileTree(coursesRootFor(context))
+                        status = if (packed) {
+                            unpackHere(from = there, book = slug, to = here) { status = it }
+                        } else {
+                            // A book an older backup left as loose files.
+                            // Still restorable, by the path that wrote it.
+                            copyAcross(
+                                from = there,
+                                to = here,
+                                source = withContext(Dispatchers.IO) {
+                                    entriesForCourse(there.list(), slug)
+                                },
+                                // The reader asked for the backup's copy, so
+                                // take it whatever is sitting here — an
+                                // incremental restore would skip exactly the
+                                // files that got changed, which are the ones
+                                // being restored.
+                                mode = CourseBackup.Mode.OVERWRITE,
+                                setStatus = { status = it },
+                            )
+                        }
                         busy = false
                         reading++
                     }
@@ -298,6 +342,61 @@ private suspend fun copyAcross(
             if (done == total || done % PROGRESS_STEP == 0) {
                 setStatus("Copying $done of $total…")
             }
+        }
+        describeReport(report)
+    } catch (e: SecurityException) {
+        "This folder is not available any more. Choose it again."
+    } catch (e: Exception) {
+        "Could not finish: ${e.message ?: e::class.simpleName}"
+    }
+}
+
+/**
+ * Packs every book that changed into its own archive at the far end.
+ *
+ * The plan reads what is already in each archive rather than trusting its
+ * timestamp, which costs a pass over the folder and buys the one thing a
+ * backup screen should never get wrong: a run interrupted half-way leaves a
+ * zip that is NEWER than everything in the book and holds only part of it.
+ * Contents cannot lie about that the way a stamp can. See
+ * [CourseBackup.planArchives].
+ */
+private suspend fun packAcross(
+    from: FileTree,
+    to: FileTree,
+    source: List<FileTree.Entry>,
+    setStatus: (String) -> Unit,
+): String = withContext(Dispatchers.IO) {
+    try {
+        setStatus("Looking at the backup…")
+        val plan = CourseBackup.planArchives(source, CourseBackup.archiveReader(to))
+        if (plan.write.isEmpty()) return@withContext describeArchivePlan(plan)
+
+        setStatus("Packing ${describeArchivePlan(plan)}")
+        val report = CourseBackup.writeArchives(from, to, plan) { done, total ->
+            if (done == total || done % PROGRESS_STEP == 0) {
+                setStatus("Packing $done of $total…")
+            }
+        }
+        describeArchiveReport(plan, report)
+    } catch (e: SecurityException) {
+        "This folder is not available any more. Choose it again."
+    } catch (e: Exception) {
+        "Could not finish: ${e.message ?: e::class.simpleName}"
+    }
+}
+
+/** Unpacks one book's archive back onto the device. */
+private suspend fun unpackHere(
+    from: FileTree,
+    book: String,
+    to: FileTree,
+    setStatus: (String) -> Unit,
+): String = withContext(Dispatchers.IO) {
+    try {
+        setStatus("Opening the backup…")
+        val report = CourseBackup.restoreArchive(from, book, to) { done ->
+            if (done % PROGRESS_STEP == 0) setStatus("Restoring $done files…")
         }
         describeReport(report)
     } catch (e: SecurityException) {

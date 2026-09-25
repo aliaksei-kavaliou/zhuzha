@@ -8,6 +8,8 @@ import android.webkit.MimeTypeMap
 import com.inkfirst.core.FileTree
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * The [FileTree] over a folder the reader picked through Android's document
@@ -59,15 +61,16 @@ class DocumentTreeFileTree(context: Context, private val treeUri: Uri) : FileTre
         return out.sortedBy { it.path }
     }
 
-    override fun read(path: String): ByteArray {
-        val id = idOf(path) ?: throw FileNotFoundException(path)
-        return wrapFailures(path) {
-            resolver.openInputStream(documentUri(id))?.use { it.readBytes() }
-                ?: throw IOException("could not open $path")
-        }
-    }
+    override fun read(path: String): ByteArray = readStream(path).use { it.readBytes() }
 
-    override fun write(path: String, bytes: ByteArray) {
+    override fun write(path: String, bytes: ByteArray) = writeStream(path) { it.write(bytes) }
+
+    /**
+     * The streaming form is the real one — a book packed as a zip is 15 MB
+     * and there is no reason for it to exist twice, once in a buffer and once
+     * on the card.
+     */
+    override fun writeStream(path: String, body: (OutputStream) -> Unit) {
         val cut = path.lastIndexOf('/')
         val name = path.substring(cut + 1)
         val parentPath = if (cut < 0) "" else path.substring(0, cut)
@@ -87,7 +90,15 @@ class DocumentTreeFileTree(context: Context, private val treeUri: Uri) : FileTre
                 ) ?: throw IOException("could not create $path")
             }
             ids[path] = DocumentsContract.getDocumentId(target)
-            openTruncating(target).use { it.write(bytes) }
+            openTruncating(target).use(body)
+        }
+    }
+
+    override fun readStream(path: String): InputStream {
+        val id = idOf(path) ?: throw FileNotFoundException(path)
+        return wrapFailures(path) {
+            resolver.openInputStream(documentUri(id))
+                ?: throw IOException("could not open $path")
         }
     }
 

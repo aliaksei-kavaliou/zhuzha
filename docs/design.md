@@ -788,6 +788,74 @@ at the far end is ever deleted, so a course removed on the device stays in the b
 the difference between a backup and a mirror. `last_read.json` travels with the shelf but never
 comes back, since restore is per course.
 
+### 15.1 One file per book (2026-09-24)
+
+Loose files were the honest shape and the wrong one for the device. A Boox indexes shared
+storage: the 96 files of a three-book shelf turned up in the reader's Images and Documents
+libraries, mixed in with its own photos and notes, one tidy-up away from being swept into the
+bin. A backup you can destroy by cleaning up is not a backup. So a book travels as
+`<slug>.zip`, and what sits at the courses root and belongs to no book — `last_read.json`, the
+`labels/` translations — travels as `_shelf.zip`. The leading underscore cannot collide with a
+course: `courseSlug` emits `[a-z0-9-]` and nothing else.
+
+Zip rather than a custom container because every desktop opens one by double-clicking, which is
+§1's promise kept with one more click. Paths INSIDE the archive stay relative to the courses
+root (`kotlin.zip` holds `kotlin/course.json`), so unzipping by hand reproduces the course
+folder and `unpack` writes straight into the tree with no path arithmetic. Illustrations are
+STORED rather than deflated — a course is mostly PNG, which compresses by about 1.6% for the
+whole of a reader's CPU; the real shelf packs 28.25 MB into 27.79 MB.
+
+**The grain of a decision changed from a file to a book**, because a zip cannot be written
+half-way. That costs the old "an evening's reading moves a few kilobytes": touch one chapter and
+its whole book is repacked, up to 15 MB. What it buys back is the check below, and books are
+the unit the restore UI was already in.
+
+**An archive is judged by what is INSIDE it, never by its timestamp.** A run interrupted part
+way through a 15 MB book leaves a zip NEWER than every file in the book and holding some of it;
+by its stamp it would be skipped for ever, and the reader would find out when they needed it.
+`planArchives` therefore reads each archive's listing and compares it to the book with the
+ordinary `CourseBackup.plan` — a damaged archive fails to list, a short one is missing a file,
+and both come back as "write it again". Check and repair are the same act. The cost is reading
+the archives on every run: 28 MB, under 8 seconds on the Boox for "Already up to date".
+
+**Every archive written is read back before the run reports success**, with `listing(deep =
+true)`, which reads each entry's bytes past a CRC. That is the difference between "15 MB went
+out" and "15 MB arrived, and it is the right 15 MB". The comparison is the same `plan` call, so
+"up to date" and "arrived intact" are one rule asked twice rather than two rules that can
+disagree.
+
+**Restoring puts the archive's timestamps back** (`FileTree.touch`, a no-op on the document
+side where Android offers no way to stamp a file). Without it every restored file would look
+changed a minute ago and the next backup would repack the whole book. Verified on device: after
+restoring a book, the next run left it alone.
+
+`ZipEntry` timestamps are an MS-DOS field that counts even seconds, so every comparison against
+an archive allows `CourseArchive.TIME_SLACK_MILLIS` of slack. Entries are written with
+`setLastModifiedTime`, which also puts the exact millisecond in an extra field.
+
+Reading an older backup still works: `booksInBackup` is the union of `<slug>.zip` names and
+loose `course.json` directories, and restoring a loose book takes the path that wrote it. The
+screen names how many books are in the folder twice and says the folders can go — only the
+intersection, because a loose folder with no zip beside it is a book that is no longer on the
+device and the only copy of it. Nothing is deleted at the far end, by the app, ever.
+
+**The shelf is not counted as a book on screen.** "4 books" on a shelf of three is the kind of
+small lie that costs a reader their trust in the rest of the sentence; when only the shelf
+changed, the run says so in words ("only where you left off had changed").
+
+**Where the picker opens.** A folder outside the app's own is reachable only through a grant a
+person hands over, so there is no such thing as a default backup directory — what there is, is
+a picker that starts somewhere useful. It opens at the chosen folder when there is one, and at
+`Documents` when there is not, with `Documents/InkFirst` named on screen as the suggestion.
+Pointing it at `Documents/InkFirst` directly would be better and is wrong: a provider that
+cannot resolve the initial URI gives up and opens wherever it likes, which is exactly the
+first-run case the hint exists for.
+
+**Proved on the Boox 2026-09-24**, against the real shelf: 4 archives written and checked in
+about six seconds, a book restored out of its zip with all 22 files identical by md5, a second
+run reporting "Already up to date — 3 books, 96 files checked", and the same round trip run on
+the laptop over a pulled copy of the device's 96 files, all byte-identical.
+
 ## 16. One palette, in one place (2026-09-22)
 
 Pure black on pure white, and the reason is the panel rather than taste: a reflective e-ink

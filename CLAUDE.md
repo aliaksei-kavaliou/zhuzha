@@ -154,7 +154,8 @@ yet" note that used to live here was two months stale.
       confirm. The trap worth knowing: `createDocument` treats the mime type as authoritative
       and the filename as a suggestion, so a name whose extension disagrees with the type
       comes back with the provider's extension appended — and filenames ARE the app's index.
-      Derive the type from the extension. See design.md §15. **Proved end to end on the
+      Derive the type from the extension. See design.md §15 — and §15.1, which replaced the
+      file-by-file copy with one zip per book. **Proved end to end on the
       emulator, no device needed**: 23 files copied byte-identical, a second run copied
       nothing, a chapter deleted from the device came back with its original md5 and opened.
 - [x] **One palette, in one place (2026-09-22)** — the app had no theme: `MaterialTheme { }`
@@ -259,6 +260,22 @@ yet" note that used to live here was two months stale.
       vertical drag is the scroll now; edge taps, horizontal swipes and the side buttons all
       still navigate, and each was checked on device rather than assumed.
 
+- [x] **A book is one file in the backup (2026-09-24)** — loose files were the shape §1
+      argues for and the wrong one for the device: the Boox indexes shared storage, so 96
+      backup files turned up in its Images and Documents libraries, one tidy-up away from
+      the bin. Each book now travels as `<slug>.zip` (plus `_shelf.zip` for `last_read.json`
+      and `labels/`, which belong to no book). The grain of a decision moved from a file to a
+      BOOK — a zip cannot be written half-way — so an evening's reading repacks that book
+      rather than copying a few kilobytes; books were already the unit of restore. Two rules
+      pay for that: an archive is judged by what is INSIDE it rather than by its timestamp (a
+      run interrupted mid-book leaves a zip NEWER than the book and holding half of it, which
+      a stamp cannot see and a listing cannot miss), and every archive written is READ BACK
+      past a CRC before the run says it worked. Both reuse `CourseBackup.plan`, so "up to
+      date" and "arrived intact" are one rule asked twice. Restoring puts the archive's
+      timestamps back, or the next backup would repack everything it just restored. Older
+      loose backups still restore, and the screen says which folders are now redundant —
+      nothing at the far end is ever deleted by the app. Device-verified on the real shelf.
+      design.md §15.1.
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

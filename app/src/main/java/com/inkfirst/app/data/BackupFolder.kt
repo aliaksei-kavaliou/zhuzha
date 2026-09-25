@@ -34,6 +34,28 @@ class BackupFolder(context: Context) {
         return stored
     }
 
+    /**
+     * Where the picker should open when it is opened.
+     *
+     * The chosen folder if there is one — changing it usually means moving it
+     * somewhere near — and otherwise a suggestion: `Documents/InkFirst` on
+     * the device's own storage. The app cannot CREATE that folder or write to
+     * it unaided; a folder outside its own is reachable only through the
+     * picker, by a grant a person hands over. What it can do is open the
+     * picker where the answer probably is, so choosing is one tap rather than
+     * a walk down a tree.
+     *
+     * A hint only: a provider that cannot resolve it opens wherever it likes,
+     * which is exactly what happened before.
+     */
+    fun suggestion(): Uri = uri() ?: DocumentsContract.buildDocumentUri(
+        EXTERNAL_STORAGE_PROVIDER,
+        // Documents itself, not Documents/InkFirst: pointing the picker at a
+        // folder that does not exist yet is how you get it to give up and
+        // open wherever it feels like, which is the case this is for.
+        "primary:Documents",
+    )
+
     /** Takes the long-lived grant the picker offers, and stores the folder. */
     fun remember(uri: Uri) {
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -68,8 +90,15 @@ class BackupFolder(context: Context) {
         }.getOrNull()
     }
 
-    private companion object {
-        const val PREFS_NAME = "inkfirst_backup"
-        const val KEY_URI = "folder_uri"
+    companion object {
+        /** Shown on screen when no folder is chosen, so the suggestion is sayable. */
+        const val SUGGESTED_PATH = "Documents/InkFirst"
+
+        /** What the picker actually opens at — the parent, which exists. */
+        const val SUGGESTED_PARENT = "Documents"
+
+        private const val EXTERNAL_STORAGE_PROVIDER = "com.android.externalstorage.documents"
+        private const val PREFS_NAME = "inkfirst_backup"
+        private const val KEY_URI = "folder_uri"
     }
 }

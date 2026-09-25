@@ -102,4 +102,79 @@ class BackupPlanningTest {
         assertEquals("48 KB", humanBytes(49_000))
         assertEquals("14.8 MB", humanBytes(15_518_924))
     }
+    @Test
+    fun `a backup describes itself in books, whether packed or loose`() {
+        val folder = listOf(
+            entry("kotlin.zip", size = 2_000_000),
+            entry("_shelf.zip", size = 1_000),
+            // A book an older version left as loose files.
+            entry("gardening/course.json", size = 6_000),
+            entry("gardening/chapters/01.md", size = 4_000),
+        )
+
+        assertEquals(listOf("gardening", "kotlin"), booksInBackup(folder))
+        // Books and bytes, no file count: one zip per book means the file
+        // count would be counting archives, which tells the reader nothing.
+        assertEquals("2 books · 1.9 MB", describeBackup(folder))
+    }
+
+    @Test
+    fun `only a book that is in the folder twice is called deletable`() {
+        // The loose folder beside a zip is a leftover. The loose folder with
+        // no zip beside it is a book that is not on the device any more —
+        // saying "you can delete these" about that one destroys the only copy.
+        val folder = listOf(
+            entry("kotlin.zip"),
+            entry("kotlin/course.json"),
+            entry("gardening/course.json"),
+        )
+
+        assertEquals(listOf("kotlin"), supersededCopies(folder))
+    }
+
+    @Test
+    fun `a packing run says what it packed and that it was checked`() {
+        val plan = CourseBackup.ArchivePlan(
+            write = listOf(CourseBackup.Book("kotlin", listOf(entry("kotlin/course.json")))),
+            keep = listOf(CourseBackup.Book("gardening", listOf(entry("gardening/course.json")))),
+        )
+        val report = CourseBackup.Report(copied = 1, skipped = 1, bytes = 100, failed = emptyList())
+
+        assertEquals(
+            "Packed 1 book — 1 file, 100 B · 1 book unchanged, read back and checked.",
+            describeArchiveReport(plan, report),
+        )
+    }
+
+    @Test
+    fun `an archive that came back short is named with its reason`() {
+        val plan = CourseBackup.ArchivePlan(
+            write = listOf(CourseBackup.Book("kotlin", listOf(entry("kotlin/course.json")))),
+            keep = emptyList(),
+        )
+        val report = CourseBackup.Report(
+            copied = 1,
+            skipped = 0,
+            bytes = 100,
+            failed = listOf(CourseBackup.Failure("kotlin.zip", "written, but it came back short")),
+        )
+
+        val said = describeArchiveReport(plan, report)
+
+        assertTrue(said.contains("kotlin.zip — written, but it came back short"), said)
+        assertTrue(said.contains("Backing up again is the fix"), said)
+    }
+
+    @Test
+    fun `nothing to pack is said as up to date, with what was checked`() {
+        val plan = CourseBackup.ArchivePlan(
+            write = emptyList(),
+            keep = listOf(
+                CourseBackup.Book("kotlin", listOf(entry("kotlin/course.json"), entry("kotlin/memory.md"))),
+            ),
+        )
+
+        assertEquals("Already up to date — 1 book, 2 files checked.", describeArchivePlan(plan))
+    }
+
 }
