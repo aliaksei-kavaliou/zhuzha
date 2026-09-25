@@ -205,11 +205,11 @@ class EpubExportTest {
         val (files, _) = exportOf(tmp)
         val ch = text(files, "OEBPS/ch01.xhtml")
 
-        val exerciseAt = ch.indexOf("id=\"ex1\"")
-        val answerAt = ch.indexOf("id=\"ans1\"")
+        val exerciseAt = ch.indexOf("id=\"c1-ex1\"")
+        val answerAt = ch.indexOf("id=\"c1-ans1\"")
         assertTrue(exerciseAt in 1 until answerAt, "the answer must come after its exercise")
-        assertTrue(ch.contains("href=\"#ans1\""), "the exercise must link forward to its answer")
-        assertTrue(ch.contains("href=\"#ex1\""), "the answer must link back to its exercise")
+        assertTrue(ch.contains("href=\"#c1-ans1\""), "the exercise must link forward to its answer")
+        assertTrue(ch.contains("href=\"#c1-ex1\""), "the answer must link back to its exercise")
         // And the answer text is not sitting in the exercise itself.
         assertFalse(ch.substring(exerciseAt, answerAt).contains("less active when cold"))
     }
@@ -359,6 +359,61 @@ class EpubExportTest {
             id.find(text(b, "OEBPS/content.opf"))!!.groupValues[1],
         )
     }
+
+    @Test
+    fun `an anchor is unique across the whole book, not just its own file`(@TempDir tmp: File) {
+        // Every chapter restarts the exercise counter, so an un-namespaced
+        // `ex1` exists once per chapter. Per spec each XHTML file is its own
+        // document and that resolves correctly — but a reader that flattens
+        // the spine into one document resolves the fragment globally, and
+        // then every "show answer" in the book jumps to chapter one.
+        val (files, _) = exportOf(tmp)
+        val ids = files.keys
+            .filter { it.endsWith(".xhtml") }
+            .flatMap { name ->
+                Regex("""id="([^"]+)"""").findAll(text(files, name)).map { m -> m.groupValues[1] }
+            }
+
+        assertEquals(ids.size, ids.toSet().size, "an id appears in more than one file: $ids")
+    }
+
+    @Test
+    fun `the answers start on their own page`(@TempDir tmp: File) {
+        // Without the break the section follows the last exercise after a
+        // paragraph or two, so jumping to answer 1 lands on a page whose
+        // visible top is a DIFFERENT exercise's question. Reported from a
+        // real reader as the link going to the wrong place — and it was not:
+        // the anchor was right and the landing was unreadable.
+        val (files, _) = exportOf(tmp)
+
+        assertTrue(
+            text(files, "OEBPS/style.css").contains("section.answers { page-break-before: always;"),
+        )
+    }
+
+    @Test
+    fun `an answer reprints the question it belongs to`(@TempDir tmp: File) {
+        // The reader arrived from another page and cannot see what was asked,
+        // so a bare number does not tell them this is the answer they wanted.
+        val (files, _) = exportOf(tmp)
+        val ch = text(files, "OEBPS/ch01.xhtml")
+        val answers = ch.substring(ch.indexOf("<section class=\"answers\""))
+
+        assertTrue(answers.contains("class=\"answer-q\""), answers)
+        assertTrue(answers.contains("cold kitchen"), "the question itself must be reprinted")
+    }
+
+    @Test
+    fun `a recap and an exercise say which they are`(@TempDir tmp: File) {
+        // They were distinguished only by a CSS border style, which most
+        // readers render alike and neither of which names the block.
+        val (files, _) = exportOf(tmp)
+        val ch = text(files, "OEBPS/ch01.xhtml")
+
+        assertTrue(ch.contains("<p class=\"block-label\">Exercise 1</p>"), ch)
+        assertTrue(ch.contains("<p class=\"block-label\">Recap</p>"), ch)
+    }
+
 }
 
 class EpubDetailTest {

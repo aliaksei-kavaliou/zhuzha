@@ -27,7 +27,22 @@ package com.inkfirst.core
  * line already drawn for [Course.language] and [Course.units] — per course,
  * not per device.
  */
-class UiLabels(private val translations: Map<String, String>) {
+class UiLabels(translations: Map<String, String>) {
+
+    /**
+     * Repaired on the way IN, not only on the way out of the translator.
+     *
+     * [keepUsable] checks what the model has just said, which does nothing
+     * for a label already sitting in `labels/<language>.json` from an older
+     * version — and `ensureLabels` only asks for strings that are MISSING, so
+     * a stored label is never re-examined. A real Russian book had its
+     * answers heading stored as "Οтветы" with a Greek omicron and would have
+     * kept it for ever. The repair is pure and deterministic, so running it
+     * on every read costs nothing and heals the file the next time it is
+     * written.
+     */
+    private val translations: Map<String, String> =
+        translations.mapNotNull { (k, v) -> healHomoglyphs(v)?.let { k to it } }.toMap()
 
     val isEmpty: Boolean get() = translations.isEmpty()
 
@@ -146,6 +161,14 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "Export this book",
     "an EPUB for any e-reader",
     "Answers",
+    // The exported book names its blocks in words. On screen a badge carries
+    // that meaning; an EPUB has no badge, and a recap and an exercise are
+    // otherwise the same bordered paragraph. "{n}" must survive translation —
+    // see keepUsable — and must read correctly for ANY number, since neither
+    // this app nor the reader can inflect.
+    "Exercise",
+    "Recap",
+    "Answer {n}",
     "Your notes",
     "Your questions",
     "This copy includes your notes and questions.",

@@ -1049,6 +1049,57 @@ fallback either way, and writing it down is what stops the string being re-reque
 open: `keepUsable`'s rejections are deterministic — a translation that lost its `{n}` will lose it
 again — so retrying buys nothing and costs a call.
 
+### 18.1 What an exported answer has to survive (2026-09-25)
+
+Reported from a real reader (PocketBook): "Показать ответ" on page 11 jumped to page 13, which
+showed a DIFFERENT exercise. The anchors were correct — every `ex`/`ans` pair matched, checked
+against the source Markdown — and the export was still wrong, which is the useful part. The
+answers section began a paragraph or two after the last exercise, so jumping to answer 1 landed
+on a page whose visible top was that exercise's question. The link worked; the landing was
+unreadable.
+
+Three things fix it, and each is a rule rather than a tweak:
+
+**The answers start on their own page** (`page-break-before: always`), so the destination is a
+page headed "Ответы" instead of the tail of the chapter.
+
+**An answer reprints its question.** The reader arrived from another page and cannot see what
+was asked; a bare number cannot tell them this is the answer they wanted. Long questions are
+cut at a word — it is a cue, not a reprint of the exercise.
+
+**Every anchor carries its chapter** (`c2-ans1`). The exercise counter restarts each chapter, so
+`ex1` existed once per chapter in the book. Per spec each XHTML file is its own document and
+that resolves correctly, but a reader that flattens the spine into one document resolves the
+fragment globally — and then every "show answer" in the book lands in chapter one. This was
+NOT the reported failure; it is a second, latent one found while looking for the first.
+
+**A block says what it is.** A recap and an exercise were distinguished only by
+`border-left-style: double` against `solid`, which most readers render alike and neither of
+which names the block. On screen the badge carries that meaning and an EPUB has no badge, so
+the block now prints its own name — localized, like the rest of the book's chrome.
+
+Not changed, deliberately: the stylesheet still sets no `font-size`. A reader complained the
+type was large, and the fix is in the reader. A book that hard-codes a size fights the reader's
+own accessibility settings, which is worse than being adjusted once.
+
+### 18.2 A letter that is not the letter it looks like (2026-09-25)
+
+The same EPUB's answers heading was stored as `Οтветы` — first letter GREEK CAPITAL OMICRON,
+not Cyrillic О. Invisible on the page, which is how it survived; it breaks in-book search for
+the word and anything reading the book aloud.
+
+`keepUsable` now REPAIRS rather than rejects. Rejecting would drop the label and a Russian book
+would print "Answers", which is visibly worse than a word that at least looks right. Within a
+word, the minority letters are translated into whichever of Latin/Greek/Cyrillic the rest is
+written in, and only a word with no majority is refused. Those three scripts alone are
+considered, because they are the ones that share letterforms — Japanese and Chinese mix scripts
+inside a word as a matter of course and must not trip it.
+
+The repair also runs when labels are READ, not only when they are translated. `ensureLabels`
+asks only for strings that are MISSING, so a label already in `labels/<language>.json` is never
+re-examined and would have stayed broken for the life of the book. Proved on the device: the
+heading exported as Greek before the change and as Cyrillic after, with no re-translation.
+
 ## 19. Screening a request (built 2026-09-24)
 
 `TopicChecker` in `:core` runs one cheap text call at course creation, in front of the outline —

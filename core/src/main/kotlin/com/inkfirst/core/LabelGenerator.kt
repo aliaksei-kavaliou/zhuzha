@@ -70,8 +70,9 @@ internal fun keepUsable(
     val wanted = requested.toSet()
     val out = LinkedHashMap<String, String>()
     candidates.forEach { (source, target) ->
-        val clean = target.trim()
+        val clean = healHomoglyphs(target.trim())
         when {
+            clean == null -> Unit
             // Not one of ours: the model invented a row, or hallucinated a
             // source. Translating something the app never says is harmless
             // but storing it is clutter.
@@ -92,6 +93,83 @@ internal fun keepUsable(
     }
     return out
 }
+
+
+/**
+ * Repairs a translation that mixes confusable alphabets inside one word, or
+ * returns null if it cannot.
+ *
+ * Found in a real Russian EPUB: the answers heading came back as "Οтветы"
+ * whose first letter is GREEK CAPITAL OMICRON, not Cyrillic О. It is
+ * invisible on the page — which is why it survived review — and it breaks
+ * in-book search for the word and anything reading the book aloud.
+ *
+ * Rejecting it would be worse than keeping it: the label would fall back to
+ * English, so a Russian book would say "Answers" where it currently says
+ * something that at least LOOKS right. So the stray letter is translated back
+ * into the script the rest of the word is written in, and only a word that
+ * cannot be repaired is refused.
+ *
+ * Only Latin, Greek and Cyrillic are considered, because those three are the
+ * ones whose letters share shapes. Japanese and Chinese mix scripts inside a
+ * word as a matter of course — kanji beside kana is not a defect — and are
+ * untouched by this for the same reason: none of their characters are in the
+ * table.
+ */
+internal fun healHomoglyphs(text: String): String? {
+    val out = StringBuilder(text.length)
+    var i = 0
+    while (i < text.length) {
+        if (!text[i].isLetter()) {
+            out.append(text[i]); i++; continue
+        }
+        var j = i
+        while (j < text.length && text[j].isLetter()) j++
+        val word = text.substring(i, j)
+
+        val counts = word.mapNotNull { scriptOf(it) }.groupingBy { it }.eachCount()
+        if (counts.size < 2) {
+            out.append(word)
+        } else {
+            val top = counts.maxOf { it.value }
+            // A tie is not a typo to guess at.
+            val dominant = counts.filterValues { it == top }.keys.singleOrNull() ?: return null
+            word.forEach { c ->
+                val from = scriptOf(c)
+                if (from == null || from == dominant) {
+                    out.append(c)
+                } else {
+                    out.append(CONFUSABLES.firstOrNull { it[from.ordinal] == c }
+                        ?.get(dominant.ordinal)
+                        ?: return null)
+                }
+            }
+        }
+        i = j
+    }
+    return out.toString()
+}
+
+private enum class Script { LATIN, GREEK, CYRILLIC }
+
+private fun scriptOf(c: Char): Script? = when (c) {
+    in 'A'..'Z', in 'a'..'z' -> Script.LATIN
+    in '\u0370'..'\u03FF' -> Script.GREEK
+    in '\u0400'..'\u04FF' -> Script.CYRILLIC
+    else -> null
+}
+
+/**
+ * Letters that look the same in Latin, Greek and Cyrillic, in that order.
+ * NUL marks a script with no lookalike, which makes the word unrepairable
+ * rather than silently wrong.
+ */
+private val CONFUSABLES: List<CharArray> = listOf(
+    "AΑА", "BΒВ", "EΕЕ", "HΗН", "IΙІ", "KΚК", "MΜМ", "NΝ\u0000", "OΟО",
+    "PΡР", "TΤТ", "XΧХ", "YΥУ", "ZΖ\u0000", "C\u0000С", "S\u0000Ѕ",
+    "a\u0000а", "c\u0000с", "e\u0000е", "i\u0000і", "k\u0000к",
+    "oοо", "pρр", "s\u0000ѕ", "x\u0000х", "y\u0000у",
+).map { it.toCharArray() }
 
 private fun placeholdersIn(text: String): Set<String> =
     PLACEHOLDER.findAll(text).map { it.value }.toSet()

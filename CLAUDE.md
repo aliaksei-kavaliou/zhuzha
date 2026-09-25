@@ -312,6 +312,35 @@ yet" note that used to live here was two months stale.
       archive before being removed. **Existing Russian chapter slugs were NOT migrated** —
       figures, ink, notes and bookmarks are all addressed by chapter slug, so that is a real
       data migration and not a rename.
+- [x] **An exported answer can be found (2026-09-25)** — reported from PocketBook: "show
+      answer" on page 11 jumped to page 13 showing a DIFFERENT exercise. The anchors were all
+      CORRECT, and the export was still wrong — the answers section began two paragraphs after
+      the last exercise, so the landing page's visible top was that exercise's question. The
+      link worked; the landing was unreadable. Answers now start on their own page, each one
+      reprints the question it belongs to, and every anchor carries its chapter (`c2-ans1`)
+      because the exercise counter restarts per chapter and a reader that flattens the spine
+      would send every "show answer" in the book to chapter one — latent, not the reported
+      bug. Recap and exercise blocks now print their own name too: they were distinguished
+      only by `border-left-style: double` against `solid`, which most readers render alike.
+      Font size is deliberately still unset — that belongs to the reader. design.md §18.1.
+- [x] **A letter that is not the letter it looks like (2026-09-25)** — the Russian answers
+      heading was stored as `Οтветы`, first letter GREEK OMICRON. Invisible on the page, which
+      is how it survived; it breaks in-book search and text-to-speech. `keepUsable` now
+      REPAIRS rather than rejects — rejecting falls back to English, which is visibly worse
+      than a word that looks right — translating minority letters into whichever of
+      Latin/Greek/Cyrillic the rest of the word uses, and refusing only a word with no
+      majority. Those three scripts only: Japanese and Chinese mix scripts inside a word
+      normally. **It also runs on READ**, because `ensureLabels` only asks for MISSING strings,
+      so a label already on disk is never re-examined and would stay broken for ever.
+      design.md §18.2.
+- [x] **Pictures: what is in front hides what is behind (2026-09-25)** — the most visible
+      defect in a `show` figure, named by Aliaksei. A right-hand strumming figure had the
+      ukulele's strings drawn straight ACROSS the thumb, so the hand read as sunk inside the
+      instrument. Added to the shared house style as a rule rather than a dial, with the
+      failure named. The same picture also ignored the brief's "remaining fingers in a relaxed
+      fist" and drew an open hand, so `SHOW_STYLE` gained a second rule: the pose in the brief
+      is the subject, not a suggestion. Not yet re-verified against real output — the next
+      `show` figure drawn is the test.
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

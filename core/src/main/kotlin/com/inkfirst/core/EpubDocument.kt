@@ -44,6 +44,32 @@ internal data class ChapterSource(
     val qa: List<ExportedQa> = emptyList(),
 )
 
+/**
+ * The word a block of this kind calls itself in the exported book.
+ *
+ * Only the kinds the chapter model actually writes are named. An unknown
+ * fence gets no label rather than a guess — a wrong word on the page is worse
+ * than none, and a new kind would otherwise silently inherit one.
+ */
+internal fun blockLabel(kind: String): String? = when (kind) {
+    "recap" -> "Recap"
+    "exercise" -> "Exercise"
+    else -> null
+}
+
+/**
+ * A question reduced to one line, to reprint above its answer. Long ones are
+ * cut at a word so the cue stays a cue — the full question is a tap away
+ * through the number beside it.
+ */
+internal fun oneLine(text: String, limit: Int = 160): String {
+    val flat = text.replace(Regex("\\s+"), " ").trim()
+    if (flat.length <= limit) return flat
+    val cut = flat.take(limit)
+    val lastSpace = cut.lastIndexOf(' ')
+    return (if (lastSpace > limit / 2) cut.take(lastSpace) else cut).trimEnd(',', '.', ';') + "…"
+}
+
 /** XML-escapes text. `"` is escaped too so the same function serves attributes. */
 internal fun esc(s: String): String = buildString(s.length) {
     s.forEach { c ->
@@ -124,8 +150,18 @@ internal fun renderChapter(
     val body = StringBuilder()
     // Answers are collected as the chapter is walked and printed at the end,
     // because an EPUB has no pages to put them on. See [EpubExport].
-    val answers = mutableListOf<Pair<Int, String>>()
+    // The question travels with the answer. Landing on an answer two pages
+    // from its question and being shown a bare number is the defect this
+    // whole section exists to avoid — see the answers block below.
+    val answers = mutableListOf<Triple<Int, String, String>>()
     var exerciseN = 0
+    // Anchors carry the chapter, because the counter restarts in every
+    // chapter and `ex1` would otherwise exist once per chapter in the book.
+    // Per spec each XHTML file is its own document, so duplicates resolve
+    // correctly — but a reader that flattens the spine into one document
+    // resolves them globally, and then every "show answer" in the book lands
+    // in chapter one.
+    val anchor = "c${source.n}"
 
     fun img(src: String?, alt: String, cls: String) {
         val href = src?.let { images[it] } ?: return
@@ -206,12 +242,16 @@ internal fun renderChapter(
                 block.kind == "exercise" -> {
                     val (question, answer) = splitExerciseBody(block.body)
                     exerciseN++
-                    body.append("<aside class=\"exercise\" id=\"ex$exerciseN\">\n")
+                    body.append("<aside class=\"exercise\" id=\"$anchor-ex$exerciseN\">\n")
+                    body.append(
+                        "<p class=\"block-label\">" +
+                            "${esc(labels.t("Exercise"))} $exerciseN</p>\n",
+                    )
                     body.append(paragraphs(question))
                     if (answer.isNotBlank()) {
-                        answers += exerciseN to answer
+                        answers += Triple(exerciseN, question, answer)
                         body.append(
-                            "<p class=\"answer-link\"><a href=\"#ans$exerciseN\">" +
+                            "<p class=\"answer-link\"><a href=\"#$anchor-ans$exerciseN\">" +
                                 "${esc(labels.t("Show answer"))}</a></p>\n",
                         )
                     }
@@ -221,6 +261,14 @@ internal fun renderChapter(
                     body.append("<pre><code>${esc(block.body.trimEnd())}</code></pre>\n")
                 else -> {
                     body.append("<aside class=\"${esc(block.kind)}\">\n")
+                    // A recap and an exercise were distinguished ONLY by a
+                    // CSS border style, which most readers render alike and
+                    // none of which says what the block is. In the app the
+                    // badge carries that meaning; an EPUB has no badge, so
+                    // the block has to say it in words.
+                    blockLabel(block.kind)?.let {
+                        body.append("<p class=\"block-label\">${esc(labels.t(it))}</p>\n")
+                    }
                     body.append(paragraphs(block.body))
                     body.append("</aside>\n")
                 }
@@ -234,11 +282,23 @@ internal fun renderChapter(
     // printing the answer under its exercise means you cannot not read it.
     // Linked both ways, which is the one thing paper cannot do.
     if (answers.isNotEmpty()) {
-        body.append("<section class=\"answers\" id=\"answers\">\n")
+        // STARTS ON ITS OWN PAGE. Without the break the section follows the
+        // last exercise after a paragraph or two, so jumping to answer 1
+        // lands on a page whose visible top is the LAST exercise's question —
+        // which reads exactly like the link going to the wrong place, and was
+        // reported as such from a real reader.
+        body.append("<section class=\"answers\" id=\"$anchor-answers\">\n")
         body.append("<h2>${esc(labels.t("Answers"))}</h2>\n")
-        answers.forEach { (n, answer) ->
-            body.append("<div class=\"answer\" id=\"ans$n\">\n")
-            body.append("<p class=\"answer-n\"><a href=\"#ex$n\">$n</a></p>\n")
+        answers.forEach { (n, question, answer) ->
+            body.append("<div class=\"answer\" id=\"$anchor-ans$n\">\n")
+            body.append(
+                "<p class=\"answer-n\"><a href=\"#$anchor-ex$n\">" +
+                    "${esc(labels.t("Answer {n}").replace("{n}", n.toString()))}</a></p>\n",
+            )
+            // The question again. The reader arrived here from two pages
+            // away and cannot see what was asked; a bare number does not
+            // tell them whether this is the answer they wanted.
+            body.append("<p class=\"answer-q\">${esc(oneLine(question))}</p>\n")
             body.append(paragraphs(answer))
             body.append("</div>\n")
         }

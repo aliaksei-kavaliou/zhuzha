@@ -116,6 +116,80 @@ class UiLabelsTest {
 
         assertEquals("Contents", CourseStore(tmp).readLabels("Russian").t("Contents"))
     }
+
+    @Test
+    fun `a stray letter from a lookalike alphabet is put back`() {
+        // From a real Russian EPUB: the answers heading came back as "Οтветы"
+        // whose first letter is GREEK CAPITAL OMICRON. Invisible on the page,
+        // which is how it survived — and it breaks in-book search for the
+        // word and anything reading the book aloud.
+        val greekO = "\u039F"
+        val kept = keepUsable(
+            listOf(LabelPair("Answers", greekO + "тветы")),
+            listOf("Answers"),
+        )
+
+        assertEquals("\u041Eтветы", kept["Answers"])
+    }
+
+    @Test
+    fun `a word written in one alphabet is left exactly alone`() {
+        val kept = keepUsable(
+            listOf(LabelPair("Answers", "Ответы"), LabelPair("Save", "Сохранить")),
+            listOf("Answers", "Save"),
+        )
+
+        assertEquals("Ответы", kept["Answers"])
+        assertEquals("Сохранить", kept["Save"])
+    }
+
+    @Test
+    fun `separate words in different alphabets are not a homoglyph`() {
+        // "EPUB" is Latin and the rest is Cyrillic, but they are separate
+        // words — this is ordinary, correct translation.
+        val kept = keepUsable(
+            listOf(LabelPair("an EPUB for any e-reader", "EPUB для читалок")),
+            listOf("an EPUB for any e-reader"),
+        )
+
+        assertEquals("EPUB для читалок", kept["an EPUB for any e-reader"])
+    }
+
+    @Test
+    fun `a script that mixes inside a word on purpose is untouched`() {
+        // Japanese writes kanji beside kana within one word as a matter of
+        // course. None of those characters are lookalikes, so the rule must
+        // not fire.
+        val japanese = "\u7B54\u3048"
+        val kept = keepUsable(listOf(LabelPair("Answers", japanese)), listOf("Answers"))
+
+        assertEquals(japanese, kept["Answers"])
+    }
+
+    @Test
+    fun `a word with no majority alphabet is refused rather than guessed at`() {
+        // Half and half is not a typo to repair; dropping it falls back to
+        // English, which is visibly wrong and therefore fixable by a person.
+        val kept = keepUsable(
+            listOf(LabelPair("OK", "\u041E\u039A")),
+            listOf("OK"),
+        )
+
+        assertEquals(null, kept["OK"])
+    }
+
+
+    @Test
+    fun `a label already stored with a lookalike letter is healed on read`() {
+        // keepUsable only sees what the translator has just said, and
+        // ensureLabels only asks for MISSING strings — so a label stored by
+        // an older version is never re-examined and would stay broken for
+        // the life of the book.
+        val labels = UiLabels(mapOf("Answers" to "\u039Fтветы"))
+
+        assertEquals("\u041Eтветы", labels.t("Answers"))
+    }
+
 }
 
 /**
