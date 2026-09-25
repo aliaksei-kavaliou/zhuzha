@@ -205,13 +205,21 @@ class EpubExportTest {
         val (files, _) = exportOf(tmp)
         val ch = text(files, "OEBPS/ch01.xhtml")
 
-        val exerciseAt = ch.indexOf("id=\"c1-ex1\"")
-        val answerAt = ch.indexOf("id=\"c1-ans1\"")
-        assertTrue(exerciseAt in 1 until answerAt, "the answer must come after its exercise")
-        assertTrue(ch.contains("href=\"#c1-ans1\""), "the exercise must link forward to its answer")
-        assertTrue(ch.contains("href=\"#c1-ex1\""), "the answer must link back to its exercise")
-        // And the answer text is not sitting in the exercise itself.
-        assertFalse(ch.substring(exerciseAt, answerAt).contains("less active when cold"))
+        val ans = text(files, "OEBPS/ch01-answers.xhtml")
+
+        assertTrue(ch.contains("id=\"c1-ex1\""))
+        assertTrue(ans.contains("id=\"c1-ans1\""))
+        assertTrue(
+            ch.contains("href=\"ch01-answers.xhtml#c1-ans1\""),
+            "the exercise must link forward into the answers document",
+        )
+        assertTrue(
+            ans.contains("href=\"ch01.xhtml#c1-ex1\""),
+            "the answer must link back into the chapter",
+        )
+        // And the answer text is nowhere in the chapter itself.
+        assertFalse(ch.contains("less active when cold"), "the answer leaked into the chapter")
+        assertTrue(ans.contains("less active when cold"))
     }
 
     @Test
@@ -378,17 +386,27 @@ class EpubExportTest {
     }
 
     @Test
-    fun `the answers start on their own page`(@TempDir tmp: File) {
-        // Without the break the section follows the last exercise after a
-        // paragraph or two, so jumping to answer 1 lands on a page whose
-        // visible top is a DIFFERENT exercise's question. Reported from a
-        // real reader as the link going to the wrong place — and it was not:
-        // the anchor was right and the landing was unreadable.
+    fun `the answers are their own document in the spine`(@TempDir tmp: File) {
+        // A CSS page break was the first attempt and it did not survive
+        // contact with a real reader: PocketBook renders in its own typeface
+        // once the font is changed and need not apply the publisher's
+        // stylesheet at all, so the jump still landed mid-chapter. A separate
+        // file is a page boundary nothing can ignore.
+        val (files, _) = exportOf(tmp)
+        val opf = text(files, "OEBPS/content.opf")
+
+        assertTrue(files.containsKey("OEBPS/ch01-answers.xhtml"))
+        assertTrue(opf.contains("""<item id="ans1" href="ch01-answers.xhtml""""), opf)
+        // And it is reachable by paging, directly after its own chapter.
+        val spine = Regex("""idref="([^"]+)"""").findAll(opf).map { it.groupValues[1] }.toList()
+        assertEquals(listOf("title", "nav", "ch1", "ans1", "ch2"), spine)
+    }
+
+    @Test
+    fun `a chapter with no exercises gets no answers document`(@TempDir tmp: File) {
         val (files, _) = exportOf(tmp)
 
-        assertTrue(
-            text(files, "OEBPS/style.css").contains("section.answers { page-break-before: always;"),
-        )
+        assertFalse(files.containsKey("OEBPS/ch02-answers.xhtml"))
     }
 
     @Test
@@ -396,8 +414,7 @@ class EpubExportTest {
         // The reader arrived from another page and cannot see what was asked,
         // so a bare number does not tell them this is the answer they wanted.
         val (files, _) = exportOf(tmp)
-        val ch = text(files, "OEBPS/ch01.xhtml")
-        val answers = ch.substring(ch.indexOf("<section class=\"answers\""))
+        val answers = text(files, "OEBPS/ch01-answers.xhtml")
 
         assertTrue(answers.contains("class=\"answer-q\""), answers)
         assertTrue(answers.contains("cold kitchen"), "the question itself must be reprinted")

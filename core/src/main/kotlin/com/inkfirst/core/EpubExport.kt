@@ -86,7 +86,13 @@ class EpubExport(private val store: CourseStore) {
             zip.text("META-INF/container.xml", CONTAINER_XML)
             zip.text("OEBPS/style.css", EPUB_CSS)
             zip.text("OEBPS/title.xhtml", titlePage(course, docs, options, labels))
-            docs.forEach { zip.text("OEBPS/${it.fileName}", it.xhtml) }
+            docs.forEach {
+                zip.text("OEBPS/${it.fileName}", it.xhtml)
+                // The answers travel as their own document — see [ChapterDoc].
+                if (it.answersFileName != null && it.answersXhtml != null) {
+                    zip.text("OEBPS/${it.answersFileName}", it.answersXhtml)
+                }
+            }
             zip.text("OEBPS/nav.xhtml", navDocument(course, docs, labels))
             // toc.ncx is EPUB 2 and formally superseded, but it costs a few
             // lines and it is what older readers — including some shipped on
@@ -287,6 +293,9 @@ private fun opfDocument(
         append("    <item id=\"title\" href=\"title.xhtml\" media-type=\"application/xhtml+xml\"/>\n")
         docs.forEachIndexed { i, doc ->
             append("    <item id=\"ch${i + 1}\" href=\"${esc(doc.fileName)}\" media-type=\"application/xhtml+xml\"/>\n")
+            doc.answersFileName?.let {
+                append("    <item id=\"ans${i + 1}\" href=\"${esc(it)}\" media-type=\"application/xhtml+xml\"/>\n")
+            }
         }
         pictures.sorted().forEachIndexed { i, name ->
             append(
@@ -298,7 +307,13 @@ private fun opfDocument(
     val spine = buildString {
         append("    <itemref idref=\"title\"/>\n")
         append("    <itemref idref=\"nav\"/>\n")
-        docs.indices.forEach { append("    <itemref idref=\"ch${it + 1}\"/>\n") }
+        // Each chapter is followed in the spine by its answers, so paging
+        // forward reaches them and a link into them lands at the top of a
+        // document rather than mid-page.
+        docs.forEachIndexed { i, doc ->
+            append("    <itemref idref=\"ch${i + 1}\"/>\n")
+            if (doc.answersFileName != null) append("    <itemref idref=\"ans${i + 1}\"/>\n")
+        }
     }
     return """
 <?xml version="1.0" encoding="UTF-8"?>

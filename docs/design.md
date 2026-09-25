@@ -1060,18 +1060,29 @@ unreadable.
 
 Three things fix it, and each is a rule rather than a tweak:
 
-**The answers start on their own page** (`page-break-before: always`), so the destination is a
-page headed "Ответы" instead of the tail of the chapter.
+**The answers are their own document** — `ch02-answers.xhtml`, sitting in the spine directly
+after its chapter. This was first tried as `page-break-before: always` on the section, and that
+FAILED against the same reader: a reader showing the book in its own typeface, which is what
+happens the moment someone changes the font size, need not apply the publisher's stylesheet at
+all. A separate file is a page boundary nothing can ignore, and it makes the destination the
+top of a document rather than a position inside one. Keeping it in the spine (rather than
+`linear="no"`) means the answers are still reached by paging forward.
 
 **An answer reprints its question.** The reader arrived from another page and cannot see what
 was asked; a bare number cannot tell them this is the answer they wanted. Long questions are
 cut at a word — it is a cue, not a reprint of the exercise.
 
-**Every anchor carries its chapter** (`c2-ans1`). The exercise counter restarts each chapter, so
-`ex1` existed once per chapter in the book. Per spec each XHTML file is its own document and
-that resolves correctly, but a reader that flattens the spine into one document resolves the
-fragment globally — and then every "show answer" in the book lands in chapter one. This was
-NOT the reported failure; it is a second, latent one found while looking for the first.
+**Every anchor carries its chapter** (`c2-ans1`), and links now name the file they cross into
+(`ch02-answers.xhtml#c2-ans1`). The exercise counter restarts each chapter, so `ex1` existed
+once per chapter in the book. Per spec each XHTML file is its own document and that resolves
+correctly, but a reader that flattens the spine resolves the fragment globally — and then every
+"show answer" in the book lands in chapter one. This was NOT the reported failure; it is a
+second, latent one found while looking for the first.
+
+**The lesson worth keeping: a fix that depends on the reader honouring CSS is not a fix.** The
+first attempt was verified by reading the exported file, which showed the rule present and
+correct, and it did nothing on the device. Layout that has to happen must be expressed in the
+package — files, spine order — not in a stylesheet the reader may replace.
 
 **A block says what it is.** A recap and an exercise were distinguished only by
 `border-left-style: double` against `solid`, which most readers render alike and neither of

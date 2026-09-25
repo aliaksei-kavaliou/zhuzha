@@ -11,12 +11,25 @@ package com.inkfirst.core
  * every text boundary.
  */
 
-/** A chapter, rendered. [images] is the source names it actually used. */
+/**
+ * A chapter, rendered. [images] is the source names it actually used.
+ *
+ * [answersXhtml] is a SECOND document when the chapter has answers, written
+ * beside it in the spine. It is a separate file rather than a section at the
+ * bottom of this one because that is the only page break an EPUB reader
+ * cannot ignore: `page-break-before` is CSS, and a reader showing the book in
+ * its own typeface — which is what happens the moment someone changes the
+ * font size — may not apply the publisher's stylesheet at all. Reported from
+ * PocketBook, where the break was simply not honoured and the jump still
+ * landed mid-chapter.
+ */
 internal data class ChapterDoc(
     val fileName: String,
     val title: String,
     val xhtml: String,
     val images: Set<String>,
+    val answersFileName: String? = null,
+    val answersXhtml: String? = null,
 )
 
 /** One reader annotation as the export carries it — a passage and what was said about it. */
@@ -162,6 +175,8 @@ internal fun renderChapter(
     // resolves them globally, and then every "show answer" in the book lands
     // in chapter one.
     val anchor = "c${source.n}"
+    val chapterFile = "ch%02d.xhtml".format(source.n)
+    val answersFile = "ch%02d-answers.xhtml".format(source.n)
 
     fun img(src: String?, alt: String, cls: String) {
         val href = src?.let { images[it] } ?: return
@@ -251,7 +266,7 @@ internal fun renderChapter(
                     if (answer.isNotBlank()) {
                         answers += Triple(exerciseN, question, answer)
                         body.append(
-                            "<p class=\"answer-link\"><a href=\"#$anchor-ans$exerciseN\">" +
+                            "<p class=\"answer-link\"><a href=\"$answersFile#$anchor-ans$exerciseN\">" +
                                 "${esc(labels.t("Show answer"))}</a></p>\n",
                         )
                     }
@@ -281,28 +296,32 @@ internal fun renderChapter(
     // reflows, so "the next page" does not exist as a place to hide one, and
     // printing the answer under its exercise means you cannot not read it.
     // Linked both ways, which is the one thing paper cannot do.
-    if (answers.isNotEmpty()) {
-        // STARTS ON ITS OWN PAGE. Without the break the section follows the
-        // last exercise after a paragraph or two, so jumping to answer 1
-        // lands on a page whose visible top is the LAST exercise's question —
-        // which reads exactly like the link going to the wrong place, and was
-        // reported as such from a real reader.
-        body.append("<section class=\"answers\" id=\"$anchor-answers\">\n")
-        body.append("<h2>${esc(labels.t("Answers"))}</h2>\n")
+    // THE ANSWERS ARE THEIR OWN DOCUMENT. As a section at the foot of the
+    // chapter they began a paragraph or two after the last exercise, so
+    // jumping to answer 1 landed on a page whose visible top was a DIFFERENT
+    // exercise's question — reported from a real reader as the link going to
+    // the wrong place. A CSS page break did not fix it, because a reader
+    // rendering the book in its own typeface need not apply the publisher's
+    // stylesheet at all. A separate file is a page boundary no reader can
+    // ignore.
+    val answersBody = if (answers.isEmpty()) null else buildString {
+        append("<h1>${esc(labels.t("Answers"))}</h1>\n")
+        append("<p class=\"byline\">${esc(source.title)}</p>\n")
+        append("<section class=\"answers\" id=\"$anchor-answers\">\n")
         answers.forEach { (n, question, answer) ->
-            body.append("<div class=\"answer\" id=\"$anchor-ans$n\">\n")
-            body.append(
-                "<p class=\"answer-n\"><a href=\"#$anchor-ex$n\">" +
+            append("<div class=\"answer\" id=\"$anchor-ans$n\">\n")
+            append(
+                "<p class=\"answer-n\"><a href=\"$chapterFile#$anchor-ex$n\">" +
                     "${esc(labels.t("Answer {n}").replace("{n}", n.toString()))}</a></p>\n",
             )
-            // The question again. The reader arrived here from two pages
-            // away and cannot see what was asked; a bare number does not
-            // tell them whether this is the answer they wanted.
-            body.append("<p class=\"answer-q\">${esc(oneLine(question))}</p>\n")
-            body.append(paragraphs(answer))
-            body.append("</div>\n")
+            // The question again. The reader arrived from another document
+            // and cannot see what was asked; a bare number does not tell
+            // them whether this is the answer they wanted.
+            append("<p class=\"answer-q\">${esc(oneLine(question))}</p>\n")
+            append(paragraphs(answer))
+            append("</div>\n")
         }
-        body.append("</section>\n")
+        append("</section>\n")
     }
 
     if (includeAnnotations && (source.notes.isNotEmpty() || source.qa.isNotEmpty())) {
@@ -332,10 +351,14 @@ internal fun renderChapter(
     }
 
     return ChapterDoc(
-        fileName = "ch%02d.xhtml".format(source.n),
+        fileName = chapterFile,
         title = source.title,
         xhtml = xhtmlPage(source.title, body.toString(), language),
         images = used,
+        answersFileName = answersBody?.let { answersFile },
+        answersXhtml = answersBody?.let {
+            xhtmlPage("${labels.t("Answers")} — ${source.title}", it, language)
+        },
     )
 }
 

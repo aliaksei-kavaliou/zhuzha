@@ -316,8 +316,13 @@ yet" note that used to live here was two months stale.
       answer" on page 11 jumped to page 13 showing a DIFFERENT exercise. The anchors were all
       CORRECT, and the export was still wrong — the answers section began two paragraphs after
       the last exercise, so the landing page's visible top was that exercise's question. The
-      link worked; the landing was unreadable. Answers now start on their own page, each one
-      reprints the question it belongs to, and every anchor carries its chapter (`c2-ans1`)
+      link worked; the landing was unreadable. **Fixed twice**: first with a CSS page break,
+      which Aliaksei reported still jumped two pages — a reader rendering in its own typeface
+      (what happens once you change the font size) need not apply the publisher's stylesheet
+      at all. **A fix that depends on the reader honouring CSS is not a fix.** The answers are
+      now their OWN DOCUMENT in the spine (`ch02-answers.xhtml`), which is a page boundary
+      nothing can ignore. Each one reprints the question it belongs to, and every anchor
+      carries its chapter (`c2-ans1`)
       because the exercise counter restarts per chapter and a reader that flattens the spine
       would send every "show answer" in the book to chapter one — latent, not the reported
       bug. Recap and exercise blocks now print their own name too: they were distinguished
@@ -339,8 +344,16 @@ yet" note that used to live here was two months stale.
       instrument. Added to the shared house style as a rule rather than a dial, with the
       failure named. The same picture also ignored the brief's "remaining fingers in a relaxed
       fist" and drew an open hand, so `SHOW_STYLE` gained a second rule: the pose in the brief
-      is the subject, not a suggestion. Not yet re-verified against real output — the next
-      `show` figure drawn is the test.
+      is the subject, not a suggestion. **Verified on real output the same day**: the ukulele
+      strumming figure redrawn with the new rules came back with the strings correctly hidden
+      behind the hand, and with the brief's relaxed fist actually drawn — one finger extended
+      to the string, the rest curled. Both rules earned their place.
+      **Two gaps found while running that test.** An inline figure CANNOT be redrawn from the
+      UI: `Иллюстрации` reports "all N drawn" and is inert, so only Opening/Closing can be
+      replaced — the exact trap the 2026-09-21 note warns about. And "drawn" is judged from the
+      markdown's `src=` attribute while RENDERING is judged from the file, so deleting a figure
+      file leaves the menu insisting everything is drawn while the page shows alt text. The
+      redraw was forced by clearing `src=` in the chapter Markdown by hand.
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,
