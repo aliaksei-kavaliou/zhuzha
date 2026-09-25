@@ -145,6 +145,7 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "Draw closing picture",
     "Redraw",
     "Redraw this picture?",
+    "Which picture?",
     "The one you have is replaced. This cannot be undone.",
     "picture drawn",
     "needs the chapter picture first",

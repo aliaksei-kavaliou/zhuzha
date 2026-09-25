@@ -410,6 +410,9 @@ fun ReaderScreen(
     var compileState by remember(chapterSlug) { mutableStateOf<CompileState>(CompileState.Idle) }
     // Up while the reader is deciding whether to throw this chapter away.
     var confirmingRewrite by remember(chapterSlug) { mutableStateOf(false) }
+    // Which already-drawn figure to replace. A picker rather than a confirm,
+    // because a chapter has several and they are told apart by their briefs.
+    var pickingRedraw by remember(chapterSlug) { mutableStateOf(false) }
 
     LaunchedEffect(courseSlug, chapterSlug) {
         course = store.load(courseSlug)
@@ -1091,6 +1094,62 @@ fun ReaderScreen(
             )
         }
 
+        if (pickingRedraw) {
+            val c = course
+            val ch = chapter
+            val md = markdown
+            if (c == null || ch == null || md == null) {
+                pickingRedraw = false
+            } else {
+                InkChoiceDialog(
+                    title = t("Which picture?"),
+                    onDismiss = { pickingRedraw = false },
+                    dismissLabel = t("Cancel"),
+                ) {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        findFigureSlots(md).filter { it.brief.isNotBlank() }.forEach { slot ->
+                            TextButton(
+                                onClick = {
+                                    pickingRedraw = false
+                                    illustrateExistingChapter(
+                                        course = c,
+                                        chapter = ch,
+                                        markdown = md,
+                                        scope = scope,
+                                        store = store,
+                                        apiKeyStore = apiKeyStore,
+                                        onState = { compileState = it },
+                                        onDone = { newMarkdown ->
+                                            markdown = newMarkdown
+                                            // The file changed under the same
+                                            // name, so every cache keyed on
+                                            // that name is now stale.
+                                            pictureVersion++
+                                        },
+                                        only = setOf(slot.ordinal),
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    text = "${slot.ordinal}. ${slot.brief.take(70)}" +
+                                        if (slot.brief.length > 70) "…" else "",
+                                    fontFamily = FontFamily.Serif,
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                    color = Ink,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         confirmingRedraw?.let { closing ->
             // A confirm, because this spends money and throws away a picture
             // that cannot be got back — the model does not draw the same one
@@ -1272,6 +1331,10 @@ fun ReaderScreen(
                 onRewriteChapter = {
                     showFormatMenu = false
                     confirmingRewrite = true
+                },
+                onPickRedraw = {
+                    showFormatMenu = false
+                    pickingRedraw = true
                 },
                 onIllustrate = {
                     // Menu deliberately stays open — it is where progress shows.
@@ -2477,6 +2540,7 @@ private fun ChapterToolsMenu(
     figureStatus: String?,
     busyDrawing: Boolean,
     onIllustrate: () -> Unit,
+    onPickRedraw: () -> Unit,
     onDrawBadges: () -> Unit,
     onDrawCover: () -> Unit,
     onDrawTail: () -> Unit,
@@ -2555,17 +2619,25 @@ private fun ChapterToolsMenu(
             // and redrew what he already had (2026-09-21). A finished row says
             // so and is not clickable; only genuinely outstanding work is.
             if (figureSlots > 0) {
+                // A drawn figure used to be a dead end: the row reported
+                // "all N drawn" and did nothing, so the only way to replace a
+                // bad picture was to rewrite the chapter — which deliberately
+                // KEEPS its pictures. Opening and Closing were given a redraw
+                // in 2026-09-23 and the figures were not, which went unnoticed
+                // until the house style changed and there was no way to apply
+                // it. The row reports when there is nothing outstanding AND
+                // offers to redraw; the picker names which picture.
                 MenuRow(label = t("Figures")) {
                     MenuAction(
                         text = figureStatus ?: when {
                             pendingFigures == 0 ->
-                                "all $figureSlots drawn"
+                                "all $figureSlots drawn · " + t("Redraw")
                             else ->
                                 t("Draw {n}", "n" to pendingFigures) +
                                     " · ${pictureCost(pendingFigures)}"
                         },
-                        enabled = !busyDrawing && pendingFigures > 0 && figureStatus == null,
-                        onClick = onIllustrate,
+                        enabled = !busyDrawing && figureStatus == null,
+                        onClick = if (pendingFigures > 0) onIllustrate else onPickRedraw,
                     )
                 }
             }
@@ -4351,6 +4423,7 @@ private suspend fun illustrateChapter(
     store: com.inkfirst.core.CourseStore,
     onState: (CompileState) -> Unit,
     maxFigures: Int = course.figurePolicy.maxPerChapter,
+    only: Set<Int>? = null,
 ): String = try {
     val result = ChapterIllustrator(client, imageModel).illustrate(
         course = course,
@@ -4358,6 +4431,7 @@ private suspend fun illustrateChapter(
         markdown = markdown,
         apiKey = apiKey,
         maxFigures = maxFigures,
+        only = only,
         onProgress = { done, total -> onState(CompileState.Illustrating(done, total, "figures")) },
         saveImage = { fileName, bytes -> store.saveFigure(course.slug, fileName, bytes) },
     )
@@ -4386,6 +4460,7 @@ private fun illustrateExistingChapter(
     apiKeyStore: ApiKeyStore,
     onState: (CompileState) -> Unit,
     onDone: (String) -> Unit,
+    only: Set<Int>? = null,
 ) {
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     if (apiKey.isBlank()) {
@@ -4408,6 +4483,7 @@ private fun illustrateExistingChapter(
                     // spent without being asked; here the reader tapped a row
                     // that named the count and the price.
                     maxFigures = Int.MAX_VALUE,
+                    only = only,
                 )
                 onState(CompileState.Idle)
                 onDone(illustrated)

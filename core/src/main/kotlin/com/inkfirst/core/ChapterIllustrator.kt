@@ -145,19 +145,34 @@ class ChapterIllustrator(
         markdown: String,
         apiKey: String,
         maxFigures: Int = course.figurePolicy.maxPerChapter,
+        only: Set<Int>? = null,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
         saveImage: (fileName: String, bytes: ByteArray) -> Unit,
     ): IllustrateResult {
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
 
-        val waiting = findFigureSlots(markdown).filter { it.isPending }
-        // The ceiling is enforced here rather than asked for in the prompt,
-        // because a prompt is a suggestion and this is money. Nothing is
-        // lost by stopping: a slot with no picture keeps rendering its alt
-        // text, and the reader's menu still offers to draw it — so the
-        // pictures past the ceiling become a decision instead of a charge.
-        val pending = waiting.take(maxFigures.coerceAtLeast(0))
-        val skipped = waiting.size - pending.size
+        val all = findFigureSlots(markdown)
+        // [only] is a REDRAW: the reader named these pictures and the row
+        // named the price, so neither "it already has one" nor the
+        // per-chapter ceiling applies. Both of those govern what the app
+        // spends on its own initiative, which this is not. A slot with no
+        // brief is still skipped — there is nothing to draw from.
+        val pending: List<FigureSlot>
+        val skipped: Int
+        if (only != null) {
+            pending = all.filter { it.ordinal in only && it.brief.isNotBlank() }
+            skipped = 0
+        } else {
+            val waiting = all.filter { it.isPending }
+            // The ceiling is enforced here rather than asked for in the
+            // prompt, because a prompt is a suggestion and this is money.
+            // Nothing is lost by stopping: a slot with no picture keeps
+            // rendering its alt text, and the reader's menu still offers to
+            // draw it — so the pictures past the ceiling become a decision
+            // instead of a charge.
+            pending = waiting.take(maxFigures.coerceAtLeast(0))
+            skipped = waiting.size - pending.size
+        }
         if (pending.isEmpty()) {
             return IllustrateResult(markdown, generated = 0, failed = 0, skipped = skipped)
         }

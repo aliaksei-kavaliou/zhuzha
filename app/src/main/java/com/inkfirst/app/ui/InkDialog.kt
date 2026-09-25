@@ -62,6 +62,45 @@ internal fun InkDialog(
     )
 }
 
+/**
+ * The same dialog with no confirm button — for picking one of several things
+ * rather than agreeing to one. The choices live in [content] and each closes
+ * the dialog itself; the only button is the way out.
+ */
+@Composable
+internal fun InkChoiceDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    dismissLabel: String,
+    content: @Composable () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.border(width = 1.dp, color = Ink),
+        shape = RectangleShape,
+        containerColor = Paper,
+        titleContentColor = Ink,
+        textContentColor = Ink,
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                text = title,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                lineHeight = 24.sp,
+                color = Ink,
+            )
+        },
+        text = content,
+        // A dialog is its own window, so a scroll here is not the reader's
+        // gesture layer and does not run into TapRouting the way the menu
+        // sheet does.
+        confirmButton = {},
+        dismissButton = { DialogButton(dismissLabel, onDismiss) },
+    )
+}
+
 @Composable
 private fun DialogButton(label: String, onClick: () -> Unit) {
     TextButton(onClick = onClick) {

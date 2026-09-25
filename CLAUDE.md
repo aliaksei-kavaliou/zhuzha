@@ -350,12 +350,24 @@ yet" note that used to live here was two months stale.
       strumming figure redrawn with the new rules came back with the strings correctly hidden
       behind the hand, and with the brief's relaxed fist actually drawn — one finger extended
       to the string, the rest curled. Both rules earned their place.
-      **Two gaps found while running that test.** An inline figure CANNOT be redrawn from the
-      UI: `Иллюстрации` reports "all N drawn" and is inert, so only Opening/Closing can be
-      replaced — the exact trap the 2026-09-21 note warns about. And "drawn" is judged from the
-      markdown's `src=` attribute while RENDERING is judged from the file, so deleting a figure
-      file leaves the menu insisting everything is drawn while the page shows alt text. The
-      redraw was forced by clearing `src=` in the chapter Markdown by hand.
+      **Two gaps found while running that test.** The first is now FIXED (see below). The
+      second stands: "drawn" is judged from the markdown's `src=` attribute while RENDERING is
+      judged from the file, so deleting a figure file leaves the menu insisting everything is
+      drawn while the page shows alt text.
+- [x] **A figure can be redrawn (2026-09-25)** — `Иллюстрации` reported "all N drawn" and did
+      nothing, so a picture that came back wrong was permanent short of rewriting the chapter,
+      which deliberately KEEPS its pictures. Opening and Closing got a redraw on 2026-09-23 and
+      the figures did not; nobody noticed until the house style improved and there was no way
+      to apply it. The row now also offers `Перерисовать`, opening a PICKER — a chapter has
+      several figures and they are told apart by their briefs, so a yes/no confirm is the wrong
+      shape. `ChapterIllustrator.illustrate` takes `only: Set<Int>?`, which selects by ordinal
+      regardless of `isPending` and ignores the per-chapter ceiling: both of those govern what
+      the app spends on its own initiative, and this is a row the reader tapped with the price
+      on it. The picker lives in a DIALOG rather than in the menu sheet, which is what lets it
+      scroll — a dialog is its own window and does not meet `TapRouting`'s CloseMenu the way
+      the sheet does. `pictureVersion++` on completion, or the reader draws the old bytes from
+      cache under the same file name. **Unit-tested; NOT device-verified — the Boox was
+      unplugged before it could be driven.**
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

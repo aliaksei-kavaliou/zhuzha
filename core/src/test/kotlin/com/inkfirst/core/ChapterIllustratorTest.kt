@@ -271,4 +271,59 @@ class ChapterIllustratorTest {
 
         assertEquals(listOf(0 to 2, 1 to 2, 2 to 2), ticks)
     }
+
+    @Test
+    fun `a named figure is redrawn even though it already has a picture`() = runTest {
+        // The redraw path. Until now a drawn figure could not be replaced at
+        // all — "all N drawn" was a dead end — so a picture that came back
+        // wrong, or one drawn before the house style improved, was permanent
+        // short of rewriting the whole chapter.
+        val drawn = listOf("one", "two", "three")
+            .mapIndexed { i, b -> """```figure alt="$b" src="01-intro-${i + 1}.png"```""" }
+            .joinToString("\n\n")
+        val client = FakeImageClient()
+        val saved = mutableMapOf<String, ByteArray>()
+
+        val result = ChapterIllustrator(client)
+            .illustrate(course, chapter, drawn, apiKey = "k", only = setOf(2)) { name, bytes ->
+                saved[name] = bytes
+            }
+
+        assertEquals(1, result.generated)
+        assertEquals(setOf("01-intro-2.png"), saved.keys)
+        // The brief that was sent is the one belonging to figure 2.
+        assertTrue(client.prompts.single().contains("two"), client.prompts.single())
+        // And the other two are untouched.
+        assertEquals(
+            listOf("01-intro-1.png", "01-intro-2.png", "01-intro-3.png"),
+            findFigureSlots(result.markdown).map { it.src },
+        )
+    }
+
+    @Test
+    fun `a redraw is not bound by the per-chapter ceiling`() = runTest {
+        // The ceiling governs what the app spends on its own initiative. A
+        // redraw is a row the reader tapped with the price already on it.
+        val eight = (1..8).joinToString("\n\n") { """```figure alt="brief $it" src="f$it.png"```""" }
+        val client = FakeImageClient()
+
+        val result = ChapterIllustrator(client).illustrate(
+            course, chapter, eight, apiKey = "k", maxFigures = 0, only = (1..8).toSet(),
+        ) { _, _ -> }
+
+        assertEquals(8, result.generated)
+        assertEquals(0, result.skipped)
+    }
+
+    @Test
+    fun `a redraw of a slot with no brief draws nothing`() = runTest {
+        val client = FakeImageClient()
+
+        val result = ChapterIllustrator(client)
+            .illustrate(course, chapter, "```figure alt=\"\"```", apiKey = "k", only = setOf(1)) { _, _ -> }
+
+        assertEquals(0, result.generated)
+        assertTrue(client.prompts.isEmpty())
+    }
+
 }
