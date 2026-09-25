@@ -31,4 +31,26 @@ class ChapterSlugTest {
         // 60-char cap plus zero-padded prefix = "01-" + 60 chars.
         assertEquals("01-${"a".repeat(60)}", slug)
     }
+
+    @Test
+    fun `a chapter title in another script keeps its words`() {
+        // The ukulele book is the evidence: its chapters were stored as
+        // 01-chapter, 03-c, 04-am, 06-f — the index, plus whichever chord
+        // names happened to be spelled in Latin. Everything else was dropped
+        // by the same [^a-z0-9] class that broke courseSlug.
+        assertEquals(
+            "03-самый-первый-аккорд-знакомимся-с-аккордом-c",
+            chapterSlug(3, "Самый первый аккорд: знакомимся с аккордом C"),
+        )
+    }
+
+    @Test
+    fun `an ascii chapter title slugs exactly as it always did`() {
+        assertEquals("01-why-kotlin-feels-weird", chapterSlug(1, "Why Kotlin Feels Weird"))
+    }
+
+    @Test
+    fun `a title with nothing sluggable still gets its number`() {
+        assertEquals("07-chapter", chapterSlug(7, "!!!"))
+    }
 }

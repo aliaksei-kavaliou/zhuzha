@@ -231,16 +231,45 @@ data class LastRead(
  * Kebab-cases a course title. Unlike [chapterSlug] this has no numeric prefix
  * because there's no natural ordinal — the *store* handles collisions by
  * appending "-2", "-3", etc.
+ *
+ * WHAT SURVIVES IS "A LETTER OR A DIGIT IN ANY SCRIPT", not "a-z0-9". Written
+ * the narrow way, a title with no Latin in it lost every character, reduced to
+ * the empty string, and came out as the fallback — so every Russian book on
+ * the shelf was called `course`, then `course-2`, and the slug is the folder
+ * name, the backup's filename and the name inside an exported EPUB. A reader
+ * whose language is not written in Latin got that on their very first book.
+ *
+ * Marks are kept along with letters because in Devanagari, Thai and others a
+ * vowel sign is part of the word rather than punctuation; dropping them would
+ * mangle the title instead of transliterating it.
+ *
+ * ASCII titles are unaffected — the two classes agree on every character an
+ * English title contains — so no existing course moves.
+ *
+ * `lowercase()` with no argument is deliberate: Kotlin's no-arg form is
+ * locale-independent, where Java's `toLowerCase()` would turn "AI" into "aı"
+ * on a Turkish device.
  */
-fun courseSlug(title: String): String {
-    val kebab = title
-        .lowercase()
-        .replace(Regex("[^a-z0-9]+"), "-")
-        .trim('-')
-        .take(60)
-        .trim('-')
-    return kebab.ifEmpty { "course" }
-}
+fun courseSlug(title: String): String = kebabOf(title).ifEmpty { "course" }
+
+/**
+ * The slug rule itself, shared with [chapterSlug] so the two cannot drift
+ * apart — they already did once, and the fix had to be made twice.
+ *
+ * Returns "" for a title with no letters or digits in it at all; each caller
+ * supplies its own fallback, because "course" and "chapter" are different
+ * words.
+ *
+ * A slug can still never begin with "_": underscore is connector punctuation
+ * rather than a letter, so it is replaced like any other separator and then
+ * trimmed. [CourseArchive.SHELF] depends on that.
+ */
+internal fun kebabOf(title: String): String = title
+    .lowercase()
+    .replace(Regex("[^\\p{L}\\p{N}\\p{M}]+"), "-")
+    .trim('-')
+    .take(60)
+    .trim('-')
 
 /** Turns a fresh outline into the persisted structure. Metadata is captured at creation time. */
 fun CourseOutline.toCourse(

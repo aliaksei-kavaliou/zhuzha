@@ -796,7 +796,8 @@ libraries, mixed in with its own photos and notes, one tidy-up away from being s
 bin. A backup you can destroy by cleaning up is not a backup. So a book travels as
 `<slug>.zip`, and what sits at the courses root and belongs to no book — `last_read.json`, the
 `labels/` translations — travels as `_shelf.zip`. The leading underscore cannot collide with a
-course: `courseSlug` emits `[a-z0-9-]` and nothing else.
+course: a slug keeps only letters, digits and marks, so "_" is replaced like any
+other separator and then trimmed, and no slug can begin with one.
 
 Zip rather than a custom container because every desktop opens one by double-clicking, which is
 §1's promise kept with one more click. Paths INSIDE the archive stay relative to the courses

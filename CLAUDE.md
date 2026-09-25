@@ -291,6 +291,27 @@ yet" note that used to live here was two months stale.
       has left the device. Device-verified both ways: refused a book for one orphan chapter
       and named it, then swept clean once that file went; all four archives byte-identical
       and CRC-clean after. design.md §15.2.
+- [x] **A slug keeps words in any script (2026-09-25)** — `courseSlug` and `chapterSlug` both
+      kebab-cased with `[^a-z0-9]+`, which deletes every character outside ASCII. A title with
+      no Latin in it reduced to the empty string and took the fallback, so **every Russian book
+      was called `course`** (then `course-2`) and its chapters came out as `01-chapter`,
+      `03-c`, `04-am`, `06-f` — the index, plus whichever chord names happened to be spelled in
+      Latin. The slug is the folder name, the backup's filename and the name inside an exported
+      EPUB, so a reader whose language is not written in Latin met this on their first book.
+      Found from Aliaksei asking why the backup folder's names were confusing: the backup was
+      reporting the defect, not causing it. Both now share ONE `kebabOf`, because the rule had
+      already drifted into two copies and would otherwise be fixed twice again; the class is
+      letters + digits + MARKS, since a Devanagari or Thai vowel sign is part of the word
+      rather than punctuation. ASCII titles are untouched, so nothing existing moved.
+      `chapterSlug` is called only by `OutlineGenerator` at the moment an outline is first
+      written, so no existing chapter is renamed — a rewrite reuses the slug from
+      `course.json`. **Device-verified rather than assumed**: per the ICU lesson, the pattern
+      was run on the Boox under `app_process` from a dex, not just in a JVM test, and gave
+      identical results. The one book that existed was migrated by hand (directory + the
+      `slug` field + a repack); its old `course.zip` was checked file-by-file against the new
+      archive before being removed. **Existing Russian chapter slugs were NOT migrated** —
+      figures, ink, notes and bookmarks are all addressed by chapter slug, so that is a real
+      data migration and not a rename.
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

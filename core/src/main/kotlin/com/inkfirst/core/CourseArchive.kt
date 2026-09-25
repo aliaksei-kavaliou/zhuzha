@@ -39,8 +39,9 @@ object CourseArchive {
     /**
      * The archive for everything at the courses root that is not a book —
      * `last_read.json`, the `labels/` translations. It is named with a
-     * leading underscore so it can never collide with a course: slugs come
-     * from [courseSlug], which emits `[a-z0-9-]` and nothing else.
+     * leading underscore so it can never collide with a course: a slug keeps
+     * only letters, digits and marks, so "_" is replaced like any other
+     * separator and then trimmed, and no slug can begin with one.
      */
     const val SHELF = "_shelf"
 

@@ -593,6 +593,42 @@ class CourseStoreTest {
     }
 
     @Test
+    fun `a title in another script keeps its words`() {
+        // It used to keep none of them: the class was [^a-z0-9], so a Cyrillic
+        // title lost every character, fell through to the fallback, and every
+        // Russian book on the shelf was called "course". The slug is the
+        // folder name, the backup filename and the name inside an EPUB.
+        assertEquals(
+            "учимся-играть-на-укулеле-с-нуля-простое-руководство",
+            courseSlug("Учимся играть на укулеле с нуля: простое руководство"),
+        )
+        assertEquals("日本語入門", courseSlug("日本語入門"))
+        assertEquals("ελληνικά-για-αρχάριους", courseSlug("Ελληνικά για αρχάριους"))
+    }
+
+    @Test
+    fun `a vowel sign is part of the word, not punctuation`() {
+        // Devanagari and Thai write vowels as combining marks. Dropping them
+        // would not shorten the slug, it would misspell it.
+        assertEquals("हिंदी-सीखें", courseSlug("हिंदी सीखें"))
+    }
+
+    @Test
+    fun `mixed scripts and digits survive together`() {
+        assertEquals("python-для-начинающих-3", courseSlug("Python для начинающих 3"))
+    }
+
+    @Test
+    fun `an ascii title slugs exactly as it always did`() {
+        // The widening must move no existing course: a slug is stored in
+        // course.json AND is the directory name on disk.
+        assertEquals("kotlin-for-python-developers", courseSlug("Kotlin for Python Developers!"))
+        assertEquals("c-and-c-plus-plus", courseSlug("C and C++ ... plus plus"))
+        assertEquals("course", courseSlug("!!! ??? ---"))
+    }
+
+
+    @Test
     fun `saveChapter and readChapter round-trip`(@TempDir tmp: File) {
         val store = CourseStore(tmp)
         store.createTest("kotlin")
