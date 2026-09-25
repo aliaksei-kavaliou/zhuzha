@@ -70,19 +70,6 @@ internal fun blockLabel(kind: String): String? = when (kind) {
     else -> null
 }
 
-/**
- * A question reduced to one line, to reprint above its answer. Long ones are
- * cut at a word so the cue stays a cue — the full question is a tap away
- * through the number beside it.
- */
-internal fun oneLine(text: String, limit: Int = 160): String {
-    val flat = text.replace(Regex("\\s+"), " ").trim()
-    if (flat.length <= limit) return flat
-    val cut = flat.take(limit)
-    val lastSpace = cut.lastIndexOf(' ')
-    return (if (lastSpace > limit / 2) cut.take(lastSpace) else cut).trimEnd(',', '.', ';') + "…"
-}
-
 /** XML-escapes text. `"` is escaped too so the same function serves attributes. */
 internal fun esc(s: String): String = buildString(s.length) {
     s.forEach { c ->
@@ -163,10 +150,7 @@ internal fun renderChapter(
     val body = StringBuilder()
     // Answers are collected as the chapter is walked and printed at the end,
     // because an EPUB has no pages to put them on. See [EpubExport].
-    // The question travels with the answer. Landing on an answer two pages
-    // from its question and being shown a bare number is the defect this
-    // whole section exists to avoid — see the answers block below.
-    val answers = mutableListOf<Triple<Int, String, String>>()
+    val answers = mutableListOf<Pair<Int, String>>()
     var exerciseN = 0
     // Anchors carry the chapter, because the counter restarts in every
     // chapter and `ex1` would otherwise exist once per chapter in the book.
@@ -264,7 +248,7 @@ internal fun renderChapter(
                     )
                     body.append(paragraphs(question))
                     if (answer.isNotBlank()) {
-                        answers += Triple(exerciseN, question, answer)
+                        answers += exerciseN to answer
                         body.append(
                             "<p class=\"answer-link\"><a href=\"$answersFile#$anchor-ans$exerciseN\">" +
                                 "${esc(labels.t("Show answer"))}</a></p>\n",
@@ -296,6 +280,12 @@ internal fun renderChapter(
     // reflows, so "the next page" does not exist as a place to hide one, and
     // printing the answer under its exercise means you cannot not read it.
     // Linked both ways, which is the one thing paper cannot do.
+    // THE ANSWERS ARE THEIR OWN DOCUMENT, and each one is just its number
+    // and the answer. Reprinting the question above it was tried and read as
+    // bloat (Aliaksei, 2026-09-25) — which it is, now that the landing is a
+    // page headed "Answers" with the numbered answer at the top of it and a
+    // link back to the question. The reprint was solving a problem the file
+    // split had already solved.
     // THE ANSWERS ARE THEIR OWN DOCUMENT. As a section at the foot of the
     // chapter they began a paragraph or two after the last exercise, so
     // jumping to answer 1 landed on a page whose visible top was a DIFFERENT
@@ -308,16 +298,12 @@ internal fun renderChapter(
         append("<h1>${esc(labels.t("Answers"))}</h1>\n")
         append("<p class=\"byline\">${esc(source.title)}</p>\n")
         append("<section class=\"answers\" id=\"$anchor-answers\">\n")
-        answers.forEach { (n, question, answer) ->
+        answers.forEach { (n, answer) ->
             append("<div class=\"answer\" id=\"$anchor-ans$n\">\n")
             append(
                 "<p class=\"answer-n\"><a href=\"$chapterFile#$anchor-ex$n\">" +
                     "${esc(labels.t("Answer {n}").replace("{n}", n.toString()))}</a></p>\n",
             )
-            // The question again. The reader arrived from another document
-            // and cannot see what was asked; a bare number does not tell
-            // them whether this is the answer they wanted.
-            append("<p class=\"answer-q\">${esc(oneLine(question))}</p>\n")
             append(paragraphs(answer))
             append("</div>\n")
         }

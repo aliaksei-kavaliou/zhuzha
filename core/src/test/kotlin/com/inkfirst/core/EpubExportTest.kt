@@ -410,14 +410,17 @@ class EpubExportTest {
     }
 
     @Test
-    fun `an answer reprints the question it belongs to`(@TempDir tmp: File) {
-        // The reader arrived from another page and cannot see what was asked,
-        // so a bare number does not tell them this is the answer they wanted.
+    fun `an answer is its number and the answer, nothing else`(@TempDir tmp: File) {
+        // Reprinting the question above each answer was tried and read as
+        // bloat: the landing is already a page headed "Answers" with the
+        // numbered answer at the top and a link back to the question, so the
+        // reprint was solving a problem the separate document had solved.
         val (files, _) = exportOf(tmp)
         val answers = text(files, "OEBPS/ch01-answers.xhtml")
 
-        assertTrue(answers.contains("class=\"answer-q\""), answers)
-        assertTrue(answers.contains("cold kitchen"), "the question itself must be reprinted")
+        assertFalse(answers.contains("cold kitchen"), "the question was reprinted")
+        assertTrue(answers.contains("less active when cold"))
+        assertTrue(answers.contains("""<a href="ch01.xhtml#c1-ex1">"""), "back-link is the tie")
     }
 
     @Test

@@ -321,8 +321,10 @@ yet" note that used to live here was two months stale.
       (what happens once you change the font size) need not apply the publisher's stylesheet
       at all. **A fix that depends on the reader honouring CSS is not a fix.** The answers are
       now their OWN DOCUMENT in the spine (`ch02-answers.xhtml`), which is a page boundary
-      nothing can ignore. Each one reprints the question it belongs to, and every anchor
-      carries its chapter (`c2-ans1`)
+      nothing can ignore. An answer is just its number and the answer — reprinting the
+      question above it was tried and read as bloat, correctly, since the separate document
+      had already solved what the reprint was for. Every anchor carries its chapter
+      (`c2-ans1`)
       because the exercise counter restarts per chapter and a reader that flattens the spine
       would send every "show answer" in the book to chapter one — latent, not the reported
       bug. Recap and exercise blocks now print their own name too: they were distinguished

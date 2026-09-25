@@ -1068,9 +1068,10 @@ all. A separate file is a page boundary nothing can ignore, and it makes the des
 top of a document rather than a position inside one. Keeping it in the spine (rather than
 `linear="no"`) means the answers are still reached by paging forward.
 
-**An answer reprints its question.** The reader arrived from another page and cannot see what
-was asked; a bare number cannot tell them this is the answer they wanted. Long questions are
-cut at a word — it is a cue, not a reprint of the exercise.
+**An answer is its number and the answer, nothing else.** Reprinting the question above it was
+tried and rejected as bloat — correctly, because the separate document had already solved what
+the reprint was for: the landing is a page headed "Ответы" with the numbered answer at the top
+of it, and the number links back to the question. One tie is enough.
 
 **Every anchor carries its chapter** (`c2-ans1`), and links now name the file they cross into
 (`ch02-answers.xhtml#c2-ans1`). The exercise counter restarts each chapter, so `ex1` existed

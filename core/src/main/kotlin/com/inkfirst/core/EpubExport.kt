@@ -222,9 +222,7 @@ aside.exercise { border-left-style: solid; }
 aside.recap { border-left-style: double; }
 p.block-label { font-weight: bold; font-size: 0.8em; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 0.4em; }
 p.answer-link { font-style: italic; font-size: 0.9em; margin-bottom: 0.2em; }
-p.answer-q { font-style: italic; margin: 0 0 0.4em; }
 section.answers, section.reader { margin-top: 2.5em; border-top: 1px solid currentColor; }
-section.answers { page-break-before: always; break-before: page; }
 div.answer, div.note, div.qa { margin: 1.2em 0; }
 p.answer-n { font-weight: bold; margin-bottom: 0.2em; }
 blockquote { margin: 0 0 0.5em; padding-left: 0.8em; border-left: 2px solid currentColor; font-style: italic; }
