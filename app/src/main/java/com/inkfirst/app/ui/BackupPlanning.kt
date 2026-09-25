@@ -101,10 +101,57 @@ internal fun booksInBackup(entries: List<FileTree.Entry>): List<String> =
  * folder an earlier backup wrote. Only these are safe to name as deletable —
  * a loose folder with no zip beside it is a book that is not on the device
  * any more, and it is the only copy left of it.
+ *
+ * Asked of [CourseBackup.looseCopiesIn] rather than worked out here, so the
+ * set the screen OFFERS to remove and the set the sweep actually considers
+ * are the same set. The shelf is not a book and is not named here, though it
+ * is swept with the rest.
  */
-internal fun supersededCopies(entries: List<FileTree.Entry>): List<String> {
-    val packed = CourseBackup.archivedIn(entries).toSet()
-    return CourseBackup.coursesIn(entries).filter { it in packed }
+internal fun supersededCopies(entries: List<FileTree.Entry>): List<String> =
+    CourseBackup.looseCopiesIn(entries).filterNot { it.isShelf }.map { it.name }
+
+/**
+ * The offer to tidy up: what is lying in the folder the old way, and how much
+ * of it. It says what is KEPT as well as what goes, because the reader is
+ * about to delete a copy of their books and the sentence has to make clear
+ * which copy.
+ */
+internal fun describeLooseCopies(copies: List<CourseBackup.LooseCopy>): String {
+    if (copies.isEmpty()) return ""
+    val books = copies.count { !it.isShelf }
+    val shelf = copies.any { it.isShelf }
+    val subject = when {
+        books == 0 -> "Where you left off is"
+        shelf && books == 1 -> "1 book and where you left off are"
+        shelf -> "$books books and where you left off are"
+        books == 1 -> "1 book is"
+        else -> "$books books are"
+    }
+    val files = copies.sumOf { it.entries.size }
+    val bytes = copies.sumOf { it.bytes }
+    return "$subject also here the old way, as loose files — " +
+        "${countOf(files, "file", "files")}, ${humanBytes(bytes)}. These are the ones that " +
+        "show up in the reader's picture and document libraries. Nothing needs them now."
+}
+
+/**
+ * How a tidy-up went. A group left behind is named with its reason rather
+ * than counted: "1 thing was kept back" tells the reader their folder is
+ * still untidy and nothing about whether that was the right call, while
+ * naming the archive that would not open tells them exactly what to do.
+ */
+internal fun describeSweep(swept: CourseBackup.Swept): String {
+    val head = if (swept.files == 0) "Nothing was removed"
+    else "Removed ${countOf(swept.files, "old file", "old files")}, ${humanBytes(swept.bytes)}"
+    if (swept.ok) return "$head."
+
+    val named = swept.failed
+        .take(MAX_NAMED_FAILURES)
+        .joinToString("; ") { "${it.path} — ${it.reason}" }
+    val rest = swept.failed.size - MAX_NAMED_FAILURES
+    val tail = if (rest > 0) ", and $rest more" else ""
+    return "$head. ${countOf(swept.failed.size, "thing was", "things were")} kept back: " +
+        "$named$tail."
 }
 
 /**

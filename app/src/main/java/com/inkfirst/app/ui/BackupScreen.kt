@@ -78,10 +78,14 @@ fun BackupScreen(onDone: () -> Unit) {
     // Which of them are packed as a zip — the rest are folders an older
     // backup wrote, and restoring those still works.
     var packedThere by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var superseded by remember { mutableStateOf<List<String>>(emptyList()) }
+    // The loose files an earlier version of the backup wrote, where a zip
+    // beside them now holds the same book. Offered for removal; the sweep
+    // itself re-reads the folder and checks each archive before deleting.
+    var loose by remember { mutableStateOf<List<CourseBackup.LooseCopy>>(emptyList()) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var pendingRestore by remember { mutableStateOf<String?>(null) }
+    var pendingSweep by remember { mutableStateOf(false) }
     // Bumped after anything that changes what is on either side, to re-read
     // both listings. Not a boolean: two backups in a row have to re-read too.
     var reading by remember { mutableStateOf(0) }
@@ -119,12 +123,12 @@ fun BackupScreen(onDone: () -> Unit) {
             // folder deleted. Say so instead of offering an empty backup.
             shelfThere = "This folder cannot be read any more. Choose it again."
             backupCourses = emptyList()
-            superseded = emptyList()
+            loose = emptyList()
         } else {
             shelfThere = describeBackup(there)
             backupCourses = booksInBackup(there)
             packedThere = CourseBackup.archivedIn(there).toSet()
-            superseded = supersededCopies(there)
+            loose = CourseBackup.looseCopiesIn(there)
         }
     }
 
@@ -209,14 +213,22 @@ fun BackupScreen(onDone: () -> Unit) {
                 Text("In the backup", style = MaterialTheme.typography.titleMedium)
                 Text(shelfThere ?: "Reading the folder…", style = MaterialTheme.typography.bodySmall)
 
-                if (superseded.isNotEmpty()) {
+                if (loose.isNotEmpty()) {
                     Text(
-                        text = "${superseded.size} of these are also still here the old way, " +
-                            "as folders of separate files. Nothing needs them now — you can " +
-                            "delete those folders with any file manager, and the books stay " +
-                            "in their zips.",
+                        text = describeLooseCopies(loose),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Only the loose files go. The zips stay.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            enabled = !busy,
+                            onClick = { pendingSweep = true },
+                        ) { Text("Remove old copies") }
+                    }
                 }
 
                 backupCourses.forEach { slug ->
@@ -251,6 +263,39 @@ fun BackupScreen(onDone: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             TextButton(onClick = onDone) { Text("Done") }
+        }
+    }
+
+    if (pendingSweep) {
+        val books = loose.filterNot { it.isShelf }.map { titlesHere[it.name] ?: it.name }
+        InkDialog(
+            title = "Remove the old copies",
+            onDismiss = { pendingSweep = false },
+            confirmLabel = "Remove",
+            onConfirm = {
+                val uri = folderUri
+                pendingSweep = false
+                if (uri != null) {
+                    scope.launch {
+                        busy = true
+                        status = sweepAcross(DocumentTreeFileTree(context, uri)) { status = it }
+                        busy = false
+                        reading++
+                    }
+                }
+            },
+            dismissLabel = "Cancel",
+        ) {
+            Text(
+                text = "Delete the loose files this app left in the backup folder before it " +
+                    "started packing a book into one zip. " +
+                    (if (books.isEmpty()) "" else books.joinToString("; ") + ". ") +
+                    "Each zip is opened and read through first, and anything it does not " +
+                    "hold is kept. The books themselves stay in the backup.",
+                fontFamily = FontFamily.Serif,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
         }
     }
 
@@ -379,6 +424,34 @@ private suspend fun packAcross(
             }
         }
         describeArchiveReport(plan, report)
+    } catch (e: SecurityException) {
+        "This folder is not available any more. Choose it again."
+    } catch (e: Exception) {
+        "Could not finish: ${e.message ?: e::class.simpleName}"
+    }
+}
+
+/**
+ * Deletes the loose copies an earlier version of the backup wrote.
+ *
+ * Everything that makes this safe lives in [CourseBackup.removeLooseCopies] —
+ * it re-reads the folder, opens each archive and reads it through past its
+ * CRCs, and deletes a group only when the archive holds every file in it.
+ * Reading 28 MB to delete 28 MB looks wasteful and is the point: this is the
+ * moment the second copy stops existing.
+ */
+private suspend fun sweepAcross(
+    to: FileTree,
+    setStatus: (String) -> Unit,
+): String = withContext(Dispatchers.IO) {
+    try {
+        setStatus("Checking the zips before deleting anything…")
+        val swept = CourseBackup.removeLooseCopies(to) { done, total ->
+            if (done == total || done % PROGRESS_STEP == 0) {
+                setStatus("Checked $done of $total…")
+            }
+        }
+        describeSweep(swept)
     } catch (e: SecurityException) {
         "This folder is not available any more. Choose it again."
     } catch (e: Exception) {

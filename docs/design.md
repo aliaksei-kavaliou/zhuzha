@@ -856,6 +856,49 @@ about six seconds, a book restored out of its zip with all 22 files identical by
 run reporting "Already up to date — 3 books, 96 files checked", and the same round trip run on
 the laptop over a pulled copy of the device's 96 files, all byte-identical.
 
+### 15.2 Removing the loose copies (2026-09-25)
+
+A folder backed up by both versions holds every book twice, and §15.1 left the reader to clear
+that by hand with a file manager — on the device where file management is worst, for a mess the
+app itself made. So there is a row: **Remove old copies**, offered only when something is
+actually there twice.
+
+**This is the one place the app deletes at the far end**, and the fence around it is the whole
+design. `CourseBackup.removeLooseCopies` RE-READS the folder rather than taking the screen's
+listing: the screen's idea of what is superseded was formed when it loaded, and the decision
+has to be made against the folder as it is when the finger lands. It opens each archive with
+`deep = true`, pulling every byte past a CRC, because this is the moment the second copy stops
+existing and the survivor being INTACT is exactly what wants checking — a pass over 28 MB for a
+deliberate, destructive tap is not a cost worth optimising. And a group is deleted only when
+the archive holds every path in it.
+
+**The comparison is by PATH, and deliberately not `plan`.** Every other comparison in the
+backup asks "is the destination at least as new as the source". Asking that here would refuse
+every real case: the archive is the NEWER copy, and the loose files at the far end carry the
+moment they were COPIED rather than the moment they were written, so the stamps run backwards
+from what the rule expects. The question that matters is narrower — is anything LOST by
+deleting this — and a path present in the archive answers it. A differing size just means the
+archive holds the newer chapter, which is the copy being kept. A path the archive does not hold
+stops that group dead: it is a file the backup would forget, which is a chapter deleted from
+the device since the loose backup was taken.
+
+**Root by root, not group by group.** A course has exactly one root, so for a book the two are
+the same thing. The shelf's roots are unrelated items that merely share the top of the folder,
+and one stray file the reader dropped in there themselves must not keep `last_read.json` lying
+about for ever. Anything the app did not write is never in an archive, so it is never deleted —
+it is reported as kept, by name.
+
+A loose folder with NO archive beside it is not offered at all, and that rule is older than
+this feature: it is a book that has left the device, and the loose copy is the only one left of
+it. Deleting an orphan archive is likewise still not something the app will do — see §15.1.
+
+**Device-verified 2026-09-25** on the real shelf, both ways. With a chapter present loose and
+absent from the zip, the sweep removed the shelf leftovers and refused the book, saying so:
+"Removed 2 old files, 3 KB. 1 thing was kept back: course.zip — does not hold 1 of the 23 older
+files in course (course/chapters/99-only-here.md), so they were kept." With that file gone,
+"Removed 22 old files, 6.3 MB" and the row disappeared. All four archives were byte-identical
+and CRC-clean afterwards.
+
 ## 16. One palette, in one place (2026-09-22)
 
 Pure black on pure white, and the reason is the panel rather than taste: a reflective e-ink

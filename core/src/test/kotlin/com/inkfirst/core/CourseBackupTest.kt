@@ -2,6 +2,7 @@ package com.inkfirst.core
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -89,7 +90,7 @@ class CourseBackupTest {
     }
 
     @Test
-    fun `nothing at the destination is ever deleted`(@TempDir tmp: File) {
+    fun `a backup run never deletes at the destination`(@TempDir tmp: File) {
         // A course deleted on the device stays in the backup. That is the
         // difference between a backup and a mirror, and it is the reason this
         // path can never lose a reader's work.
@@ -194,5 +195,182 @@ class CourseBackupTest {
     @Test
     fun `listing a tree that does not exist is empty, not an error`(@TempDir tmp: File) {
         assertTrue(LocalFileTree(File(tmp, "never-created")).list().isEmpty())
+    }
+
+    // -- sweeping up the loose copies an older version wrote ---------------
+
+    /**
+     * A folder backed up by BOTH versions: every book packed as a zip, and
+     * every book also sitting there as the directory of separate files the
+     * first version wrote.
+     */
+    private fun mixedBackup(tmp: File): Pair<File, File> {
+        val device = File(tmp, "device").apply { mkdirs() }
+        device.put("kotlin/course.json", "{}")
+        device.put("kotlin/chapters/01.md", "one")
+        device.put("gardening/course.json", "{}")
+        device.put("last_read.json", "{}")
+        device.put("labels/ru.json", "{}")
+
+        val backup = File(tmp, "backup").apply { mkdirs() }
+        val here = LocalFileTree(device)
+        CourseBackup.writeArchives(
+            here,
+            LocalFileTree(backup),
+            CourseBackup.planArchives(here.list()) { null },
+        )
+
+        device.walkTopDown().filter { it.isFile }.forEach {
+            backup.put(it.relativeTo(device).invariantSeparatorsPath, it.readText())
+        }
+        return device to backup
+    }
+
+    private fun names(dir: File): List<String> =
+        dir.listFiles().orEmpty().map { it.name }.sorted()
+
+    @Test
+    fun `looseCopiesIn finds every book that is in the folder twice`(@TempDir tmp: File) {
+        val (_, backup) = mixedBackup(tmp)
+
+        val loose = CourseBackup.looseCopiesIn(LocalFileTree(backup).list())
+
+        assertEquals(listOf("_shelf", "gardening", "kotlin"), loose.map { it.name })
+        // The shelf is the odds and ends at the root, and it is two separate
+        // things to remove rather than one directory.
+        val shelf = loose.first { it.isShelf }
+        assertEquals(listOf("labels", "last_read.json"), shelf.roots)
+    }
+
+    @Test
+    fun `a loose book with no archive beside it is never offered`(@TempDir tmp: File) {
+        val (_, backup) = mixedBackup(tmp)
+        // This is a book that has left the device: the loose copy is the only
+        // one left of it, which is exactly when deleting would be a disaster.
+        assertTrue(File(backup, "gardening.zip").delete())
+
+        val loose = CourseBackup.looseCopiesIn(LocalFileTree(backup).list())
+
+        assertEquals(listOf("_shelf", "kotlin"), loose.map { it.name })
+    }
+
+    @Test
+    fun `sweeping leaves the archives and nothing else`(@TempDir tmp: File) {
+        val (_, backup) = mixedBackup(tmp)
+
+        val swept = CourseBackup.removeLooseCopies(LocalFileTree(backup))
+
+        assertTrue(swept.ok, swept.failed.toString())
+        assertEquals(listOf("_shelf", "gardening", "kotlin"), swept.removed)
+        assertEquals(5, swept.files)
+        assertEquals(
+            listOf("_shelf.zip", "gardening.zip", "kotlin.zip"),
+            names(backup),
+        )
+    }
+
+    @Test
+    fun `a loose copy older than the archive is still removed`(@TempDir tmp: File) {
+        // The reason this is its own test: every other comparison in this file
+        // asks "is the destination as new as the source". Asking that HERE
+        // would refuse every real case — the archive is the newer copy, and
+        // the loose files carry the moment they were copied rather than the
+        // moment they were written. What matters is only whether the archive
+        // holds the path.
+        val (_, backup) = mixedBackup(tmp)
+        backup.put("kotlin/chapters/01.md", "a much longer body than the archive holds", 9_999_999)
+
+        val swept = CourseBackup.removeLooseCopies(LocalFileTree(backup), only = setOf("kotlin"))
+
+        assertTrue(swept.ok, swept.failed.toString())
+        assertFalse(File(backup, "kotlin").exists())
+    }
+
+    @Test
+    fun `a file the archive does not hold stops that book`(@TempDir tmp: File) {
+        val (_, backup) = mixedBackup(tmp)
+        // A chapter that was backed up loose and then deleted on the device,
+        // so the zip written later never saw it. Deleting the loose folder
+        // would be the backup forgetting it.
+        backup.put("kotlin/chapters/99-only-here.md", "the last copy")
+
+        val swept = CourseBackup.removeLooseCopies(LocalFileTree(backup))
+
+        assertFalse(swept.ok)
+        assertEquals(listOf("_shelf", "gardening"), swept.removed)
+        assertEquals("kotlin.zip", swept.failed.single().path)
+        assertTrue(swept.failed.single().reason.contains("99-only-here.md"))
+        assertTrue(swept.failed.single().reason.contains("in kotlin "))
+        assertEquals("the last copy", File(backup, "kotlin/chapters/99-only-here.md").readText())
+        // And the rest of that book's loose files stay too — the group is
+        // all-or-nothing, so nothing is half-removed.
+        assertTrue(File(backup, "kotlin/course.json").exists())
+    }
+
+    @Test
+    fun `an archive that will not open deletes nothing`(@TempDir tmp: File) {
+        val (_, backup) = mixedBackup(tmp)
+        File(backup, "kotlin.zip").writeText("this is not a zip")
+
+        val swept = CourseBackup.removeLooseCopies(LocalFileTree(backup), only = setOf("kotlin"))
+
+        assertFalse(swept.ok)
+        assertTrue(swept.removed.isEmpty())
+        assertTrue(File(backup, "kotlin/course.json").exists())
+        assertTrue(File(backup, "kotlin/chapters/01.md").exists())
+    }
+
+    @Test
+    fun `a truncated archive deletes nothing`(@TempDir tmp: File) {
+        // The case a timestamp cannot see: a run interrupted part way leaves a
+        // zip that opens, lists, and is missing most of the book.
+        val (_, backup) = mixedBackup(tmp)
+        val zip = File(backup, "kotlin.zip")
+        zip.writeBytes(zip.readBytes().copyOfRange(0, 40))
+
+        val swept = CourseBackup.removeLooseCopies(LocalFileTree(backup), only = setOf("kotlin"))
+
+        assertFalse(swept.ok)
+        assertTrue(File(backup, "kotlin/chapters/01.md").exists())
+    }
+
+    @Test
+    fun `only the named groups are swept`(@TempDir tmp: File) {
+        val (_, backup) = mixedBackup(tmp)
+
+        CourseBackup.removeLooseCopies(LocalFileTree(backup), only = setOf("gardening"))
+
+        assertFalse(File(backup, "gardening").exists())
+        assertTrue(File(backup, "kotlin/course.json").exists())
+        assertTrue(File(backup, "last_read.json").exists())
+    }
+
+    @Test
+    fun `a tree that cannot delete says so rather than doing nothing`() {
+        // The FileTree default. A silent no-op would report a tidy-up that
+        // never happened.
+        val tree = object : FileTree {
+            override fun list() = emptyList<FileTree.Entry>()
+            override fun read(path: String) = ByteArray(0)
+            override fun write(path: String, bytes: ByteArray) = Unit
+        }
+
+        assertThrows(IOException::class.java) { tree.delete("anything") }
+    }
+
+    @Test
+    fun `a stray file at the root does not strand the rest of the shelf`(@TempDir tmp: File) {
+        // The shelf's roots are unrelated things sharing the top of the
+        // folder, not one book. Something the reader dropped in themselves is
+        // kept, and keeping it must not keep last_read.json with it.
+        val (_, backup) = mixedBackup(tmp)
+        backup.put("holiday-photos/beach.jpg", "not ours")
+
+        val swept = CourseBackup.removeLooseCopies(LocalFileTree(backup), only = setOf("_shelf"))
+
+        assertFalse(swept.ok)
+        assertEquals("not ours", File(backup, "holiday-photos/beach.jpg").readText())
+        assertFalse(File(backup, "last_read.json").exists())
+        assertFalse(File(backup, "labels").exists())
     }
 }

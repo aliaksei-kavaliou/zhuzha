@@ -276,6 +276,21 @@ yet" note that used to live here was two months stale.
       loose backups still restore, and the screen says which folders are now redundant —
       nothing at the far end is ever deleted by the app. Device-verified on the real shelf.
       design.md §15.1.
+- [x] **The old loose copies can be swept (2026-09-25)** — §15.1 named the redundant folders
+      and left the reader to delete them with a file manager, on the device where that is
+      worst, for a mess the app made. One row now does it. **It is the only place the app
+      deletes at the far end**, so the fence is the feature: it RE-READS the folder rather
+      than trusting the screen's listing, opens each archive `deep` so every byte goes past a
+      CRC before the other copy stops existing, and deletes a group only when the archive
+      holds every path in it. The comparison is BY PATH and deliberately not `plan` — every
+      other check in the backup asks "is the destination as new as the source", which here
+      refuses every real case, because the archive is the newer copy while the loose files
+      carry the moment they were COPIED. Root by root rather than group by group, so a stray
+      file the reader put in the folder is kept and named without stranding `last_read.json`
+      beside it. A loose folder with no archive is still never offered — it is a book that
+      has left the device. Device-verified both ways: refused a book for one orphan chapter
+      and named it, then swept clean once that file went; all four archives byte-identical
+      and CRC-clean after. design.md §15.2.
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

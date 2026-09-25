@@ -177,4 +177,54 @@ class BackupPlanningTest {
         assertEquals("Already up to date — 1 book, 2 files checked.", describeArchivePlan(plan))
     }
 
+    @Test
+    fun `the offer names the books, the shelf and the size`() {
+        val copies = listOf(
+            CourseBackup.LooseCopy("_shelf", listOf(entry("last_read.json", 100))),
+            CourseBackup.LooseCopy("gardening", listOf(entry("gardening/course.json", 200))),
+            CourseBackup.LooseCopy("kotlin", listOf(entry("kotlin/course.json", 600))),
+        )
+
+        assertEquals(
+            "2 books and where you left off are also here the old way, as loose files — " +
+                "3 files, 900 B. These are the ones that show up in the reader's picture " +
+                "and document libraries. Nothing needs them now.",
+            describeLooseCopies(copies),
+        )
+    }
+
+    @Test
+    fun `nothing loose means nothing to say`() {
+        assertEquals("", describeLooseCopies(emptyList()))
+    }
+
+    @Test
+    fun `a tidy-up reports what went`() {
+        val swept = CourseBackup.Swept(
+            removed = listOf("kotlin"),
+            files = 22,
+            bytes = 2_000,
+            failed = emptyList(),
+        )
+
+        assertEquals("Removed 22 old files, 2 KB.", describeSweep(swept))
+    }
+
+    @Test
+    fun `a group kept back is named with its reason, not counted`() {
+        val swept = CourseBackup.Swept(
+            removed = listOf("gardening"),
+            files = 3,
+            bytes = 300,
+            failed = listOf(
+                CourseBackup.Failure("kotlin.zip", "could not be read, so nothing was deleted"),
+            ),
+        )
+
+        assertEquals(
+            "Removed 3 old files, 300 B. 1 thing was kept back: " +
+                "kotlin.zip — could not be read, so nothing was deleted.",
+            describeSweep(swept),
+        )
+    }
 }

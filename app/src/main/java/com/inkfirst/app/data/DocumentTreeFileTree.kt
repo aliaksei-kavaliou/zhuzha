@@ -103,6 +103,26 @@ class DocumentTreeFileTree(context: Context, private val treeUri: Uri) : FileTre
     }
 
     /**
+     * Removes a document, or a directory and its whole subtree — the document
+     * API deletes a folder's contents with it, so there is no walk to do here.
+     *
+     * The remembered ids go with it. [ids] is what makes a backup walk each
+     * directory once, and a stale entry in it after a delete is a document id
+     * that resolves to nothing: the next write to that path would fail rather
+     * than recreate the file. Descendants have to go too, not just the path
+     * itself, because every file under a deleted folder is in there by its
+     * own path.
+     */
+    override fun delete(path: String) {
+        val id = idOf(path) ?: return
+        wrapFailures(path) {
+            val gone = DocumentsContract.deleteDocument(resolver, documentUri(id))
+            if (!gone) throw IOException("could not delete $path")
+        }
+        ids.keys.removeAll { it == path || it.startsWith("$path/") }
+    }
+
+    /**
      * The document id at a relative path, walking down from the root and
      * remembering what it passes. Null if nothing is there.
      */
