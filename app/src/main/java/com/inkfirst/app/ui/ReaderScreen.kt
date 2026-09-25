@@ -425,12 +425,6 @@ fun ReaderScreen(
     val chapter = course?.chapters?.firstOrNull { it.slug == chapterSlug }
     val chapterAnnotations = course?.annotations?.filter { it.chapterSlug == chapterSlug }.orEmpty()
 
-    // Figure slots still waiting for a picture. Drives the menu's "Draw
-    // figures" row — the retrofit path for chapters written before figures
-    // existed, and the retry path when one came back empty.
-    val pendingFigures = remember(markdown) {
-        markdown?.let { md -> findFigureSlots(md).count { it.isPending } } ?: 0
-    }
     // How many slots the chapter has at all, so a finished pass can say "all
     // 3 drawn" instead of vanishing and leaving the reader to guess.
     val figureSlots = remember(markdown) {
@@ -450,6 +444,33 @@ fun ReaderScreen(
     // the name said badges, so nobody thought to ask whether FIGURES needed
     // it too. They did (2026-09-21) — see the figure cache below.
     var pictureVersion by remember { mutableStateOf(0) }
+
+    // Figure slots with no picture ON DISK. Drives the menu's "Draw figures"
+    // row — the retrofit path for chapters written before figures existed,
+    // and the retry path when one came back empty.
+    //
+    // A slot counts as outstanding when it has no `src=` OR when the file
+    // that `src=` names is not there. Those two used to disagree: pending-ness
+    // was read from the Markdown while RENDERING was read from the file, so
+    // deleting a picture left the menu insisting everything was drawn while
+    // the page showed alt text, with no way back. Asking the same question
+    // both places is the fix, and it is also what makes the draw row honest —
+    // the ordinals below are handed to `illustrate` so the row draws exactly
+    // what it counted.
+    val missingPictures = remember(markdown, course?.slug, pictureVersion) {
+        val slug = course?.slug
+        markdown?.let { md ->
+            findFigureSlots(md)
+                .filter { it.brief.isNotBlank() }
+                .filter { slot ->
+                    val src = slot.src
+                    src == null || slug == null || store.figureFile(slug, src) == null
+                }
+                .map { it.ordinal }
+                .toSet()
+        }.orEmpty()
+    }
+    val pendingFigures = missingPictures.size
     // What this chapter actually needs — a chapter with code blocks earns a
     // code badge the first time it is opened, so the set grows with the book
     // instead of being fixed up front.
@@ -487,20 +508,18 @@ fun ReaderScreen(
     //
     // Null once everything exists: a finished book page should be a book
     // page, not a status board.
-    val picturesOutstanding = remember(pendingFigures, hasCover, hasTail, pendingBadges) {
+    val picturesOutstanding =
+        remember(pendingFigures, hasCover, hasTail, pendingBadges, labels) {
         val missing = buildList {
-            if (pendingFigures > 0) {
-                add("$pendingFigures figure" + if (pendingFigures == 1) "" else "s")
-            }
-            if (!hasCover) add("chapter picture")
+            if (pendingFigures > 0) add(labels.t("figures ×{n}", "n" to pendingFigures))
+            if (!hasCover) add(labels.t("chapter picture"))
             // The closing picture is the cover resolved, so it is not
             // outstanding until there is a cover for it to pay off.
-            if (hasCover && !hasTail) add("closing picture")
-            if (pendingBadges > 0) {
-                add("$pendingBadges badge" + if (pendingBadges == 1) "" else "s")
-            }
+            if (hasCover && !hasTail) add(labels.t("closing picture"))
+            if (pendingBadges > 0) add(labels.t("badges ×{n}", "n" to pendingBadges))
         }
-        if (missing.isEmpty()) null else "still to draw: " + missing.joinToString(" · ")
+        if (missing.isEmpty()) null
+        else labels.t("still to draw: {what}", "what" to missing.joinToString(" · "))
     }
     val readerStatus = when (val state = compileState) {
         CompileState.Running -> "Rewriting this chapter…"
@@ -802,6 +821,7 @@ fun ReaderScreen(
 
             CompositionLocalProvider(LocalTextToolbar provides askToolbar) {
                 PagedContent(
+                    labels = labels,
                     fontScale = fontScale,
                     lineSpacing = lineSpacing,
                     textAlign = textAlign,
@@ -904,13 +924,13 @@ fun ReaderScreen(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 TextButton(onClick = { askToolbar.ask() }) {
-                    Text("Ask about this", color = Paper)
+                    Text(labels.t("Ask about this"), color = Paper)
                 }
                 TextButton(onClick = { askToolbar.addNote() }) {
-                    Text("Add note", color = Paper)
+                    Text(labels.t("Add note"), color = Paper)
                 }
                 TextButton(onClick = clearSelection) {
-                    Text("Cancel", color = Paper)
+                    Text(labels.t("Cancel"), color = Paper)
                 }
             }
         }
@@ -953,7 +973,7 @@ fun ReaderScreen(
                     consumeStroke(stroke)
                     pendingGestureStroke = null
                 }) {
-                    Text("Ask about this", color = Paper)
+                    Text(labels.t("Ask about this"), color = Paper)
                 }
                 TextButton(onClick = {
                     pendingNoteQuote = text
@@ -963,7 +983,7 @@ fun ReaderScreen(
                     pendingNoteStroke = stroke
                     pendingGestureStroke = null
                 }) {
-                    Text("Add note", color = Paper)
+                    Text(labels.t("Add note"), color = Paper)
                 }
                 TextButton(onClick = {
                     val updated = strokes - stroke
@@ -974,7 +994,7 @@ fun ReaderScreen(
                     Text("Delete", color = Paper)
                 }
                 TextButton(onClick = { pendingGestureStroke = null }) {
-                    Text("Cancel", color = Paper)
+                    Text(labels.t("Cancel"), color = Paper)
                 }
             }
         }
@@ -1003,14 +1023,14 @@ fun ReaderScreen(
                         consumeStroke(stroke)
                         viewingStroke = null
                     }) {
-                        Text("Ask about this", color = Paper)
+                        Text(labels.t("Ask about this"), color = Paper)
                     }
                     TextButton(onClick = {
                         pendingNoteQuote = blockText
                         pendingNoteStroke = stroke
                         viewingStroke = null
                     }) {
-                        Text("Add note", color = Paper)
+                        Text(labels.t("Add note"), color = Paper)
                     }
                 }
                 TextButton(onClick = {
@@ -1022,7 +1042,7 @@ fun ReaderScreen(
                     Text("Delete", color = Paper)
                 }
                 TextButton(onClick = { viewingStroke = null }) {
-                    Text("Cancel", color = Paper)
+                    Text(labels.t("Cancel"), color = Paper)
                 }
             }
         }
@@ -1349,7 +1369,15 @@ fun ReaderScreen(
                         store = store,
                         apiKeyStore = apiKeyStore,
                         onState = { compileState = it },
-                        onDone = { newMarkdown -> markdown = newMarkdown },
+                        onDone = { newMarkdown ->
+                            markdown = newMarkdown
+                            pictureVersion++
+                        },
+                        // Exactly the slots the row counted. Without this a
+                        // slot whose FILE went missing would be counted and
+                        // then skipped, because core's own `isPending` can
+                        // only see the Markdown.
+                        only = missingPictures,
                     )
                 },
                 onDrawCover = {
@@ -1421,6 +1449,8 @@ private fun PagedContent(
     chapterSlug: String,
     /** Bumped when badges are drawn, to rebuild the badge cache and the page pack. */
     pictureVersion: Int,
+    /** The book's own words, for the labels printed on exercise and recap blocks. */
+    labels: UiLabels,
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
@@ -1908,6 +1938,7 @@ private fun PagedContent(
                                         },
                                         loadFigure = loadFigure,
                                         loadBadge = loadBadge,
+                                        labels = labels,
                                     )
                                 }
                             }
@@ -2631,7 +2662,7 @@ private fun ChapterToolsMenu(
                     MenuAction(
                         text = figureStatus ?: when {
                             pendingFigures == 0 ->
-                                "all $figureSlots drawn · " + t("Redraw")
+                                t("all {n} drawn", "n" to figureSlots) + " · " + t("Redraw")
                             else ->
                                 t("Draw {n}", "n" to pendingFigures) +
                                     " · ${pictureCost(pendingFigures)}"
@@ -2680,7 +2711,7 @@ private fun ChapterToolsMenu(
             MenuRow(label = t("Badges")) {
                 MenuAction(
                     text = if (pendingBadges == 0) {
-                        "all drawn"
+                        t("all drawn")
                     } else {
                         t("Draw {n}", "n" to pendingBadges) +
                             " · ${pictureCost(pendingBadges)}"
@@ -2788,6 +2819,7 @@ private fun RenderBlock(
     onRevealBounds: (Rect?) -> Unit,
     loadFigure: (String) -> ImageBitmap?,
     loadBadge: (String) -> ImageBitmap?,
+    labels: UiLabels,
 ) {
     when (block) {
         is Block.Heading -> HeadingBlock(block, fontScale, atPageTop, loadFigure)
@@ -2800,9 +2832,12 @@ private fun RenderBlock(
         is Block.Rule -> RuleBlock()
         is Block.CustomFence -> when (block.kind) {
             "exercise" ->
-                ExerciseBlock(block, fontScale, lineSpacing, revealed, onReveal, onRevealBounds, loadBadge)
-            "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge)
-            "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure)
+                ExerciseBlock(
+                    block, fontScale, lineSpacing, revealed, onReveal, onRevealBounds,
+                    loadBadge, labels,
+                )
+            "recap" -> RecapBlock(block, fontScale, lineSpacing, loadBadge, labels)
+            "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure, labels)
             "meta" -> MetaBlock(block, fontScale, loadFigure)
             "tail" -> TailBlock(block, loadFigure)
             else -> UnknownFenceBlock(block, fontScale, loadBadge)
@@ -3076,9 +3111,10 @@ private fun ExerciseBlock(
     onReveal: () -> Unit,
     onRevealBounds: (Rect?) -> Unit,
     loadBadge: (String) -> ImageBitmap?,
+    labels: UiLabels,
 ) {
     val (question, answer) = splitExerciseBody(f.body)
-    BorderedBlock(label = "TRY THIS", fontScale = fontScale, badge = loadBadge("exercise")) {
+    BorderedBlock(label = labels.t("TRY THIS"), fontScale = fontScale, badge = loadBadge("exercise")) {
         Text(
             // Parsed, not raw: an exercise says "call `torch.tensor()`" as
             // often as a paragraph does, and rendering the body as a plain
@@ -3127,7 +3163,7 @@ private fun ExerciseBlock(
             TextButton(
                 onClick = onReveal,
                 modifier = Modifier.onGloballyPositioned { onRevealBounds(it.boundsInRoot()) },
-            ) { Text("Show answer", color = Ink) }
+            ) { Text(labels.t("Show answer"), color = Ink) }
             androidx.compose.runtime.DisposableEffect(Unit) {
                 onDispose { onRevealBounds(null) }
             }
@@ -3141,8 +3177,9 @@ private fun RecapBlock(
     fontScale: Float,
     lineSpacing: Float,
     loadBadge: (String) -> ImageBitmap?,
+    labels: UiLabels,
 ) {
-    BorderedBlock(label = "RECAP", fontScale = fontScale, badge = loadBadge("recap")) {
+    BorderedBlock(label = labels.t("RECAP"), fontScale = fontScale, badge = loadBadge("recap")) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
             fontFamily = FontFamily.Serif,
@@ -3169,6 +3206,7 @@ private fun FigureBlock(
     fontScale: Float,
     lineSpacing: Float,
     loadFigure: (String) -> ImageBitmap?,
+    labels: UiLabels,
 ) {
     val alt = f.params["alt"] ?: f.body.trim().ifBlank { "(figure)" }
     val picture = f.params["src"]?.let(loadFigure)
@@ -3193,7 +3231,7 @@ private fun FigureBlock(
         return
     }
 
-    BorderedBlock(label = "FIGURE", fontScale = fontScale) {
+    BorderedBlock(label = labels.t("FIGURE"), fontScale = fontScale) {
         Text(
             text = alt,
             fontFamily = FontFamily.Serif,

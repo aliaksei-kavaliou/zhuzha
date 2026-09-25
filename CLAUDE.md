@@ -368,6 +368,34 @@ yet" note that used to live here was two months stale.
       the sheet does. `pictureVersion++` on completion, or the reader draws the old bytes from
       cache under the same file name. **Unit-tested; NOT device-verified — the Boox was
       unplugged before it could be driven.**
+- [x] **The reader speaks the book's language too (2026-09-25)** — the block labels were
+      hardcoded, so **every exercise in a Russian book said "TRY THIS"**, every recap "RECAP",
+      every undrawn figure "FIGURE", and the reader's own "Show answer" button stayed English
+      while the EPUB's said «Показать ответ». Three of those were never in
+      `BOOK_CHROME_STRINGS` at all — the one piece of book chrome nobody thought of as chrome,
+      because it is drawn as part of the page rather than as a control. Three more ("Ask about
+      this", "Add note", "Cancel") WERE declared and simply never wired to `labels`, in nine
+      places. Found by cross-referencing every `Text("…")` literal in `ReaderScreen` against
+      the declared set — worth re-running after any UI work. `labels` now threads through
+      `PagedContent` → `RenderBlock` → the block composables.
+      **A counted string must also JOIN cleanly**: "figures: {n}" composed into
+      "создать: рис.: 1", two labels stuck together, so counts are written "×{n}".
+      And note the trigger: `ensureLabels` runs from the CONTENTS screen only, so a reader who
+      always cold-starts into the reader never gets newly added strings translated.
+- [x] **"Drawn" and "rendered" now ask the same question (2026-09-25)** — pending-ness was read
+      from the Markdown's `src=` while RENDERING was read from the file, so deleting a picture
+      left the menu insisting everything was drawn while the page showed alt text, with no way
+      back. A slot is outstanding when it has no `src=` OR the file that `src=` names is
+      missing, and the draw row hands those exact ordinals to `illustrate` via `only` — the row
+      draws precisely what it counted. Device-verified by deleting a figure: the row changed
+      from «всего 4» to «Создать: 1 · ~3¢».
+- [x] **Which hand it is, is part of the instruction (2026-09-25)** — Aliaksei: the strumming
+      figure shows a LEFT hand where the brief says «правая рука», and most people are
+      right-handed. Seen from the back with the fingers pointing left, a right hand's thumb is
+      on the LOWER side; that drawing has it upper. A mirrored hand teaches the posture
+      backwards and on an instrument swaps the two hands' jobs. Added to `SHOW_STYLE` with the
+      thumb check written out, plus "assume a right-handed person unless the brief says
+      otherwise". **Not yet verified against output.**
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,

@@ -150,18 +150,39 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "picture drawn",
     "needs the chapter picture first",
     "all drawn",
+    "all {n} drawn",
     // Asking about a passage, and writing a note
     "Ask about this",
     "Add note",
     "Cancel",
     "Save",
     "Show answer",
+    // The labels printed on the blocks themselves. These were hardcoded
+    // English for the life of the app, so every exercise in a Russian book
+    // said "TRY THIS" — the one piece of book chrome nobody thought of as
+    // chrome, because it is drawn as part of the page rather than as a
+    // control. Kept SHORT: they are set in small capitals in a narrow
+    // gutter, and a long word there wraps.
+    "TRY THIS",
+    "RECAP",
+    "FIGURE",
     "Delete this note",
     // The exported book — see [EpubExport]. An EPUB is still the book, so it
     // speaks the book's language like every other piece of its furniture.
     "Export this book",
     "an EPUB for any e-reader",
     "Answers",
+    // The reader's footer, when a chapter is still missing pictures. Counted
+    // with the number AFTER the noun so no language has to inflect it.
+    "still to draw: {what}",
+    // "×{n}" rather than "{n} pictures", because a count in front of a noun
+    // inflects it in most languages and neither this app nor the reader can.
+    // It also has to JOIN cleanly: "still to draw: figures: 1" was the first
+    // attempt and reads as two labels stuck together.
+    "figures ×{n}",
+    "badges ×{n}",
+    "chapter picture",
+    "closing picture",
     // The exported book names its blocks in words. On screen a badge carries
     // that meaning; an EPUB has no badge, and a recap and an exercise are
     // otherwise the same bordered paragraph. "{n}" must survive translation —
