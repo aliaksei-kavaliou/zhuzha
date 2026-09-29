@@ -147,4 +147,51 @@ class TocBlocksTest {
         val blocks = build(listOf(ann(chapter = "ch2", note = "n")))
         assertEquals("Ch 2", blocks.filterIsInstance<TocBlock.NoteEntry>().single().chapterLabel)
     }
+
+    @Test
+    fun `the chapters come before the things you do to the book`() {
+        // They used to sit directly under the title, so opening a book on a
+        // short screen showed the title, Search, the reading record, Export,
+        // and then the word "Contents" at the very bottom with nothing under
+        // it — you turned a page to read the book you had just opened.
+        val blocks = build(emptyList())
+
+        val contentsAt = blocks.indexOfFirst {
+            it is TocBlock.SectionHeader && it.text == "Contents"
+        }
+        val firstChapterAt = blocks.indexOfFirst { it is TocBlock.ChapterEntry }
+        val searchAt = blocks.indexOfFirst { it is TocBlock.SearchEntry }
+        val readerNotesAt = blocks.indexOfFirst { it is TocBlock.ReaderNotesEntry }
+        val exportAt = blocks.indexOfFirst { it is TocBlock.ExportEntry }
+
+        assertTrue(contentsAt < firstChapterAt)
+        assertTrue(firstChapterAt < searchAt, "chapters must precede Search")
+        assertTrue(firstChapterAt < readerNotesAt)
+        assertTrue(firstChapterAt < exportAt)
+    }
+
+    @Test
+    fun `the reader's own marks stay ahead of the apparatus`() {
+        // Notes, questions and bookmarks point INTO the book; search, the
+        // reading record and export are things you do TO it. That is the
+        // whole ordering rule, and it is the one worth pinning.
+        val blocks = build(
+            listOf(
+                ann(kind = "ask", quote = "asked"),
+                ann(kind = "text", quote = "wrote", note = "my note"),
+            ),
+        )
+
+        val lastMark = maxOf(
+            blocks.indexOfLast { it is TocBlock.NoteEntry },
+            blocks.indexOfLast { it is TocBlock.QuestionEntry },
+        )
+        val firstTool = blocks.indexOfFirst {
+            it is TocBlock.SearchEntry || it is TocBlock.ReaderNotesEntry || it is TocBlock.ExportEntry
+        }
+
+        assertTrue(lastMark < firstTool)
+        // And the apparatus really is last — nothing trails it.
+        assertTrue(blocks.last() is TocBlock.ExportEntry)
+    }
 }

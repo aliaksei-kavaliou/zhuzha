@@ -285,9 +285,6 @@ internal fun buildTocBlocks(
             "days" to totalDays,
         ),
     )
-    blocks += TocBlock.SearchEntry
-    blocks += TocBlock.ReaderNotesEntry(readerNoteCount)
-    blocks += TocBlock.ExportEntry
     blocks += TocBlock.SectionHeader(labels.t("Contents"))
     val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
     val schedule = courseDaySchedule(course).associateBy { it.chapterN }
@@ -347,6 +344,25 @@ internal fun buildTocBlocks(
             blocks += TocBlock.BookmarkEntry(bm, title)
         }
     }
+    // BACK MATTER. These three used to sit directly under the title, above
+    // the contents — which meant that opening a book on a short screen showed
+    // no chapters at all: the whole first page was the title, Search, the
+    // reading record and Export, and the word "Contents" arrived at the very
+    // bottom with nothing under it. You had to turn a page to read the book.
+    //
+    // The grouping was right and the placement inverted it. This screen calls
+    // itself the book's front matter, and in a book the front matter is the
+    // title page and then the CONTENTS; the apparatus — index, colophon —
+    // goes at the back. So the rule is: everything that points INTO the book
+    // first (chapters, then the reader's own notes, questions and bookmarks),
+    // and everything you do TO the book last.
+    //
+    // Nothing becomes unreachable and Search loses least of all: it is also
+    // in the reader's own menu, under "Go to", which is where you actually
+    // want it — mid-paragraph, thinking "where did it say that".
+    blocks += TocBlock.SearchEntry
+    blocks += TocBlock.ReaderNotesEntry(readerNoteCount)
+    blocks += TocBlock.ExportEntry
     return blocks
 }
 
@@ -380,6 +396,28 @@ private fun PagedContents(
         var pageIndex by remember { mutableStateOf(0) }
         LaunchedEffect(pages.size) {
             if (pageIndex >= pages.size) pageIndex = (pages.size - 1).coerceAtLeast(0)
+        }
+        // Open where the reader actually is. Every route into a book lands
+        // here — the Library row has no "continue reading" of its own — so
+        // starting at page 1 meant resuming a book you were four chapters
+        // into cost three actions: turn a page, find the chapter, tap it.
+        //
+        // ONCE, and only once: `pages` is rebuilt whenever the content or the
+        // measurements change, and re-jumping then would drag the reader back
+        // here every time they deleted a note or the font changed. That is the
+        // same rule the clamp above follows — stay put unless you cannot.
+        //
+        // A book with nothing read has no current chapter, so this finds
+        // nothing and leaves it on the title page, which is the right opening
+        // for a book you have not started.
+        var openedAtCurrent by remember { mutableStateOf(false) }
+        LaunchedEffect(pages) {
+            if (openedAtCurrent || availableHeightPx <= 0) return@LaunchedEffect
+            openedAtCurrent = true
+            val target = pages.indexOfFirst { page ->
+                page.any { it is TocBlock.ChapterEntry && it.isCurrent }
+            }
+            if (target > 0) pageIndex = target
         }
         val hasPrev = pageIndex > 0
         val hasNext = pageIndex < pages.size - 1

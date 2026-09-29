@@ -426,6 +426,21 @@ yet" note that used to live here was two months stale.
       the book. The strip is deliberately NARROW and tested — `1984`, `10 Ways to Draw a
       Cat` and `Chapter and Verse` all survive untouched, and a strip that would empty a
       title keeps the original instead.
+- [x] **The Contents is a contents again (2026-09-29)** — Aliaksei: "TOC goes after search,
+      progress and export, so on the emulator it is not even visible". He was right, and the
+      screen's own doc contained the argument against itself: it calls itself the book's
+      FRONT MATTER, and in a book the front matter is the title page and then the contents —
+      the apparatus goes at the BACK. Chapters now follow the title immediately, then the
+      reader's own notes, questions and bookmarks, then Search / reading record / Export
+      last. The rule is: everything that points INTO the book first, everything you do TO it
+      last. Search loses least by moving, since it is also in the reader's own menu under
+      "Go to", which is where you want it mid-paragraph.
+      **The bigger half is that it now opens at the chapter you are READING.** Every route
+      into a book lands here — the Library row has no continue-reading path of its own — so
+      resuming a book four chapters in cost three actions: turn a page, find the chapter,
+      tap it. It jumps ONCE, not on every rebuild of the pages, or deleting a note would
+      drag you back; and a book with nothing read has no current chapter, so it stays on the
+      title page, which is the right opening for a book you have not started.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
