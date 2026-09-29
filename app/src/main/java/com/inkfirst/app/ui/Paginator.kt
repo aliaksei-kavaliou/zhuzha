@@ -825,11 +825,26 @@ private fun estimateHeight(
             val showsReveal = block.params[FENCE_CONT_TO] == null
             val exerciseExtra =
                 if (block.kind == "exercise" && showsReveal) 48.dp.toPx().toInt() + answerBadge else 0
+            // The ruled lines the reader writes their own answer on. Measured
+            // with the SAME function the renderer draws from, deliberately:
+            // an estimate that computes independently of its renderer is the
+            // bug this file has produced twice in one day.
+            val answerSpace = if (block.kind == "exercise" && showsReveal) {
+                val lines = answerSpaceLineCount(splitExerciseBody(block.body).second)
+                if (lines == 0) {
+                    0
+                } else {
+                    (ANSWER_RULE_SPACING * fontScale).toPx().toInt() * lines +
+                        14.dp.toPx().toInt()
+                }
+            } else {
+                0
+            }
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
             val outerSpacers = 8.dp.toPx().toInt()
             val wrapperVPad = 16.dp.toPx().toInt()
             val borderInner = 24.dp.toPx().toInt()
-            label + body.size.height + exerciseExtra + figureExtra +
+            label + body.size.height + exerciseExtra + answerSpace + figureExtra +
                 outerSpacers + wrapperVPad + borderInner
         }
     }

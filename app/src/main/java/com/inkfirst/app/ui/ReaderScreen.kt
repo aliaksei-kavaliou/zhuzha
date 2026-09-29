@@ -230,6 +230,29 @@ private val DRAG_CHAPTER_THRESHOLD = 80.dp
  * picture pushed to page 2. A plate that stops short of the text edges also
  * simply looks better on a book page.
  */
+/**
+ * How tall one ruled line of answer space is. Sized for HANDWRITING rather
+ * than for type — a pen needs more room than a printed line of the same text,
+ * and a rule you cannot comfortably write between is decoration.
+ */
+internal val ANSWER_RULE_SPACING = 30.dp
+
+/**
+ * How many ruled lines an exercise offers for a written answer.
+ *
+ * Derived from the answer the book is holding, which is something paper cannot
+ * do: a printed workbook guesses how many lines to rule, and this one knows.
+ *
+ * Clamped at both ends. Fewer than two does not read as somewhere to write,
+ * and past six the page is mostly rules — at which point the exercise has
+ * stopped being a question and become a form.
+ */
+internal fun answerSpaceLineCount(answer: String): Int {
+    val text = answer.trim()
+    if (text.isEmpty()) return 0
+    return (text.length / 42 + 1).coerceIn(2, 6)
+}
+
 internal const val PLATE_WIDTH_FRACTION = 0.72f
 
 // Inline `code` is marked by the monospace face alone — no background. A tint
@@ -3269,8 +3292,15 @@ private fun ExerciseBlock(
         Spacer(Modifier.height(8.dp))
         if (isHead) {
             // Nothing here: the task carries on over the leaf, and the answer
-            // belongs at the end of it.
-        } else if (revealed || answer.isEmpty()) {
+            // belongs at the end of it — and so does the room to write one.
+        } else {
+        // Room to write, ABOVE the answer rather than where the answer will
+        // go. Revealing must not land printed text on top of the reader's own
+        // handwriting, and after the tap the two sit one above the other,
+        // which is the whole point of writing first and comparing after.
+        AnswerSpace(lines = answerSpaceLineCount(answer), fontScale = fontScale)
+        Spacer(Modifier.height(8.dp))
+        if (revealed || answer.isEmpty()) {
             if (answer.isNotEmpty()) {
                 // The mascot again, in its telling-you-a-secret pose. Top
                 // aligned rather than centred: the answer usually runs to
@@ -3311,6 +3341,43 @@ private fun ExerciseBlock(
             androidx.compose.runtime.DisposableEffect(Unit) {
                 onDispose { onRevealBounds(null) }
             }
+        }
+        }
+    }
+}
+
+/**
+ * Ruled lines under an exercise: somewhere to write the answer before reading
+ * it.
+ *
+ * Aliaksei's own loop, 2026-09-29 — "I use stylus to mark answer, or write on
+ * the page then open and compare" — and the reason the blank area under an
+ * exercise was never dead space. It was the working area; we just had not
+ * drawn it.
+ *
+ * It earns its place on a device with no stylus too, which is most of them.
+ * Head First prints these lines knowing most readers never fill them in: they
+ * mark a beat to stop and think, they break the wall of text, and they set the
+ * page's mode to workbook rather than article. Only the fourth job needs a pen.
+ *
+ * ALWAYS DRAWN, including after the answer is revealed. Ink is anchored to a
+ * block and does not reflow, so a space that disappeared on reveal would leave
+ * the reader's handwriting floating over the printed answer.
+ */
+@Composable
+private fun AnswerSpace(lines: Int, fontScale: Float) {
+    if (lines <= 0) return
+    Spacer(Modifier.height(6.dp))
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ANSWER_RULE_SPACING * fontScale * lines),
+    ) {
+        val step = size.height / lines
+        val stroke = 1.dp.toPx()
+        for (i in 1..lines) {
+            val y = step * i
+            drawLine(Hairline, Offset(0f, y), Offset(size.width, y), stroke)
         }
     }
 }

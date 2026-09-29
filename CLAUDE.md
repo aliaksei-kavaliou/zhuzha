@@ -508,6 +508,24 @@ yet" note that used to live here was two months stale.
       it does the separating and the header's gap drops to 8dp (and 4dp above it, since with
       the status bar gone there is nothing up there to be separated from). First text lands
       at y=80: **22.5% → 12.5%**, and chapter 2 went 24 pages → 22 → 21 on the same content.
+- [x] **An exercise has somewhere to write the answer (2026-09-29)** — from Aliaksei
+      describing his own loop: "I use stylus to mark answer, or write on the page then open
+      and compare". That reframed what looked like a defect — the blank area under an
+      exercise is not dead space, it is the WORKING AREA, and it had simply never been drawn.
+      Ruled lines under the task now, sized from the answer the book is holding, which is
+      something a paper workbook cannot do. **They earn their place with no stylus too**:
+      Head First prints these knowing most readers never fill them in, because they mark a
+      beat to stop and think, break the wall of text, and set the page's mode to workbook.
+      **The answer reveals BELOW the lines, never into them** — ink is anchored to a block
+      and does not reflow, so printed text landing where someone wrote would bury their
+      handwriting; after the tap the two sit one above the other, which is the entire point
+      of writing first. The lines stay drawn after the reveal for the same reason. Height is
+      defined ONCE (`answerSpaceLineCount` + `ANSWER_RULE_SPACING`) and used by both the
+      renderer and the paginator, because an estimate that computes independently of its
+      renderer is the bug this file produced twice on 2026-09-29 alone.
+      **Found immediately on the sketching book**: a task that says "draw the outline of the
+      mug in one unbroken line" gets ruled lines, which is wrong — a DO task wants blank
+      space, only a SAY task wants rules. Not yet fixed; it needs a per-exercise distinction.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
