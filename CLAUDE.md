@@ -453,6 +453,20 @@ yet" note that used to live here was two months stale.
       now, at their WIDE forms even when the blank one is drawn — erring wide makes the
       title narrower, hence taller, hence more conservative, which is the safe direction for
       a budget whose only failure mode is clipping.
+- [x] **A chapter opens on a title page (2026-09-29)** — Aliaksei: page 1 of chapter 2, the
+      last line sliced in half by the footer. Instrumenting the paginator gave it in four
+      lines: the byline's keep-with-next check asked "will the heading fit beside me?" (369
+      of a 410 budget — yes) and placed itself on that promise, but the HEADING runs its own
+      check when its turn comes and demands room for the paragraph too. That fails, it opens
+      a new page, and the byline is left alone — so `mergeLonelyOpeners` glues the two back
+      together AFTER layout, where there is no budget left to check against. The sting:
+      **the title costs 306px at the top of a page and 346px once something sits above it**,
+      because it regains its 40dp top spacer. The merge added 40px nobody measured. 452
+      against 410. Three changes and they only work together: a cover-bearing heading is not
+      a "lonely opener" (a title page is content — design.md §10); while a page holds
+      nothing but openers the next block is FORCED onto it, so the byline is never stranded
+      and everything after re-flows; and a forced paragraph gives up the lines that fit
+      rather than being placed whole, which is what makes the force safe.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

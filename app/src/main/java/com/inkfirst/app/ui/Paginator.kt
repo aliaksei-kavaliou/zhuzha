@@ -141,12 +141,56 @@ fun paginate(
             h
         }
 
+        // Forced, and it does not fit: take the lines that do and carry the
+        // rest. The force exists so an opener is not left alone on a page,
+        // and a few lines under the title satisfy that exactly as well as the
+        // whole paragraph — which is the rule `requiredHeight` above already
+        // applies when it caps the next block at MIN_SPLIT_LINES. Only the
+        // PLACEMENT had not been taught it, so the whole paragraph went down
+        // on a page with room for two lines of it and the third came back
+        // sliced in half by the footer. Reported from chapter 2 of a real
+        // book, 2026-09-29: meta byline + title + a 4:3 cover leaves very
+        // little of the first page, which is exactly when this bites.
+        if (forceNext && height + h > budget && block is Block.Paragraph) {
+            val forcedSplit = splitParagraph(
+                block, budget - height, contentWidthPx, measurer, fontScale, lineSpacing, density,
+            )
+            if (forcedSplit != null) {
+                pages.last().add(PageItem(forcedSplit.head, i, carriedPx))
+                carry = forcedSplit.tail
+                carriedPx += forcedSplit.headPx
+                forceNext = false
+                newPage()
+                continue
+            }
+            // Nothing splittable — too little room even for MIN_SPLIT_LINES.
+            // Fall through and place it whole: an opener alone on a page is
+            // the worse of the two, and this is the case the 10% budget
+            // margin exists to absorb.
+        }
+
         if (forceNext || height + requiredHeight <= budget) {
             pages.last().add(PageItem(block, i, carriedPx))
             height += h
             carry = null
             carriedPx = 0
-            forceNext = false
+            // Placed on a PROMISE, so keep it. The keep-with-next check above
+            // asked whether the next block fits beside this opener and placed
+            // it because the answer was yes — but the next block runs its own
+            // check when its turn comes, and a heading demands room for the
+            // paragraph after IT. So the byline went down alone, the title
+            // started a new page, and mergeLonelyOpeners glued the two back
+            // together afterwards, where there is no budget left to check
+            // against. Worse, the title then costs MORE than was measured:
+            // 306px at the top of a page, 346px once something sits above it,
+            // because it regains its 40dp top spacer. That 40px plus the
+            // paragraph is what ran off the bottom of the page and came back
+            // as a line sliced in half by the footer (2026-09-29).
+            //
+            // So: while this page holds nothing but openers, whatever comes
+            // next joins it. The force is safe because the branch above now
+            // splits a forced paragraph rather than placing it whole.
+            forceNext = pages.last().all { it.opensSomething }
             i++
             continue
         }
@@ -256,9 +300,26 @@ internal fun mergeLonelyOpeners(pages: List<List<PageItem>>): List<List<PageItem
     return out
 }
 
-/** Blocks that introduce what follows and read as broken without it. */
+/**
+ * Blocks that introduce what follows and read as broken without it.
+ *
+ * A heading carrying the chapter's COVER is not one of them. It is a title
+ * page — byline, title, picture — which design.md §10 calls the right shape
+ * for a chapter opening, and the picture is content by any measure. Treating
+ * it as lonely made the merge pull the first paragraph onto a page with no
+ * room for it, and since this pass runs on pages that are already laid out it
+ * has no budget to check against: the page ran over and the footer sliced the
+ * last line in half. Reported from chapter 2 of a real book, 2026-09-29.
+ *
+ * A bare title with no picture is still lonely and still travels, which is
+ * the case this pass was built for.
+ */
 private val PageItem.opensSomething: Boolean
-    get() = block is Block.Heading || (block is Block.CustomFence && block.kind == "meta")
+    get() = when (val b = block) {
+        is Block.Heading -> b.coverSrc == null
+        is Block.CustomFence -> b.kind == "meta"
+        else -> false
+    }
 
 /** [head] fits the space offered; [tail] is what is left to place. */
 private data class SplitParagraph(
