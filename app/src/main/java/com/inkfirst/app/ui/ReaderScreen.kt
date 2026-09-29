@@ -2263,12 +2263,19 @@ private fun ReaderHeader(
         // border is a hard horizontal line, and the header still read as
         // attached to it.
         //
-        // 36dp was measured and trimmed to 24dp on 2026-09-29, when the top of
-        // the page turned out to be costing 22.5% of it on a 640px screen. The
-        // separation argument survives at 24; what does not survive is paying
-        // for it twice, and the TextButton below was the other payer.
-        // The content box measures whatever is left, so pagination follows.
-        modifier = modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp),
+        // 36dp, then 24dp, now 8dp — and the last cut is the one with a reason
+        // rather than a measurement behind it. THIS GAP AND INK_TOP_MARGIN ARE
+        // THE SAME GAP. Both are white space between the running head and the
+        // first line of text; they were argued for separately (one to detach
+        // the header, one to give the pen somewhere to start a stroke above
+        // the first line) and so they stacked, 24 + 28, for a single visual
+        // job. The ink margin is the one that cannot shrink, so it is the one
+        // that does the separating, and this drops to a hairline of its own.
+        //
+        // Above the header is 4dp rather than 8dp for the same reason: with
+        // the status bar hidden the header sits at the very edge of the glass,
+        // where there is nothing above it to be separated from.
+        modifier = modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
     ) {
         // Explicit-destination nav rather than popBackStack — the auto-resume
         // cold-start pushes Reader directly on top of Library with no

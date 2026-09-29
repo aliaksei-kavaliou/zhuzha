@@ -500,7 +500,14 @@ yet" note that used to live here was two months stale.
       at 24, what does not survive is paying for it twice. **First text now starts at y=100:
       22.5% → 15.6%.** `INK_TOP_MARGIN` (28dp) was deliberately left alone — it is the room
       the pen needs to stroke ABOVE the first line.
-      Side effect worth knowing: chapter 2 went from 24 pages to 22.
+      **Then a second pass, which found the principle the first one missed: the header's
+      bottom gap and `INK_TOP_MARGIN` are the SAME GAP.** Both are white space between the
+      running head and the first line; they were argued for separately — one to detach the
+      header, one to give the pen room to start a stroke above the first line — so they
+      stacked, 24 + 28, for one visual job. The ink margin is the one that cannot shrink, so
+      it does the separating and the header's gap drops to 8dp (and 4dp above it, since with
+      the status bar gone there is nothing up there to be separated from). First text lands
+      at y=80: **22.5% → 12.5%**, and chapter 2 went 24 pages → 22 → 21 on the same content.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
