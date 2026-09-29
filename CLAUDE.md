@@ -488,6 +488,19 @@ yet" note that used to live here was two months stale.
       more than twice and the middle piece is both a continuation and continues; with one
       flag the second split overwrote it and the middle piece introduced itself as a fresh
       exercise, mascot and all.
+- [x] **The top of the page was a fifth of the page (2026-09-29)** — Aliaksei measured it by
+      eye and was exactly right: the first line of text started at y=144 on a 640px screen.
+      Broken down, the largest slice was not ours at all — **the Android status bar, ~5% of
+      every page given to a clock**. The reader hides it now and restores it on the way out,
+      so Library and Settings keep theirs; the NAVIGATION bar stays, because hiding both
+      would take the system back gesture away from a screen whose own back affordance is one
+      "≡ Contents". Also: the header's `TextButton` was an unrestyled M3 default carrying a
+      40dp minimum height for a 20px label, in an app whose rule is to restyle every one of
+      them, and the 36dp gap below the header went to 24dp — the separation argument survives
+      at 24, what does not survive is paying for it twice. **First text now starts at y=100:
+      22.5% → 15.6%.** `INK_TOP_MARGIN` (28dp) was deliberately left alone — it is the room
+      the pen needs to stroke ABOVE the first line.
+      Side effect worth knowing: chapter 2 went from 24 pages to 22.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

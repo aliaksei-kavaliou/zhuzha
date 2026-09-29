@@ -55,6 +55,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.graphics.Rect as AndroidRect
+import android.app.Activity
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -301,6 +306,30 @@ fun ReaderScreen(
     var showFormatMenu by remember { mutableStateOf(false) }
     // Which pane of the menu is open. Reset when the menu closes, so it
     // always opens on reading.
+    // The status bar is a clock over a book. It costs ~5% of the height of
+    // every page — the single largest slice of the 22.5% the top of the page
+    // was eating on a 640px screen — and a reading surface is the one place
+    // where that trade is obviously wrong. Hidden while the reader is up and
+    // restored on the way out, so the Library and Settings keep theirs.
+    //
+    // The status bar only; the navigation bar stays. Hiding both would take
+    // the system back gesture away from a screen whose own back affordance is
+    // a single "≡ Contents" at the top, and a reader you can get stuck in is
+    // worse than a reader with a clock. A swipe from the edge brings it back
+    // transiently either way.
+    //
+    // Nothing else has to change: the content box measures whatever is left,
+    // so pagination follows the taller page automatically.
+    val readerView = LocalView.current
+    DisposableEffect(Unit) {
+        val window = (readerView.context as? Activity)?.window
+        val bars = window?.let { WindowCompat.getInsetsController(it, readerView) }
+        bars?.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        bars?.hide(WindowInsetsCompat.Type.statusBars())
+        onDispose { bars?.show(WindowInsetsCompat.Type.statusBars()) }
+    }
+
     var menuPane by remember { mutableStateOf(MenuPane.READING) }
     // Which picture the reader has asked to redraw, held until they confirm:
     // false is the opening picture, true the closing one, null neither.
@@ -2232,16 +2261,32 @@ private fun ReaderHeader(
         // under it or it reads as part of the first block on the page. 20dp
         // was not enough — when a bordered RECAP box leads the page its top
         // border is a hard horizontal line, and the header still read as
-        // attached to it. Costs a line of body text per page and is worth it.
-        // The content box below measures whatever is left, so pagination
-        // follows this automatically.
-        modifier = modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
+        // attached to it.
+        //
+        // 36dp was measured and trimmed to 24dp on 2026-09-29, when the top of
+        // the page turned out to be costing 22.5% of it on a 640px screen. The
+        // separation argument survives at 24; what does not survive is paying
+        // for it twice, and the TextButton below was the other payer.
+        // The content box measures whatever is left, so pagination follows.
+        modifier = modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp),
     ) {
         // Explicit-destination nav rather than popBackStack — the auto-resume
         // cold-start pushes Reader directly on top of Library with no
         // Contents in between, so a back-pop would land on Library. The
         // button label says Contents; it should always go to Contents.
-        TextButton(onClick = onOpenContents) { Text("≡ " + t("Contents"), color = Ink) }
+        // A plain target rather than a TextButton. M3 gives a TextButton a
+        // 40dp minimum height and its own content padding, so a 20px label was
+        // costing about twice that in chrome at the very top of every page —
+        // an unrestyled Material default in an app whose rule is to restyle
+        // every one of them. The padding here is the same shape the menu rows
+        // use, so the header and the menus agree about what a tap target is.
+        Box(
+            modifier = Modifier
+                .clickable { onOpenContents() }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text("≡ " + t("Contents"), color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
         Spacer(Modifier.weight(1f))
         if (chapterN != null && chapterCount != null) {
             Text(
