@@ -970,7 +970,41 @@ private fun estimateTocBlockHeight(
             12.dp.toPx().toInt() + (12.sp.toPx() * 1.3f).toInt() + 6.dp.toPx().toInt()
         }
         is TocBlock.ChapterEntry -> {
-            val titleWidth = (contentWidthPx - 24.dp.toPx().toInt()).coerceAtLeast(1)
+            // The title is the Row's weight(1f) child, so the width it gets is
+            // whatever the other three leave it: the "▸" marker, the day label
+            // and the ✎ glyph, each with its own 8dp gap. This used to subtract
+            // the three GAPS (24dp) and none of the TEXT, so a title was
+            // measured against getting on for twice the width it really has —
+            // the estimate said two lines where the page drew five, the entry
+            // overflowed the budget, and the last one on a page was clipped to
+            // its number. Reported from a real book as "6. and no title"
+            // (2026-09-29); the longest title shows it first.
+            //
+            // The marker and the glyph are measured at their WIDE forms ("▸",
+            // "✎") even when this row draws the blank one. Both are the same
+            // width in this face, and erring wide makes the title narrower,
+            // hence taller, hence more conservative — the safe direction for a
+            // budget whose only failure mode is clipping.
+            val serif = FontFamily.Serif
+            val markerWidth = measurer.measure(
+                text = AnnotatedString("▸"),
+                style = TextStyle(fontSize = 16.sp, fontFamily = serif),
+            ).size.width
+            val glyphWidth = measurer.measure(
+                text = AnnotatedString("✎"),
+                style = TextStyle(fontSize = 14.sp, fontFamily = serif),
+            ).size.width
+            val dayWidth = if (block.dayLabel.isEmpty()) 0 else measurer.measure(
+                text = AnnotatedString(block.dayLabel),
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    fontFamily = serif,
+                    fontStyle = FontStyle.Italic,
+                ),
+            ).size.width
+            val gaps = 8.dp.toPx().toInt() * 3
+            val titleWidth =
+                (contentWidthPx - markerWidth - glyphWidth - dayWidth - gaps).coerceAtLeast(1)
             val titleResult = measurer.measure(
                 text = AnnotatedString("${block.chapter.n}. ${block.chapter.title}"),
                 style = TextStyle(

@@ -441,6 +441,18 @@ yet" note that used to live here was two months stale.
       tap it. It jumps ONCE, not on every rebuild of the pages, or deleting a note would
       drag you back; and a book with nothing read has no current chapter, so it stays on the
       title page, which is the right opening for a book you have not started.
+- [x] **A chapter entry is measured at the width it actually gets (2026-09-29)** — Aliaksei:
+      "TOC has 6. but no title". The Contents paginator measured a chapter title against
+      `contentWidth − 24dp`, but the renderer gives the title `weight(1f)` in a Row that also
+      carries the ▸ marker, the "Day 3–4" label and the ✎ glyph, each with its own 8dp gap —
+      so it measured against getting on for TWICE the width the title has. The estimate said
+      two lines where the page drew five, the entry overflowed the budget, and the last one
+      on a page was clipped to its number. Not caused by the reorder above, but exposed by
+      it: moving the apparatus changed which entry lands at a page boundary, and the longest
+      title shows it first. It measures the marker, the day label and the glyph for real
+      now, at their WIDE forms even when the blank one is drawn — erring wide makes the
+      title narrower, hence taller, hence more conservative, which is the safe direction for
+      a budget whose only failure mode is clipping.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
