@@ -483,6 +483,18 @@ fun ReaderScreen(
     val hasTail = remember(course?.slug, chapterSlug, pictureVersion) {
         course?.slug?.let { store.tailFile(it, chapterSlug) != null } == true
     }
+    // The closing picture is a rewrite of the cover's brief, so redrawing the
+    // cover leaves it paying off a scene that is no longer there — the pair
+    // stops rhyming, which is the only reason the pair exists. Read off the
+    // files rather than stored: drawn together the cover is always written
+    // first, so a tail OLDER than its cover can only mean the cover was
+    // redrawn since.
+    val tailStale = remember(course?.slug, chapterSlug, pictureVersion) {
+        val slug = course?.slug ?: return@remember false
+        val cover = store.coverFile(slug, chapterSlug) ?: return@remember false
+        val tail = store.tailFile(slug, chapterSlug) ?: return@remember false
+        tail.lastModified() < cover.lastModified()
+    }
     val pendingBadges = remember(course?.slug, pictureVersion, neededBadges) {
         val have = course?.slug?.let { store.badgeKinds(it) }.orEmpty()
         neededBadges.count { it !in have }
@@ -1202,6 +1214,7 @@ fun ReaderScreen(
                             drawChapterCover(
                                 course = c,
                                 chapter = ch,
+                                markdown = markdown.orEmpty(),
                                 scope = scope,
                                 store = store,
                                 apiKeyStore = apiKeyStore,
@@ -1386,6 +1399,7 @@ fun ReaderScreen(
                     drawChapterCover(
                         course = c,
                         chapter = ch,
+                        markdown = markdown.orEmpty(),
                         scope = scope,
                         store = store,
                         apiKeyStore = apiKeyStore,
@@ -1425,6 +1439,7 @@ fun ReaderScreen(
                 pendingBadges = pendingBadges,
                 hasCover = hasCover,
                 hasTail = hasTail,
+                tailStale = tailStale,
                 onRedrawCover = { confirmingRedraw = false },
                 onRedrawTail = { confirmingRedraw = true },
                 onBack = { menuPane = MenuPane.READING },
@@ -2568,6 +2583,8 @@ private fun ChapterToolsMenu(
     pendingBadges: Int,
     hasCover: Boolean,
     hasTail: Boolean,
+    /** The closing picture pays off a cover that has since been redrawn. */
+    tailStale: Boolean,
     figureStatus: String?,
     busyDrawing: Boolean,
     onIllustrate: () -> Unit,
@@ -2696,6 +2713,9 @@ private fun ChapterToolsMenu(
             MenuRow(label = t("Closing")) {
                 MenuAction(
                     text = when {
+                        hasTail && tailStale ->
+                            t("no longer matches the opening") + " · " +
+                                t("Redraw") + " · ${pictureCost(1)}"
                         hasTail -> t("Redraw") + " · ${pictureCost(1)}"
                         !hasCover -> t("needs the chapter picture first")
                         else -> t("Draw closing picture") + " · ${pictureCost(1)}"
@@ -4618,6 +4638,8 @@ private suspend fun drawChapterPictures(
     imageModel: String,
     course: Course,
     chapter: PersistedChapter,
+    /** The chapter's finished text — the cover is briefed from its opening. */
+    markdown: String,
     apiKey: String,
     store: com.inkfirst.core.CourseStore,
     onState: (CompileState) -> Unit,
@@ -4633,6 +4655,7 @@ private suspend fun drawChapterPictures(
             textModel = course.model,
             saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
             saveBrief = { brief -> store.saveCoverBrief(course.slug, chapter.slug, brief) },
+            chapterMarkdown = markdown,
         )
     }
 
@@ -4657,6 +4680,8 @@ private suspend fun drawChapterPictures(
 private fun drawChapterCover(
     course: Course,
     chapter: PersistedChapter,
+    /** The chapter's text, so the picture matches the page it faces. */
+    markdown: String,
     scope: kotlinx.coroutines.CoroutineScope,
     store: com.inkfirst.core.CourseStore,
     apiKeyStore: ApiKeyStore,
@@ -4679,6 +4704,7 @@ private fun drawChapterCover(
                     textModel = course.model,
                     saveImage = { name, bytes -> store.saveFigure(course.slug, name, bytes) },
                     saveBrief = { brief -> store.saveCoverBrief(course.slug, chapter.slug, brief) },
+                    chapterMarkdown = markdown,
                 )
                 onState(CompileState.Idle)
                 onDone()
@@ -4887,6 +4913,9 @@ private fun compileChapter(
                             imageModel = apiKeyStore.getImageModelName(),
                             course = course,
                             chapter = chapter,
+                            // The prose, not `markdown`: same words either
+                            // way, and this is the copy that is on disk.
+                            markdown = illustrated,
                             apiKey = apiKey,
                             store = store,
                             onState = onState,

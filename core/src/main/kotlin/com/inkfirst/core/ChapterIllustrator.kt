@@ -30,6 +30,11 @@ class ChapterIllustrator(
      * literal illustration of the words rather than a scene. Best-effort like
      * everything else here — no cover just means no cover.
      *
+     * [chapterMarkdown] is the chapter's finished text, and passing it is what
+     * keeps the picture and the first page telling the same story — see
+     * [buildCoverBriefPrompt]. Optional only because a cover can be drawn
+     * without the text to hand; pass it wherever it exists.
+     *
      * Returns the file name written, or null if nothing was drawn.
      */
     suspend fun drawCover(
@@ -39,13 +44,14 @@ class ChapterIllustrator(
         textModel: String,
         saveImage: (fileName: String, bytes: ByteArray) -> Unit,
         saveBrief: (String) -> Unit = {},
+        chapterMarkdown: String = "",
     ): String? {
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
         return try {
             val brief = client.generateText(
                 model = textModel,
                 systemInstruction = "You write briefs for illustrators. You reply with the brief and nothing else.",
-                userPrompt = buildCoverBriefPrompt(course, chapter),
+                userPrompt = buildCoverBriefPrompt(course, chapter, chapterMarkdown),
                 apiKey = apiKey,
             ).trim().ifBlank { chapter.title }
 

@@ -133,6 +133,66 @@ internal fun buildFigurePrompt(
 const val FIGURE_ASPECT: Float = 4f / 3f
 
 /**
+ * The chapter's first words as plain prose, at most [maxChars] of them.
+ *
+ * Not [parseMarkdown]: this feeds a prompt, not a page, so the cheap line
+ * scan that [findFigureSlots] uses is the right shape — and it can afford to
+ * be lossy where a renderer cannot. Fenced blocks are dropped whole. An
+ * exercise or a recap is not the opening scene, and a figure fence is a brief
+ * for a picture that will already be on the page a little further down; both
+ * would only pull the cover towards the wrong moment. Heading markers go,
+ * their words stay, because "Why your first plane veers left" is exactly the
+ * kind of line that says what the chapter opens on.
+ *
+ * Truncation is at a word boundary and marked, so the model can see that it
+ * was handed a beginning rather than a whole chapter.
+ */
+internal fun chapterOpening(markdown: String, maxChars: Int = 1200): String {
+    if (markdown.isBlank()) return ""
+
+    val kept = mutableListOf<String>()
+    var inFence = false
+    var titleDropped = false
+    var length = 0
+
+    for (raw in markdown.lines()) {
+        val line = raw.trim()
+        if (line.startsWith("```")) {
+            // The single-line ```figure alt="…"``` shape opens and closes on
+            // one line; toggling on it would swallow the rest of the chapter.
+            val selfClosing = !inFence && line.removePrefix("```").trimEnd().endsWith("```")
+            if (!selfClosing) inFence = !inFence
+            continue
+        }
+        if (inFence) continue
+
+        if (line.isBlank()) {
+            // One blank line between paragraphs, never a run of them.
+            if (kept.isNotEmpty() && kept.last().isNotBlank()) kept += ""
+            continue
+        }
+
+        val text = line.trimStart('#').trim()
+        if (text.isBlank()) continue
+        // The chapter's own h1 is its title, which this prompt already has.
+        if (!titleDropped && line.startsWith("# ")) {
+            titleDropped = true
+            continue
+        }
+
+        kept += text
+        length += text.length + 1
+        if (length >= maxChars) break
+    }
+
+    val prose = kept.joinToString("\n").trim()
+    if (prose.length <= maxChars) return prose
+    val cut = prose.take(maxChars)
+    val lastSpace = cut.lastIndexOfAny(charArrayOf(' ', '\n'))
+    return (if (lastSpace > 0) cut.take(lastSpace) else cut).trimEnd() + " …"
+}
+
+/**
  * Brief-writing prompt for a chapter's opening picture.
  *
  * The cover is asked for in two steps rather than one. A figure inside a
@@ -141,8 +201,26 @@ const val FIGURE_ASPECT: Float = 4f / 3f
  * bags"); a cover has no such brief, and handing an image model a title and a
  * list of objectives gets a literal, lifeless illustration of the words. So
  * the text model writes the brief first, then the image model draws it.
+ *
+ * [chapterMarkdown] is the chapter's own finished text, and it is what stops
+ * the picture and the page disagreeing. Written from the title and the
+ * objectives alone, this prompt invented a metaphor of its own — while the
+ * chapter model had already invented a different one for the same idea, and
+ * put it in the first paragraph. The reader met a woman tasting cookies on
+ * the title page and a paper plane being thrown and corrected on the page
+ * after it, two pictures of training a model with nothing in common
+ * (reported from the neural-networks book, chapter 4, 2026-09-28). Nothing
+ * was missing but the wiring: in every flow the prose is written and saved
+ * before any picture is drawn, so the chapter's own opening scene was
+ * already on disk when the cover was briefed. Blank is allowed and behaves
+ * as before — a cover can still be drawn for a chapter whose text is not to
+ * hand.
  */
-internal fun buildCoverBriefPrompt(course: Course, chapter: PersistedChapter): String = buildString {
+internal fun buildCoverBriefPrompt(
+    course: Course,
+    chapter: PersistedChapter,
+    chapterMarkdown: String = "",
+): String = buildString {
     appendLine("A study book is opening a new chapter, and it needs one picture for the")
     appendLine("chapter's title page.")
     appendLine()
@@ -153,12 +231,56 @@ internal fun buildCoverBriefPrompt(course: Course, chapter: PersistedChapter): S
         chapter.objectives.forEach { appendLine("  - $it") }
     }
     appendLine()
-    appendLine("Describe ONE concrete scene an artist should draw. The scene must capture")
-    appendLine("the PROBLEM this chapter solves — the difficulty or the question the reader")
-    appendLine("arrives with — not a summary of the answer, and not a diagram of the topic.")
-    appendLine("Use a physical, everyday metaphor with a character in it: something going")
-    appendLine("wrong, someone stuck, someone facing an absurd amount of work. It should")
-    appendLine("raise a smile.")
+
+    val opening = chapterOpening(chapterMarkdown)
+    if (opening.isNotBlank()) {
+        appendLine("HOW THE CHAPTER ITSELF OPENS — its first words, as the reader meets them")
+        appendLine("one page after this picture:")
+        appendLine(opening)
+        appendLine()
+        appendLine("THE CHAPTER'S OWN OPENING IS THE SCENE TO DRAW. A chapter like this one")
+        appendLine("makes its point with something concrete — an object, an activity, someone")
+        appendLine("doing something. Draw THAT, and do not invent a second metaphor for the")
+        appendLine("same idea. The reader turns this picture over and immediately reads those")
+        appendLine("words, so two unrelated pictures of one idea make the book read as two")
+        appendLine("books stitched together, and leave the reader holding the wrong one.")
+        appendLine()
+    }
+
+    val drawnInside = findFigureSlots(chapterMarkdown).map { it.brief }.filter { it.isNotBlank() }
+    if (drawnInside.isNotEmpty()) {
+        appendLine("PICTURES THAT ALREADY APPEAR INSIDE THIS CHAPTER:")
+        drawnInside.forEach { appendLine("  - ${it.replace('\n', ' ').trim()}") }
+        appendLine("Do not describe one of these a second time. If one of them already draws")
+        appendLine("the opening moment, draw a DIFFERENT moment of the same scene — the same")
+        appendLine("character and the same objects, earlier or later — never a different")
+        appendLine("metaphor.")
+        appendLine()
+    }
+
+    // One instruction or the other, never both. An "invent a metaphor"
+    // paragraph left standing under "draw the chapter's own" is a
+    // contradiction the model resolves however it likes, and the whole point
+    // here is that it stops resolving it the wrong way.
+    if (opening.isNotBlank()) {
+        appendLine("Describe ONE concrete scene an artist should draw — the chapter's own,")
+        appendLine("taken from the words above. Catch it at its PROBLEM moment: the thing")
+        appendLine("not working yet, the character stuck or mid-struggle — not a summary of")
+        appendLine("what the chapter concludes, and not a diagram of the topic. It should")
+        appendLine("raise a smile.")
+        appendLine()
+        appendLine("Only if the opening gives you nothing at all to picture — no object, no")
+        appendLine("activity, nobody doing anything — invent a scene instead: a physical,")
+        appendLine("everyday metaphor with a character in it, something going wrong or")
+        appendLine("someone facing an absurd amount of work.")
+    } else {
+        appendLine("Describe ONE concrete scene an artist should draw. The scene must capture")
+        appendLine("the PROBLEM this chapter solves — the difficulty or the question the reader")
+        appendLine("arrives with — not a summary of the answer, and not a diagram of the topic.")
+        appendLine("Use a physical, everyday metaphor with a character in it: something going")
+        appendLine("wrong, someone stuck, someone facing an absurd amount of work. It should")
+        appendLine("raise a smile.")
+    }
     appendLine()
     appendLine("Rules: one vivid subject, no diagrams, no charts, no screens full of text,")
     appendLine("no labels or numbers. A short shouted speech bubble of three or four")

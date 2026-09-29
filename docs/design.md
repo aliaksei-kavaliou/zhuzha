@@ -538,6 +538,51 @@ brief prompt asks specifically for the *difficulty the reader arrives with*, not
 the answer, and for a physical everyday metaphor with a character in it. House style is the
 figure one, since a cover is a full-width figure.
 
+### 10.1 The cover draws the chapter's own opening (2026-09-28)
+
+The brief writer is also handed **the chapter's finished opening prose**, and told that it is
+the scene to draw.
+
+Title and objectives alone were not enough, and the gap was structural rather than a bad
+generation. A chapter model taught to go concrete-before-abstract opens by making its point
+with something physical — a paper plane thrown, bent, thrown again. The cover model, asked
+independently for a metaphor for the same objectives, invents *a different* physical thing —
+a woman tasting cookies and adjusting the recipe. Both are good pictures of training a model;
+together they are two books. Reported from the neural-networks book, chapter 4, 2026-09-28.
+
+Nothing had to be generated to fix it, only passed: pictures are drawn **after** the prose is
+written and saved, in every flow (compile, and the reader's own menu rows), so the chapter's
+opening scene was already on disk each time the cover was briefed. `chapterOpening` takes the
+first ~1200 characters of prose — fenced blocks dropped whole, heading markers dropped and
+their words kept — and it rides in the brief prompt.
+
+Two details that are the fix rather than decoration:
+
+- The old "invent a physical everyday metaphor" paragraph is **replaced** when an opening is
+  present, not stacked under the new rule. Left standing it is a contradiction, and the model
+  resolves a contradiction however it likes — which is the behaviour being fixed.
+- The chapter's own figure briefs go along under *do not describe one of these again*.
+  Anchoring the cover to the opening parks it right next to the chapter's first inline figure,
+  which often draws the same moment; the same scene is the point, the same picture twice is
+  not. The instruction is subordinate — a different moment of the same scene, never a
+  different metaphor.
+
+The closing picture inherits this for free: it is a rewrite of the cover's brief (§10), so once
+the cover follows the chapter, so does its payoff.
+
+**Consequence on the "Closing" row.** Redrawing a cover rewrites the stored brief, so an
+already-drawn closing picture is left paying off a scene that no longer exists. The row says so
+— `no longer matches the opening` — detected from the files: drawn together the cover is
+always written first, so a closing picture *older* than its cover can only mean the cover was
+redrawn since. Nothing is deleted and nothing is redrawn automatically; the reader taps a row
+with the price on it, like every other picture.
+
+**Still true, and now debatable:** a rewrite keeps the cover and the closing picture (§1),
+because they came from the outline. They come from the chapter's opening now, and a rewrite is
+explicitly told to change its metaphors — so a rewritten chapter keeps a cover drawn from an
+opening it no longer has. Left alone deliberately: redrawing both on every rewrite spends ~6¢
+nobody asked for, and the Opening row already offers the redraw.
+
 Side effect worth knowing: a title plus a cover usually doesn't leave room for the first
 paragraph, so page 1 of a chapter is a title page. That is the right shape for an opener, but
 it is emergent rather than designed — the paginator simply couldn't fit the paragraph.

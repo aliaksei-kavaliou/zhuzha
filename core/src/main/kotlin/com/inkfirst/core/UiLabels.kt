@@ -149,6 +149,10 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "The one you have is replaced. This cannot be undone.",
     "picture drawn",
     "needs the chapter picture first",
+    // The closing picture is the cover's scene resolved, and it is briefed
+    // from the cover's own words — so redrawing the cover leaves it showing
+    // the previous metaphor. Said on the row rather than left to be noticed.
+    "no longer matches the opening",
     "all drawn",
     "all {n} drawn",
     // Asking about a passage, and writing a note

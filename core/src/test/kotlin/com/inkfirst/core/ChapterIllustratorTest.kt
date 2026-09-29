@@ -326,4 +326,114 @@ class ChapterIllustratorTest {
         assertTrue(client.prompts.isEmpty())
     }
 
+    // ---- the cover and the page it faces ------------------------------
+
+    /**
+     * Chapter 4 of the neural-networks book, in miniature: a title page
+     * showing a woman tasting cookies, and one page later a paper plane
+     * being thrown and corrected. Two metaphors for training a model, with
+     * nothing in common, because the cover was briefed from the title and
+     * the objectives while the chapter model invented its own.
+     */
+    private val trainingChapter = """
+        # How a Model Learns
+
+        Fold a sheet of paper into a plane and throw it. It dives left. So you
+        bend one wing a little, and throw it again.
+
+        ```figure alt="A paper plane nose-down in a pot plant"```
+
+        That is the whole of training: throw, look, adjust, throw again.
+
+        ```exercise
+        Throw a plane five times.
+        answer: it should veer less each time.
+        ```
+    """.trimIndent()
+
+    @Test
+    fun `the cover is briefed from the chapter's own opening`() {
+        val prompt = buildCoverBriefPrompt(course, chapter, trainingChapter)
+
+        assertTrue(prompt.contains("Fold a sheet of paper into a plane"), prompt)
+        assertTrue(prompt.contains("THE CHAPTER'S OWN OPENING IS THE SCENE TO DRAW"), prompt)
+    }
+
+    @Test
+    fun `the cover is told which pictures the chapter already has`() {
+        // Anchoring the cover to the opening puts it next to the chapter's
+        // own first figure, which often draws the same moment. Same scene is
+        // the point; the same picture twice is not.
+        val prompt = buildCoverBriefPrompt(course, chapter, trainingChapter)
+
+        assertTrue(prompt.contains("A paper plane nose-down in a pot plant"), prompt)
+        assertTrue(prompt.contains("DIFFERENT moment of the same scene"), prompt)
+    }
+
+    @Test
+    fun `with no chapter text the cover is briefed exactly as before`() {
+        // A cover can still be drawn without the prose to hand, and then it
+        // invents a scene from the objectives like it always did.
+        val prompt = buildCoverBriefPrompt(course, chapter)
+
+        assertFalse(prompt.contains("HOW THE CHAPTER ITSELF OPENS"), prompt)
+        assertFalse(prompt.contains("PICTURES THAT ALREADY APPEAR"), prompt)
+        assertTrue(prompt.contains("Describe ONE concrete scene"), prompt)
+    }
+
+    @Test
+    fun `the opening is prose - fences and the title are left out`() {
+        val opening = chapterOpening(trainingChapter)
+
+        assertTrue(opening.startsWith("Fold a sheet of paper"), opening)
+        // The h1 is the chapter title, which the prompt already prints.
+        assertFalse(opening.contains("How a Model Learns"), opening)
+        // An exercise is not the opening scene, and a figure brief is a
+        // picture that will be on the page a few paragraphs down anyway.
+        assertFalse(opening.contains("Throw a plane five times"), opening)
+        assertFalse(opening.contains("pot plant"), opening)
+        assertFalse(opening.contains("answer:"), opening)
+    }
+
+    @Test
+    fun `a one-line figure fence does not swallow the rest of the chapter`() {
+        // ```figure alt="…"``` opens and closes on one line. Toggling on it
+        // would drop every word after the chapter's first picture.
+        val opening = chapterOpening(trainingChapter)
+
+        assertTrue(opening.contains("throw, look, adjust"), opening)
+    }
+
+    @Test
+    fun `section headings keep their words`() {
+        val opening = chapterOpening(
+            """
+            # Title
+
+            ## Why your first plane veers left
+
+            Because one wing is heavier.
+            """.trimIndent(),
+        )
+
+        assertTrue(opening.contains("Why your first plane veers left"), opening)
+        assertFalse(opening.contains("#"), opening)
+    }
+
+    @Test
+    fun `a long chapter is cut at a word boundary and says it was cut`() {
+        val long = "# T\n\n" + "plane ".repeat(500)
+
+        val opening = chapterOpening(long, maxChars = 100)
+
+        assertTrue(opening.length <= 120, opening)
+        assertTrue(opening.endsWith(" …"), opening)
+        assertFalse(opening.contains("plan\n"), opening)
+    }
+
+    @Test
+    fun `an empty chapter yields no opening`() {
+        assertEquals("", chapterOpening(""))
+        assertEquals("", chapterOpening("# Only a title"))
+    }
 }

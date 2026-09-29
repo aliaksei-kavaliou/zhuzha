@@ -396,6 +396,31 @@ yet" note that used to live here was two months stale.
       backwards and on an instrument swaps the two hands' jobs. Added to `SHOW_STYLE` with the
       thumb check written out, plus "assume a right-handed person unless the brief says
       otherwise". **Not yet verified against output.**
+- [x] **The cover draws the chapter's own opening (2026-09-28)** — reported from the
+      neural-networks book: chapter 4 opened with a woman tasting cookies and adjusting the
+      recipe, and one page later the chapter itself opened with a paper plane thrown, bent
+      and thrown again. Both are good pictures of training a model; together they are two
+      books. Structural rather than a bad generation — the cover brief was written from the
+      title and objectives, so two models invented two metaphors for one idea, and a chapter
+      model taught concrete-before-abstract will ALWAYS have invented one already. Nothing
+      had to be generated to fix it, only PASSED: pictures are drawn after the prose is
+      saved in every flow, so the chapter's opening was already on disk each time the cover
+      was briefed. Two details are the fix rather than decoration — the old "invent a
+      metaphor" paragraph is REPLACED when an opening is present rather than stacked under
+      the new rule (a contradiction gets resolved however the model likes, which is the
+      behaviour being fixed), and the chapter's own figure briefs ride along under "do not
+      describe one of these again", because anchoring the cover to the opening parks it
+      beside the chapter's first inline figure. The closing picture inherits it free, being
+      a rewrite of the cover's brief — and the Closing row now says `no longer matches the
+      opening` when the cover has been redrawn under it, read off file timestamps rather
+      than stored. **Unit-tested and the built prompt read back in full; NOT verified
+      against drawn output — that needs an API call on a real chapter.** design.md §10.1.
+- [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
+      the above, left undone on purpose. §1 keeps the cover and the closing picture through
+      a rewrite because they came from the outline; they come from the chapter's opening
+      now, and a rewrite is explicitly told to change its metaphors. Redrawing both every
+      time spends ~6¢ nobody asked for, so this is a decision about money rather than a bug
+      to fix on sight. The Opening row already offers the redraw.
 - [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
       emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
       Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,
