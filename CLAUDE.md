@@ -421,14 +421,25 @@ yet" note that used to live here was two months stale.
       now, and a rewrite is explicitly told to change its metaphors. Redrawing both every
       time spends ~6¢ nobody asked for, so this is a decision about money rather than a bug
       to fix on sight. The Opening row already offers the redraw.
-- [ ] **The reader menu neither paginates nor scrolls** — found 2026-09-22 on a 320x640
-      emulator: it sizes to its content, so below ~700px everything after "Chapter" (Rewrite,
-      Figures, Opening, Closing, Badges) is off-screen and unreachable. Invisible on the Boox,
-      which is tall enough. This is the fourth screen in the class the 2026-09-21 audit
-      thought it had closed. The fix is not just a scroll container: with the menu open, a
-      finger drag resolves to `CloseMenu` in `TapRouting`, so scrolling it means teaching the
-      one rule for touch that a drag STARTING inside the menu is a scroll — gesture-path work,
-      which is why it was not done on sight.
+- [x] **The reader menu scrolls (2026-09-28)** — open since 2026-09-22 and closed because
+      430 colleagues are about to open this app on phones. It sized to its content, so below
+      ~700px everything after "Chapter" was off-screen and unreachable — Rewrite, Figures,
+      Opening, Closing, Badges — invisible on the Boox, which is tall enough. `MenuSheet` is
+      now the one container all three panes share (they were three identical `Column` headers
+      drifting apart), and **the cap and the scroll are ONE fix**: a scroll with no cap fills
+      the screen and takes the dismiss target with it, since tapping the page is the only way
+      out of the root pane; a cap with no scroll is the bug again with a shorter sheet.
+      The gesture half is NOT in `TapRouting`, deliberately. `verticalScroll` CONSUMES the
+      drag, so the page's detector now drops any gesture a child consumed — a `consumedByChild`
+      flag rather than the old check on the final change, because **a scrolling child consumes
+      the deltas as they arrive and has nothing left to consume on release**. That was why a
+      scroll container alone would not have worked: scrolling arrived at the page as a bare
+      swipe and resolved to `CloseMenu`. The DECISION stays in TapRouting; the detector deals
+      with its own transport, which is what its own doc already said its job was.
+      **Device-verified on the emulator at 320x640 and 320x480**, all five: every row reachable;
+      a drag inside the menu no longer closes it; a drag on the PAGE still closes it and does
+      not also turn; swipe-to-turn still works with the menu closed; and the content genuinely
+      scrolls once it overflows.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

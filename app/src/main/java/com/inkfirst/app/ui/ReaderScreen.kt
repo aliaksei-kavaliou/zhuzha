@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -78,6 +79,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
@@ -1801,15 +1803,27 @@ private fun PagedContent(
                                 var totalDx = 0f
                                 var totalDy = 0f
                                 var isDrag = false
+                                // A child that consumed ANY part of this gesture owns the
+                                // whole gesture. Checking only the final change was enough
+                                // while every child was a tap target — a tap is one event,
+                                // so consumed-on-up said it all. A SCROLLING child breaks
+                                // that: `verticalScroll` consumes the drag deltas as they
+                                // arrive and has nothing left to consume on the release, so
+                                // scrolling the menu arrived here as a bare swipe and
+                                // resolved to CloseMenu. The menu closed under the finger
+                                // instead of scrolling, which is why it could not simply be
+                                // given a scroll container.
+                                var consumedByChild = false
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull() ?: break
+                                    if (change.isConsumed) consumedByChild = true
                                     if (!change.pressed) {
                                         // If a child composable (TextButton, SelectionContainer,
-                                        // etc.) already consumed this tap, don't page-turn on top
-                                        // of it. That was the "Show answer button also flipped a
-                                        // page" bug.
-                                        if (change.isConsumed) break
+                                        // the menu's own scroll, etc.) consumed any of this,
+                                        // don't page-turn on top of it. That was the "Show
+                                        // answer button also flipped a page" bug.
+                                        if (consumedByChild) break
                                         // A drag is the one meaning the tap
                                         // ladder does not cover — it has no
                                         // position, only a direction — so it
@@ -2271,6 +2285,66 @@ private fun ReaderHeader(
  * own controls without an explicit close button (feels lighter that way).
  */
 /** Which pane of the reader's menu is showing. */
+/**
+ * How tall a menu pane is allowed to get, as a fraction of the screen.
+ *
+ * It has to leave page visible, because tapping the page is how the menu is
+ * dismissed — [resolveTap] turns any tap into `CloseMenu` while one is open,
+ * and a sheet that covered everything would swallow every one of them. The
+ * root pane has no "back" row to escape through, so this is the only way out
+ * of it.
+ */
+private const val MENU_MAX_HEIGHT_FRACTION = 0.62f
+
+/**
+ * The chrome every menu pane shares: a bordered sheet at the bottom of the
+ * page that swallows taps, refuses to grow past [MENU_MAX_HEIGHT_FRACTION],
+ * and SCROLLS whatever does not fit.
+ *
+ * Found 2026-09-22 on a 320x640 emulator and left open for six days because
+ * the fix was known to be more than a scroll container: a `Column` sizes to
+ * its content, so below ~700px everything after "Chapter" was simply off the
+ * screen and unreachable — Rewrite, Figures, Opening, Closing, Badges. It was
+ * invisible on the Boox, which is tall enough, and it is the fourth screen in
+ * the class the 2026-09-21 audit thought it had closed.
+ *
+ * The cap and the scroll are ONE fix, not two. A scroll with no cap fills the
+ * screen and takes the dismiss target with it; a cap with no scroll is the
+ * bug again with a shorter sheet.
+ *
+ * The gesture half of it is in the page's own detector rather than here: with
+ * a menu open a finger drag means `CloseMenu`, so scrolling this would have
+ * turned into closing it. `verticalScroll` CONSUMES the drag, and the
+ * detector now drops any gesture a child consumed — see the `consumedByChild`
+ * flag there. That keeps the DECISION in TapRouting and leaves the detector
+ * doing what its own doc says is its job: dealing with the consequences of
+ * its transport.
+ *
+ * Three panes were three identical `Column` headers before this; sharing them
+ * is also how the three stop drifting apart.
+ */
+@Composable
+private fun MenuSheet(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * MENU_MAX_HEIGHT_FRACTION).dp
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = maxHeight)
+            .background(Paper)
+            .border(width = 1.dp, color = Hairline)
+            // Consume taps so they don't bubble to the page underneath, where
+            // an open menu turns any tap into CloseMenu.
+            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
+}
+
 private enum class MenuPane { READING, TYPE, CHAPTER }
 
 @Composable
@@ -2288,16 +2362,7 @@ private fun FormatMenu(
     modifier: Modifier = Modifier,
 ) {
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Paper)
-            .border(width = 1.dp, color = Hairline)
-            // Consume taps so they don't bubble to the parent's dismiss handler.
-            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    MenuSheet(modifier = modifier) {
         // Contents jump
         MenuRow(label = t("Go to")) {
             Box(
@@ -2481,15 +2546,7 @@ private fun TypeToolsMenu(
     val canShrink = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) > 0
     val canGrow = ReaderPrefs.FONT_SCALES.indexOfNearest(fontScale) < ReaderPrefs.FONT_SCALES.lastIndex
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Paper)
-            .border(width = 1.dp, color = Hairline)
-            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    MenuSheet(modifier = modifier) {
         MenuRow(label = "") {
             Box(
                 modifier = Modifier
@@ -2570,11 +2627,14 @@ private fun TypeToolsMenu(
  * sat among — contents, search, ask, bookmark, type size — are used on every
  * page.
  *
- * A second panel rather than a scrolling sheet, deliberately: with the menu
- * open a finger drag means "close the menu" in [resolveSwipe], so making the
- * sheet scroll would mean teaching the one rule for touch that a drag
- * beginning inside the menu means something else. Splitting the rows costs
- * nothing and leaves both panels short enough to need no scrolling at all.
+ * A second panel rather than a scrolling sheet, originally because with the
+ * menu open a finger drag means "close the menu" in [resolveSwipe], so a
+ * scrolling sheet would have needed the gesture path taught first. That has
+ * since been done — [MenuSheet] scrolls and the page detector drops gestures
+ * a child consumed — but the split stays on its own merits: these rows
+ * PRODUCE the book and the ones they left behind are used on every page.
+ * Grouping was the better half of the reason all along; the height was only
+ * what forced the question.
  */
 @Composable
 private fun ChapterToolsMenu(
@@ -2598,15 +2658,7 @@ private fun ChapterToolsMenu(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Paper)
-            .border(width = 1.dp, color = Hairline)
-            .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    MenuSheet(modifier = modifier) {
         // Names where it goes back to, like every other header in this app.
         MenuRow(label = "") {
             Box(
