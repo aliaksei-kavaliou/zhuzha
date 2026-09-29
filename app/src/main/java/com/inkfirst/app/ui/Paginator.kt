@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.sp
 import com.inkfirst.core.Block
 import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.badgeKindFor
+import com.inkfirst.core.splitExerciseBody
 import com.inkfirst.core.parseInlines
 import com.inkfirst.core.Inline
 
@@ -94,7 +95,10 @@ fun paginate(
     var i = 0
     // Set when a paragraph was split: the text still to place, and how much of
     // the original block's height has already been shown.
-    var carry: Block.Paragraph? = null
+    // What a split left over, waiting for the next page. Widened from
+    // Block.Paragraph when fences learned to split: a bordered block can be
+    // carried too, and the loop treats a carried block exactly like any other.
+    var carry: Block? = null
     var carriedPx = 0
     // Set when an opener was placed on an empty page and its content would
     // not fit beside it: the next block joins it regardless. See below.
@@ -220,16 +224,32 @@ fun paginate(
         // surrendering the rest of the page — which is what made a page with
         // six lines free lose all six.
         val remaining = budget - height
-        val split = if (block is Block.Paragraph) {
-            splitParagraph(block, remaining, contentWidthPx, measurer, fontScale, lineSpacing, density)
-        } else {
-            null
+        // head, tail, and what the head costs. A Triple rather than a shared
+        // supertype because the two splitters return different block types and
+        // the loop only needs these three things from either.
+        val split: Triple<Block, Block, Int>? = when (block) {
+            is Block.Paragraph ->
+                splitParagraph(block, remaining, contentWidthPx, measurer, fontScale, lineSpacing, density)
+                    ?.let { Triple(it.head, it.tail, it.headPx) }
+            // A bordered block can be cut too, since 2026-09-29. Before that a
+            // fence taller than a whole page fell through to the oversize
+            // branch below, which places it and lets the page clip it — and on
+            // a small screen that lost the end of an exercise and its "Show
+            // answer" button entirely, with no way to reach either.
+            is Block.CustomFence ->
+                splitFence(block, remaining, contentWidthPx, measurer, fontScale, lineSpacing, density, hasBadge)
+                    ?.let { Triple(it.head, it.tail, it.headPx) }
+            else -> null
         }
 
-        if (split != null && !atTop) {
-            pages.last().add(PageItem(split.head, i, carriedPx))
-            carry = split.tail
-            carriedPx += split.headPx
+        // No longer refuses to split at the top of a page. That guard sent a
+        // block too tall for a whole page to the oversize branch, which is the
+        // one that clips; splitting is strictly better, and it terminates
+        // because every tail is shorter than what it came from.
+        if (split != null) {
+            pages.last().add(PageItem(split.first, i, carriedPx))
+            carry = split.second
+            carriedPx += split.third
             newPage()
             continue
         }
@@ -379,6 +399,126 @@ private fun splitParagraph(
         head = Block.Paragraph(sliceInlines(block.inlines, 0, cut)),
         tail = Block.Paragraph(sliceInlines(block.inlines, cut, text.length)),
         headPx = layout.getLineBottom(fitting - 1).toInt(),
+    )
+}
+
+/** A bordered block cut across a page boundary. */
+private data class SplitFence(
+    val head: Block.CustomFence,
+    val tail: Block.CustomFence,
+    val headPx: Int,
+)
+
+/**
+ * Marks the two halves of a fence that was cut across a page boundary, so the
+ * renderer can open the box at the break and name the continuation.
+ *
+ * A param rather than a field on [Block.CustomFence]: params already carry
+ * everything else the renderer needs to know about a fence, and adding a field
+ * would touch the parser, the serialiser and every construction site for a
+ * property only pagination can produce.
+ */
+/** This piece began on an earlier page: open its top, name it a continuation. */
+internal const val FENCE_CONT_FROM = "contFrom"
+
+/** This piece carries on over the leaf: open its foot, withhold the answer. */
+internal const val FENCE_CONT_TO = "contTo"
+
+/**
+ * Splits a bordered block so its first lines fill [availablePx].
+ *
+ * Until this existed a fence could not be split at all, so one taller than a
+ * whole page hit the oversize branch in [paginate] — placed anyway and
+ * clipped, with everything past the fold unreachable. On a small screen that
+ * lost the end of an exercise AND its "Show answer" button, which is the most
+ * load-bearing block in a study book (2026-09-29).
+ *
+ * Only exercise and recap. A figure is a picture and cannot be cut; a fence of
+ * an unknown kind might be anything, and guessing wrong here corrupts a page
+ * rather than merely filling it badly.
+ *
+ * THE ANSWER TRAVELS WITH THE TAIL, whole. It is reserved space even while
+ * hidden — the estimate measures it so that revealing it cannot reflow the
+ * page under the reader's thumb — so splitting the question while leaving the
+ * answer behind would strand the reveal button on a page with no room to
+ * expand into.
+ */
+private fun splitFence(
+    block: Block.CustomFence,
+    availablePx: Int,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    fontScale: Float,
+    lineSpacing: Float,
+    density: Density,
+    hasBadge: (String) -> Boolean,
+): SplitFence? = with(density) {
+    if (block.kind != "exercise" && block.kind != "recap") return null
+    val (question, answer) = splitExerciseBody(block.body)
+    val text = question.trim()
+    if (text.isBlank()) return null
+
+    val innerWidth = (widthPx - 24.dp.toPx().toInt()).coerceAtLeast(1)
+    val style = TextStyle(
+        fontSize = 17.sp * fontScale,
+        lineHeight = 28.sp * fontScale * lineSpacing,
+        fontFamily = FontFamily.Serif,
+    )
+    val layout = measurer.measure(
+        text = AnnotatedString(parseInlines(text).plainText()),
+        style = style,
+        constraints = Constraints(maxWidth = innerWidth),
+    )
+    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
+
+    // What the head spends before a word of body is drawn. The answer button
+    // is NOT in it — the head never shows one — but the label row is, because
+    // the head keeps the block's name and its mascot.
+    val labelTextHeight = (11.sp.toPx() * fontScale).toInt()
+    val badgeKind = badgeKindFor(block.kind)
+    val badgeHeight =
+        if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+    val chrome = maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() +
+        8.dp.toPx().toInt() + 16.dp.toPx().toInt() + 24.dp.toPx().toInt()
+
+    val room = availablePx - chrome
+    if (room <= 0) return null
+
+    var fitting = 0
+    while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= room) fitting++
+    if (fitting < MIN_SPLIT_LINES) return null
+    if (layout.lineCount - fitting < MIN_SPLIT_LINES) {
+        fitting = layout.lineCount - MIN_SPLIT_LINES
+    }
+    if (fitting < MIN_SPLIT_LINES) return null
+
+    val cut = layout.getLineEnd(fitting - 1, visibleEnd = true)
+    if (cut <= 0 || cut >= text.length) return null
+
+    val tailBody = buildString {
+        append(text.substring(cut).trimStart())
+        if (answer.isNotBlank()) {
+            append("\n")
+            append("answer: ")
+            append(answer.trim())
+        }
+    }
+    // Two independent bits rather than one head/tail flag. A block long enough
+    // splits more than once, and the MIDDLE piece is both a continuation and
+    // continues — with a single flag the second split overwrote "tail" with
+    // "head" and the middle piece introduced itself as a fresh exercise,
+    // mascot and all. Adding to the existing params rather than replacing them
+    // is what lets the bits accumulate across repeated splits.
+    return SplitFence(
+        head = block.copy(
+            body = text.substring(0, cut).trimEnd(),
+            params = block.params + (FENCE_CONT_TO to "1"),
+        ),
+        tail = block.copy(
+            body = tailBody,
+            params = block.params + (FENCE_CONT_FROM to "1"),
+        ),
+        headPx = layout.getLineBottom(fitting - 1).toInt() + chrome,
     )
 }
 
@@ -678,8 +818,13 @@ private fun estimateHeight(
             // not the reader has revealed it — revealing must not reflow the
             // page under their thumb.
             val answerBadge = if (hasBadge("answer")) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+            // Only the piece that actually SHOWS the reveal button reserves
+            // room for it. A middle piece of a split exercise has neither the
+            // button nor the answer, and reserving both left half a page of
+            // white under a box that had more to say.
+            val showsReveal = block.params[FENCE_CONT_TO] == null
             val exerciseExtra =
-                if (block.kind == "exercise") 48.dp.toPx().toInt() + answerBadge else 0
+                if (block.kind == "exercise" && showsReveal) 48.dp.toPx().toInt() + answerBadge else 0
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
             val outerSpacers = 8.dp.toPx().toInt()
             val wrapperVPad = 16.dp.toPx().toInt()

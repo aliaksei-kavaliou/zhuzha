@@ -467,6 +467,27 @@ yet" note that used to live here was two months stale.
       nothing but openers the next block is FORCED onto it, so the byline is never stranded
       and everything after re-flows; and a forced paragraph gives up the lines that fit
       rather than being placed whole, which is what makes the force safe.
+- [x] **A bordered block can be cut across a page (2026-09-29)** — Aliaksei: chapter 2's
+      "try this" ran off the page and was not continued, "so it just corrupted". The
+      paginator could split a PARAGRAPH but not a FENCE, so one taller than a whole page hit
+      the oversize branch — placed anyway, clipped by the page — and the end of the task
+      plus its "Show answer" button were unreachable. Real content loss, in the block a
+      study book leans on most, on exactly the small screens the testers will use.
+      `splitFence` handles exercise and recap only: a figure is a picture and cannot be cut,
+      and an unknown kind might be anything. The answer travels with the final piece WHOLE,
+      because it is reserved space even while hidden. Head and tail keep the same block
+      index, the pattern `splitParagraph` already set, so annotations, bookmarks and ink stay
+      anchored. **The `!atTop` guard is gone** — refusing to split at the top of a page is
+      what sent an oversized block to the branch that clips it.
+      Rendering follows the print convention plus one concession to the medium: the box is
+      left OPEN at the break (square corners there, since a rounded corner on a box that does
+      not end reads as an ending), and the continuation is NAMED — "TRY THIS (continued)",
+      no mascot — because on a one-page-at-a-time reader you never see the spread, so the
+      open edge alone is a weaker signal than it is on paper.
+      **Continuation is TWO independent bits, not a head/tail flag.** A long block splits
+      more than twice and the middle piece is both a continuation and continues; with one
+      flag the second split overwrote it and the middle piece introduced itself as a fresh
+      exercise, mascot and all.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.graphics.Rect as AndroidRect
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -3186,7 +3187,23 @@ private fun ExerciseBlock(
     labels: UiLabels,
 ) {
     val (question, answer) = splitExerciseBody(f.body)
-    BorderedBlock(label = labels.t("TRY THIS"), fontScale = fontScale, badge = loadBadge("exercise")) {
+    // A block cut across a page boundary. The head keeps the name and the
+    // mascot and drops the reveal button — the answer travels with the tail —
+    // and the tail says it is a continuation rather than introducing itself a
+    // second time, which would read as a second exercise.
+    val isHead = f.params[FENCE_CONT_TO] != null
+    val isTail = f.params[FENCE_CONT_FROM] != null
+    BorderedBlock(
+        label = if (isTail) {
+            labels.t("{label} (continued)", "label" to labels.t("TRY THIS"))
+        } else {
+            labels.t("TRY THIS")
+        },
+        fontScale = fontScale,
+        badge = if (isTail) null else loadBadge("exercise"),
+        openBottom = isHead,
+        openTop = isTail,
+    ) {
         Text(
             // Parsed, not raw: an exercise says "call `torch.tensor()`" as
             // often as a paragraph does, and rendering the body as a plain
@@ -3198,7 +3215,10 @@ private fun ExerciseBlock(
             color = Ink,
         )
         Spacer(Modifier.height(8.dp))
-        if (revealed || answer.isEmpty()) {
+        if (isHead) {
+            // Nothing here: the task carries on over the leaf, and the answer
+            // belongs at the end of it.
+        } else if (revealed || answer.isEmpty()) {
             if (answer.isNotEmpty()) {
                 // The mascot again, in its telling-you-a-secret pose. Top
                 // aligned rather than centred: the answer usually runs to
@@ -3251,7 +3271,18 @@ private fun RecapBlock(
     loadBadge: (String) -> ImageBitmap?,
     labels: UiLabels,
 ) {
-    BorderedBlock(label = labels.t("RECAP"), fontScale = fontScale, badge = loadBadge("recap")) {
+    val isTail = f.params[FENCE_CONT_FROM] != null
+    BorderedBlock(
+        label = if (isTail) {
+            labels.t("{label} (continued)", "label" to labels.t("RECAP"))
+        } else {
+            labels.t("RECAP")
+        },
+        fontScale = fontScale,
+        badge = if (isTail) null else loadBadge("recap"),
+        openBottom = f.params[FENCE_CONT_TO] != null,
+        openTop = isTail,
+    ) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
             fontFamily = FontFamily.Serif,
@@ -3394,14 +3425,34 @@ private fun BorderedBlock(
     label: String,
     fontScale: Float,
     badge: ImageBitmap? = null,
+    /** This block carries on over the leaf: leave the foot of the box open. */
+    openBottom: Boolean = false,
+    /** This block began on the page before: leave the head of the box open. */
+    openTop: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // An open edge is drawn by hand because `Modifier.border` can only close
+    // all four. Square corners at the break are correct rather than a
+    // compromise — a rounded corner on a box that does not end there reads as
+    // an ending. The unsplit case keeps the rounded border exactly as before.
+    val strokePx = with(LocalDensity.current) { 1.dp.toPx() }
+    val edges = Modifier.drawBehind {
+        val w = size.width
+        val h = size.height
+        if (!openTop) drawLine(Hairline, Offset(0f, 0f), Offset(w, 0f), strokePx)
+        if (!openBottom) drawLine(Hairline, Offset(0f, h), Offset(w, h), strokePx)
+        drawLine(Hairline, Offset(0f, 0f), Offset(0f, h), strokePx)
+        drawLine(Hairline, Offset(w, 0f), Offset(w, h), strokePx)
+    }
     Spacer(Modifier.height(4.dp))
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .border(1.dp, Hairline, RoundedCornerShape(4.dp))
+            .then(
+                if (openTop || openBottom) edges
+                else Modifier.border(1.dp, Hairline, RoundedCornerShape(4.dp)),
+            )
             .padding(12.dp),
     ) {
         Row(
