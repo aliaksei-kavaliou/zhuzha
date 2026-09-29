@@ -145,4 +145,32 @@ class OutlineGeneratorTest {
             }
         }
     }
+
+    @Test
+    fun `a chapter title keeps its name and loses its number`() {
+        // Live outline, 2026-09-29: every chapter came back as "Chapter 1:
+        // Letting Go of the Fear…", so the Contents read "1. Chapter 1:
+        // Letting Go…". The rule existed in the chapter prompt and had never
+        // been said to the outline model.
+        assertEquals("Letting Go of the Fear", "Chapter 1: Letting Go of the Fear".withoutChapterNumber())
+        assertEquals("Looking Twice", "1. Looking Twice".withoutChapterNumber())
+        assertEquals("Fixing Them", "Chapter 4 - Fixing Them".withoutChapterNumber())
+        assertEquals("Основы", "Часть 2. Основы".withoutChapterNumber())
+    }
+
+    @Test
+    fun `a title that only looks numbered is left alone`() {
+        // The strip has to be narrower than it is tempting to make it: these
+        // are real titles, and a book named after a year would lose its name.
+        assertEquals("1984", "1984".withoutChapterNumber())
+        assertEquals("10 Ways to Draw a Cat", "10 Ways to Draw a Cat".withoutChapterNumber())
+        assertEquals("Chapter and Verse", "Chapter and Verse".withoutChapterNumber())
+    }
+
+    @Test
+    fun `stripping never empties a title`() {
+        // Better a title that reads "Chapter 1:" than a chapter with no name
+        // at all — the title names the folder, the header and the EPUB entry.
+        assertEquals("Chapter 1:", "Chapter 1:".withoutChapterNumber())
+    }
 }

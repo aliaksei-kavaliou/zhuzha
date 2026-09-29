@@ -415,6 +415,17 @@ yet" note that used to live here was two months stale.
       opening` when the cover has been redrawn under it, read off file timestamps rather
       than stored. **Unit-tested and the built prompt read back in full; NOT verified
       against drawn output — that needs an API call on a real chapter.** design.md §10.1.
+- [x] **A chapter title is its name, not its number (2026-09-29)** — a live outline came
+      back with every chapter titled "Chapter 1: Letting Go of the Fear…", so the Contents
+      read `1. Chapter 1: Letting Go…`. The rule existed in the CHAPTER prompt, where it
+      stops the h1 repeating the number, and had never been said to the OUTLINE model — so
+      whether a book got prefixed titles was luck, and the existing books happened to come
+      back clean. Fixed twice, like the figure ceiling: the prompt asks, and
+      `withoutChapterNumber` enforces in `withDerivedSlugs`, because an outline is written
+      once and then names the folder, the header, the Contents and the EPUB for the life of
+      the book. The strip is deliberately NARROW and tested — `1984`, `10 Ways to Draw a
+      Cat` and `Chapter and Verse` all survive untouched, and a strip that would empty a
+      title keeps the original instead.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

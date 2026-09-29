@@ -29,5 +29,6 @@ internal fun buildOutlinePrompt(inputs: OutlineRequestInputs): String = buildStr
     appendLine("- The slug field is a placeholder; leave it empty, it will be derived deterministically.")
     appendLine("- Titles should reflect the chosen teaching style (see system instruction).")
     appendLine("- Write the title, chapter titles, and all objectives in ${inputs.language}. Do not include translations.")
+    appendLine("- A chapter title is its NAME only. Never start it with \"Chapter 1:\", \"Chapter 1.\", \"1.\" or any other number — the app prints the number itself, so a prefix here comes out as \"1. Chapter 1: …\" everywhere the title appears.")
     appendLine("- ${measurementRule(inputs.units)}")
 }

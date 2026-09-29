@@ -71,12 +71,45 @@ class OutlineParseException(
 ) : RuntimeException(message, cause)
 
 /**
- * We always overwrite whatever slug the model returned; slugs are ours to own
- * because they double as filenames.
+ * Everything about the model's outline that is OURS to decide rather than
+ * its: the slugs, because they double as filenames, and the numbering, which
+ * the app prints itself.
+ *
+ * Asking in the prompt is not enough on its own — the same reasoning as the
+ * figure ceiling, which is enforced in `illustrate` rather than requested.
+ * The prompt now says it too, but an outline is written once and then names
+ * the folder, the reader's header, the Contents and the EPUB for the life of
+ * the book, so a title that slips through is permanent.
  */
 internal fun CourseOutline.withDerivedSlugs(): CourseOutline = copy(
-    chapters = chapters.map { it.copy(slug = chapterSlug(it.n, it.title)) },
+    chapters = chapters.map {
+        val title = it.title.withoutChapterNumber()
+        it.copy(title = title, slug = chapterSlug(it.n, title))
+    },
 )
+
+/**
+ * Strips a leading chapter number from a title the model wrote.
+ *
+ * Found on a live outline (2026-09-29): every chapter came back as "Chapter 1:
+ * Letting Go of the Fear…", so the Contents read "1. Chapter 1: Letting Go…".
+ * The rule existed in the CHAPTER prompt — where it stops the h1 repeating the
+ * number — and had never been said to the outline model, so whether a book got
+ * prefixed titles was luck. Earlier books happened to come back clean, which
+ * is why nobody saw it.
+ *
+ * Deliberately narrow: only a leading number-ish prefix goes, and only when
+ * something is left afterwards. A title that is genuinely "1984" or
+ * "Chapter and Verse" must survive intact, and a strip that empties the title
+ * is worse than the prefix it removed.
+ */
+internal fun String.withoutChapterNumber(): String {
+    // "Chapter 3:", "Chapter 3 -", "Часть 2." — the word, a number, a
+    // separator. The word is optional; a bare "3. " counts too.
+    val prefix = Regex("""^\s*(\p{L}{3,12}\s+)?\d{1,3}\s*[:.)\u2014-]\s*""")
+    val stripped = prefix.replace(trim(), "").trim()
+    return stripped.ifBlank { trim() }
+}
 
 // Gemini's responseSchema is an OpenAPI 3.0 subset, not full JSON Schema —
 // UPPERCASE "OBJECT"/"STRING" etc. is required.
