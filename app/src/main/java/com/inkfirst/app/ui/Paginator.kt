@@ -402,6 +402,27 @@ private fun splitParagraph(
     )
 }
 
+/**
+ * The end of the last complete sentence at or before [limit], or [limit]
+ * itself when backing up that far would cost more than [budgetChars].
+ *
+ * Deliberately crude: a full stop, question mark or exclamation followed by a
+ * space. It does not need to be right about abbreviations — the worst case is
+ * a cut one sentence earlier than ideal, which still reads as a whole thought.
+ */
+private fun sentenceCutAtOrBefore(text: String, limit: Int, budgetChars: Int): Int {
+    val floor = (limit - budgetChars).coerceAtLeast(0)
+    var i = limit - 1
+    while (i > floor) {
+        val c = text[i]
+        if ((c == '.' || c == '!' || c == '?') && i + 1 < text.length && text[i + 1].isWhitespace()) {
+            return i + 1
+        }
+        i--
+    }
+    return limit
+}
+
 /** A bordered block cut across a page boundary. */
 private data class SplitFence(
     val head: Block.CustomFence,
@@ -487,13 +508,27 @@ private fun splitFence(
     var fitting = 0
     while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= room) fitting++
     if (fitting < MIN_SPLIT_LINES) return null
+
     if (layout.lineCount - fitting < MIN_SPLIT_LINES) {
         fitting = layout.lineCount - MIN_SPLIT_LINES
     }
     if (fitting < MIN_SPLIT_LINES) return null
 
-    val cut = layout.getLineEnd(fitting - 1, visibleEnd = true)
-    if (cut <= 0 || cut >= text.length) return null
+    val lineCut = layout.getLineEnd(fitting - 1, visibleEnd = true)
+    if (lineCut <= 0 || lineCut >= text.length) return null
+
+    // CUT AT A SENTENCE, not at a line. The piece that carries the writing
+    // space is necessarily short — it is sharing its page with the grid, the
+    // reveal button and the room reserved for the answer — so it will hold
+    // only a line or two of task whatever the earlier cuts do. What made it
+    // read as broken was not its length but that it began mid-sentence:
+    // "about mistakes; just keep the ink flowing." The same two lines
+    // starting at "Do not worry about mistakes…" read as a whole thought.
+    //
+    // Backing up is capped at two lines' worth. Past that the cut is throwing
+    // away more page than the tidy break is worth, and a long sentence
+    // straddling the break is the ordinary case rather than the broken one.
+    val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = 2 * 42)
 
     val tailBody = buildString {
         append(text.substring(cut).trimStart())

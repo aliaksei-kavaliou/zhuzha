@@ -552,19 +552,20 @@ yet" note that used to live here was two months stale.
       aid rather than only a mark of intent. Steps by the same measure as the dotted rules,
       so the two treatments share a vertical rhythm; that step is also about 5mm, which is
       what dot-grid paper uses.
-- [ ] **A split exercise is greedy, and a box should prefer to move (2026-09-30)** — found
-      by Aliaksei checking page 17 of the sketching book. The page is mechanically correct
-      and editorially poor: the last piece carries a sentence FRAGMENT ("about mistakes;
-      just keep the ink flowing.") with the writing space attached to it, so the reader
-      must flip back two pages to see what they are answering — at exactly the moment they
-      need the task visible. Below it sits ~200px of nothing, which is the hidden answer's
-      reserved seat.
-      Two separate fixes. **Balance the split** rather than filling each page to the brim
-      and leaving a crumb for the last: same number of pages, a substantial chunk of task
-      above the space you write in. And **restore the distinction the `!atTop` removal lost**
-      — prose should SPLIT, a bordered box should prefer to MOVE. A fence that would fit on
-      a fresh page belongs there whole; only one that exceeds a whole page should be cut.
-      Removing the guard was necessary for the oversize case and threw that away with it.
+- [x] **A split cuts at a sentence, not a line (2026-09-30)** — Aliaksei on page 17: "still
+      has 4 sentensies looks quite silly". The last piece read "about mistakes; just keep
+      the ink flowing." — a fragment. I first diagnosed it as a GREEDY split and wrote
+      balancing code; that was wrong and the code was reverted. **The last piece is
+      inherently short**: it shares its page with the writing space, the reveal button and
+      the room reserved for the answer, so it holds a line or two of task whatever the
+      earlier cuts do. Its length was never the problem — starting mid-sentence was. The cut
+      now backs up to the last sentence boundary, capped at two lines' worth so a long
+      sentence straddling the break stays the ordinary case. Same page, same length, reads
+      as a whole thought.
+- [ ] **A box should prefer to move, not split** — the other half of the `!atTop` removal,
+      still open. Prose should SPLIT; a bordered box that would fit on a FRESH page belongs
+      there whole, and only one exceeding a whole page should be cut. Removing the guard was
+      necessary for the oversize case and took that distinction with it.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
