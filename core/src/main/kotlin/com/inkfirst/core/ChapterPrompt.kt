@@ -76,6 +76,7 @@ internal fun buildChapterPrompt(
     appendLine("- Aim for content that fills ~${chapter.estMinutes} minutes of slow, e-ink reading. Redundancy is welcome if it's pedagogical.")
     appendLine("- Use custom fenced blocks where they fit:")
     appendLine("  - ```exercise … ``` for practice; put the answer inside on a line starting with \"answer: \".")
+    appendLine("    The reader is given room under the task to write their answer before revealing yours, ruled like a workbook. If the task is answered by MAKING something rather than by writing — draw it, build it, play it, do it with an object in front of you — write the fence as ```exercise space=\"blank\" … ``` so that room is left clear instead of ruled. Ruled lines across a space someone is going to draw in are worse than no lines at all.")
     appendLine("  - ```recap … ``` for end-of-section wrap-ups that restate the key idea differently.")
     if (course.figurePolicy.maxPerChapter == 0) {
         appendLine("  - ${course.figurePolicy.rule}")

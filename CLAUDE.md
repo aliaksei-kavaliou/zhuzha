@@ -525,7 +525,14 @@ yet" note that used to live here was two months stale.
       renderer is the bug this file produced twice on 2026-09-29 alone.
       **Found immediately on the sketching book**: a task that says "draw the outline of the
       mug in one unbroken line" gets ruled lines, which is wrong — a DO task wants blank
-      space, only a SAY task wants rules. Not yet fixed; it needs a per-exercise distinction.
+      space, only a SAY task wants rules. **Fixed the same day**: the chapter model marks a
+      making-task as ```exercise space="blank"```, the same way it already picks
+      `kind="show"` for a figure — it wrote both the task and the answer, so it is the one
+      that knows. Same reserved height either way, only the treatment differs. Ruled is the
+      default because most answers are written AND because it is the milder failure: blank
+      space under a question still reads as somewhere to answer, where rules across a
+      drawing read as a mistake. Verified by hand-editing the fence on the device rather
+      than paying for a regeneration.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

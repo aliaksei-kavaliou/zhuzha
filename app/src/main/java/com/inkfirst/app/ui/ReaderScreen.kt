@@ -3298,7 +3298,16 @@ private fun ExerciseBlock(
         // go. Revealing must not land printed text on top of the reader's own
         // handwriting, and after the tap the two sit one above the other,
         // which is the whole point of writing first and comparing after.
-        AnswerSpace(lines = answerSpaceLineCount(answer), fontScale = fontScale)
+        AnswerSpace(
+            lines = answerSpaceLineCount(answer),
+            fontScale = fontScale,
+            // Ruled unless the chapter model said otherwise. Ruled is the
+            // right default for a study book — most answers are written — and
+            // it is also the milder failure: blank space under a question
+            // still reads as somewhere to answer, where rules across a drawing
+            // read as a mistake.
+            ruled = f.params["space"] != "blank",
+        )
         Spacer(Modifier.height(8.dp))
         if (revealed || answer.isEmpty()) {
             if (answer.isNotEmpty()) {
@@ -3365,7 +3374,7 @@ private fun ExerciseBlock(
  * the reader's handwriting floating over the printed answer.
  */
 @Composable
-private fun AnswerSpace(lines: Int, fontScale: Float) {
+private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
     if (lines <= 0) return
     Spacer(Modifier.height(6.dp))
     Canvas(
@@ -3373,6 +3382,13 @@ private fun AnswerSpace(lines: Int, fontScale: Float) {
             .fillMaxWidth()
             .height(ANSWER_RULE_SPACING * fontScale * lines),
     ) {
+        // Same room either way; only the treatment differs. A task you answer
+        // by MAKING something — "draw the outline of the mug in one unbroken
+        // line" — gets clear space, because rules across a drawing are worse
+        // than no rules at all. Ruled lines are for a task you answer in
+        // words. Found on the first real page of the sketching book, where
+        // nearly every exercise is a drawing task.
+        if (!ruled) return@Canvas
         val step = size.height / lines
         val stroke = 1.dp.toPx()
         for (i in 1..lines) {
