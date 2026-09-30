@@ -220,6 +220,35 @@ fun paginate(
             continue
         }
 
+        // A BOX WOULD RATHER MOVE THAN BE CUT. Prose splits happily — a
+        // paragraph carried across a break still reads as one paragraph — but
+        // a bordered block is a unit, with a border, a name and a mascot, and
+        // on a one-page-at-a-time reader the continuation has to reintroduce
+        // itself ("TRY THIS (continued)") because you never see the spread.
+        // That is a real cost to the reader, and it is only worth paying when
+        // there is no alternative. There is one whenever the box would fit on
+        // a page of its own.
+        //
+        // This is the other half of removing the `!atTop` guard below. That
+        // guard was wrong as written — it refused to split at the TOP of a
+        // page, which sent a box taller than a whole page to the oversize
+        // branch that clips it — but it was also, incidentally, what kept
+        // boxes off the split path in the ordinary case, and removing it took
+        // that with it. So the distinction is restored where it actually
+        // belongs: on whether the box fits a fresh page, not on where the
+        // layout happens to be standing when it meets one.
+        //
+        // It cannot loop. A fence's estimate does not depend on `atPageTop`
+        // (only a heading's does, for its top spacer), so a box measuring
+        // within budget here measures the same on the empty page and is placed
+        // there by the fit branch above. `!atTop` is what makes that true:
+        // newPage() appends unconditionally, so moving a box off a page that
+        // is already empty would spin.
+        if (block is Block.CustomFence && !atTop && h <= budget) {
+            newPage()
+            continue
+        }
+
         // Doesn't fit. A paragraph can give up the lines that do rather than
         // surrendering the rest of the page — which is what made a page with
         // six lines free lose all six.
@@ -453,6 +482,10 @@ internal const val FENCE_CONT_TO = "contTo"
  * clipped, with everything past the fold unreachable. On a small screen that
  * lost the end of an exercise AND its "Show answer" button, which is the most
  * load-bearing block in a study book (2026-09-29).
+ *
+ * It is now the LAST resort rather than the first. [paginate] moves a box that
+ * would fit on a fresh page to one, so what reaches here is a box that does
+ * not fit on any page — which is the only case where cutting beats moving.
  *
  * Only exercise and recap. A figure is a picture and cannot be cut; a fence of
  * an unknown kind might be anything, and guessing wrong here corrupts a page

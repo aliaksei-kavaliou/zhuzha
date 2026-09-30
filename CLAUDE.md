@@ -577,10 +577,34 @@ yet" note that used to live here was two months stale.
       now backs up to the last sentence boundary, capped at two lines' worth so a long
       sentence straddling the break stays the ordinary case. Same page, same length, reads
       as a whole thought.
-- [ ] **A box should prefer to move, not split** — the other half of the `!atTop` removal,
-      still open. Prose should SPLIT; a bordered box that would fit on a FRESH page belongs
-      there whole, and only one exceeding a whole page should be cut. Removing the guard was
-      necessary for the oversize case and took that distinction with it.
+- [x] **A box should prefer to move, not split (2026-09-30)** — the other half of the
+      `!atTop` removal. Prose SPLITS; a bordered box that would fit on a FRESH page belongs
+      there whole, and only one exceeding a whole page is cut. Removing the guard was
+      necessary for the oversize case and took that distinction with it; it is restored on
+      the thing that actually matters — whether the box fits a fresh page — rather than on
+      where the layout happens to be standing when it meets one. `splitFence` is now the
+      LAST resort instead of the first.
+      It cannot loop, and `!atTop` is what makes that true: `newPage()` appends
+      unconditionally, so moving a box off an already-empty page would spin. The other half
+      is that a fence's estimate does not depend on `atPageTop` (only a heading's does, for
+      its top spacer), so a box measuring within budget measures the same on the empty page
+      and is placed there by the fit branch.
+      **Measured on the emulator at 320x640 rather than reasoned about** — a temporary
+      `Log.d` in the loop, which is the method note earning its place again. Budget 468.
+      The chapter's `recap` (h=454, met at height=131) now MOVES; under the old code it was
+      cut and put a `RECAP (continued)` overleaf. The two `exercise` boxes measure 762 and
+      622 — genuinely bigger than a whole page — so they still split, three pieces and two,
+      which is the carve-out this item asked for. Confirmed on the glass: page 20 draws the
+      recap whole, rounded top and bottom, one label.
+      **The cost is visible and was accepted**: the page before a moved box loses its tail,
+      and page 19 is four lines then two-thirds blank. Unavoidable here rather than a flaw —
+      a 454 box against a 468 budget needs essentially a whole page, so the only alternative
+      was the split we just rejected. Print does the same with an unbreakable box.
+      **Those exercises are oversized largely BECAUSE of their stale answers**: an answer
+      present means space reserved and sized from it, and both are making-tasks that should
+      carry none under today's rules. Regenerating the chapter will likely drop them under
+      the budget, at which point this fix moves them whole too — the demo regeneration and
+      this change compound rather than merely queueing.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
