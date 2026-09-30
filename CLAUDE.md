@@ -533,6 +533,19 @@ yet" note that used to live here was two months stale.
       space under a question still reads as somewhere to answer, where rules across a
       drawing read as a mistake. Verified by hand-editing the fence on the device rather
       than paying for a regeneration.
+- [ ] **A split exercise is greedy, and a box should prefer to move (2026-09-30)** — found
+      by Aliaksei checking page 17 of the sketching book. The page is mechanically correct
+      and editorially poor: the last piece carries a sentence FRAGMENT ("about mistakes;
+      just keep the ink flowing.") with the writing space attached to it, so the reader
+      must flip back two pages to see what they are answering — at exactly the moment they
+      need the task visible. Below it sits ~200px of nothing, which is the hidden answer's
+      reserved seat.
+      Two separate fixes. **Balance the split** rather than filling each page to the brim
+      and leaving a crumb for the last: same number of pages, a substantial chunk of task
+      above the space you write in. And **restore the distinction the `!atTop` removal lost**
+      — prose should SPLIT, a bordered box should prefer to MOVE. A fence that would fit on
+      a fresh page belongs there whole; only one that exceeds a whole page should be cut.
+      Removing the guard was necessary for the oversize case and threw that away with it.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
