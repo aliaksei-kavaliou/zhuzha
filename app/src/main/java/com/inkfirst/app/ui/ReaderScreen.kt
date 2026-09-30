@@ -3406,12 +3406,27 @@ private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
         // also about 5mm, which is what dot-grid paper uses.
         val step = size.height / lines
         if (!ruled) {
-            val radius = 0.75.dp.toPx()
+            // E-INK HAS NO GREY. Reported from the Boox: the dots were
+            // "almost invisible". They were 0.75dp of Hairline (0xFF888888),
+            // which at the panel's 300dpi is a disc about 2.8px across with
+            // no fully covered pixel — an antialiased mid-grey smudge. An LCD
+            // renders that as a faint dot; the panel thresholds and dithers,
+            // so it can resolve to nothing at all. Verified at 1x on the
+            // emulator only, which is exactly where this could not show up:
+            // there 0.75dp is a SUB-PIXEL radius.
+            //
+            // Black, and never smaller than a whole pixel. A dot grid on
+            // PAPER is light grey because ink reproduces greys faithfully;
+            // this panel does not, so the equivalent perceptual weight is a
+            // small BLACK dot. It stays about 0.3mm on the Boox, which is
+            // what dot-grid paper actually uses, so it reads as a guide
+            // rather than as decoration.
+            val radius = maxOf(1.dp.toPx(), 1.5f)
             var y = step
             while (y <= size.height + 0.5f) {
                 var x = step
                 while (x < size.width) {
-                    drawCircle(Hairline, radius, Offset(x, y))
+                    drawCircle(Ink, radius, Offset(x, y))
                     x += step
                 }
                 y += step

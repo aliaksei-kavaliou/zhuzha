@@ -616,6 +616,19 @@ yet" note that used to live here was two months stale.
       now extends INTO the margin, which is the easiest place to hit a header. The counter's
       end padding became conditional — it is a separator from the bookmark ribbon, so it
       exists only when the ribbon does.
+- [x] **E-ink has no grey (2026-09-30)** — Aliaksei, on the dot grid: "almost invisible on
+      device". They were 0.75dp of `Hairline` (0xFF888888), which at the Boox's 300dpi is a
+      disc ~2.8px across with NO fully covered pixel — an antialiased mid-grey smudge. An
+      LCD draws that as a faint dot; the panel thresholds and dithers, so it can resolve to
+      nothing. Now `Ink`, never smaller than a whole pixel. **The reason it escaped is worth
+      more than the fix**: it was "verified at 1x on the emulator only", and 1x is precisely
+      where it could not show up — at density 160 a 0.75dp radius is SUB-PIXEL, so the
+      emulator was not a weaker test of the same thing, it was a test of something else.
+      Generalise: a dp-defined hairline or dot is not verified until it has been seen on the
+      panel, because greys and sub-pixel geometry are exactly what e-ink does not reproduce.
+      A dot grid on PAPER is light grey because ink reproduces greys; the equivalent
+      perceptual weight here is a small BLACK dot, ~0.3mm, which is what dot-grid paper uses.
+      Confirmed on the device.
 - [ ] **A drawing task should get a BIGGER working area** — Aliaksei's idea, 2026-09-30,
       raised as the dot grid started working: the room under an exercise is sized from the
       ANSWER, which is the right measure for something you write and the wrong one for
