@@ -61,6 +61,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -3391,9 +3392,23 @@ private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
         if (!ruled) return@Canvas
         val step = size.height / lines
         val stroke = 1.dp.toPx()
+        // Dotted, not solid. The box around this already has solid hairline
+        // borders, so solid rules inside it read as table rows — structure
+        // rather than an invitation. A dotted rule is the established "fill
+        // this in" mark and cannot be mistaken for the frame.
+        val dots = PathEffect.dashPathEffect(
+            floatArrayOf(2.dp.toPx(), 4.dp.toPx()),
+            0f,
+        )
         for (i in 1..lines) {
             val y = step * i
-            drawLine(Hairline, Offset(0f, y), Offset(size.width, y), stroke)
+            drawLine(
+                color = Hairline,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = stroke,
+                pathEffect = dots,
+            )
         }
     }
 }

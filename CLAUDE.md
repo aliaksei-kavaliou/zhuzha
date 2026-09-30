@@ -512,7 +512,7 @@ yet" note that used to live here was two months stale.
       describing his own loop: "I use stylus to mark answer, or write on the page then open
       and compare". That reframed what looked like a defect — the blank area under an
       exercise is not dead space, it is the WORKING AREA, and it had simply never been drawn.
-      Ruled lines under the task now, sized from the answer the book is holding, which is
+      DOTTED lines under the task now, sized from the answer the book is holding, which is
       something a paper workbook cannot do. **They earn their place with no stylus too**:
       Head First prints these knowing most readers never fill them in, because they mark a
       beat to stop and think, break the wall of text, and set the page's mode to workbook.
@@ -532,7 +532,11 @@ yet" note that used to live here was two months stale.
       default because most answers are written AND because it is the milder failure: blank
       space under a question still reads as somewhere to answer, where rules across a
       drawing read as a mistake. Verified by hand-editing the fence on the device rather
-      than paying for a regeneration.
+      than paying for a regeneration. **Dotted rather than solid** (Aliaksei's call): the box
+      already has solid hairline borders, so solid rules inside it read as table rows —
+      structure rather than an invitation — while a dotted rule is the established "fill this
+      in" mark and cannot be mistaken for the frame. Defined in dp, so it scales to the
+      Boox's panel; verified at 1x on the emulator only.
 - [ ] **A split exercise is greedy, and a box should prefer to move (2026-09-30)** — found
       by Aliaksei checking page 17 of the sketching book. The page is mechanically correct
       and editorially poor: the last piece carries a sentence FRAGMENT ("about mistakes;
