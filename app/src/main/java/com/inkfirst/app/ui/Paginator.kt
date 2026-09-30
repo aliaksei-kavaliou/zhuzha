@@ -525,10 +525,14 @@ private fun splitFence(
     // "about mistakes; just keep the ink flowing." The same two lines
     // starting at "Do not worry about mistakes…" read as a whole thought.
     //
-    // Backing up is capped at two lines' worth. Past that the cut is throwing
-    // away more page than the tidy break is worth, and a long sentence
-    // straddling the break is the ordinary case rather than the broken one.
-    val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = 2 * 42)
+    // Backing up is capped at three lines' worth. Two was too mean: the mug
+    // exercise's closing sentence runs to about 110 characters, so the cut
+    // fell through to a line boundary and the tail opened with "the top. Just
+    // keep the pen moving." Three lines is the cost of a clean break on the
+    // page that matters most — the tail is the one carrying the writing space,
+    // so it is the one being read WHILE the reader works, and a whole
+    // instruction there is worth more than three lines of head.
+    val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = 3 * 42)
 
     val tailBody = buildString {
         append(text.substring(cut).trimStart())
