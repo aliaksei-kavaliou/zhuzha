@@ -545,6 +545,17 @@ yet" note that used to live here was two months stale.
       characters. A blank space is sized flat and generously instead. And an exercise with NO
       answer draws no space and no reveal button, but was still reserving 48dp plus a badge
       for a control that never appears.
+      **A making-task usually needs no `answer:` at all**, and the prompt now says so. Chapter
+      1 offered "draw a line that wanders as much as it wants" and then an answer reading "a
+      long, meandering, delightfully crooked line that zig-zags down the page" — describing
+      the reader's own artefact back at them, which they are looking at. An answer earns its
+      place on a making-task only when it says what to CHECK, what a common mistake looks
+      like, or how to tell a good result from a plausible-looking bad one.
+      **The classification does not have to be perfect, because the failure is asymmetric**:
+      you can write on a dot grid, but you cannot comfortably draw on writing lines. So a
+      mismarked making-task is the only expensive case, and inverting the default — grid
+      unless the model marks a WRITING task — would move the burden of marking onto the case
+      whose failure is harmless. Not done: it flips a default across every book.
       **A making-task gets a DOT GRID, not empty space** (Aliaksei: "still better then empty
       space", and "some editors uses grids to make hand drawing easier"). It is what a
       sketchbook actually uses — dots give proportion and alignment to work against without
