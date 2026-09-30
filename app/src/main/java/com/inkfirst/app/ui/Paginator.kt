@@ -823,14 +823,23 @@ private fun estimateHeight(
             // button nor the answer, and reserving both left half a page of
             // white under a box that had more to say.
             val showsReveal = block.params[FENCE_CONT_TO] == null
+            // The reveal button is only drawn when there is something to
+            // reveal. An exercise that is pure instruction shows none, and
+            // was reserving 48dp plus a badge for a control that never
+            // appears.
+            val hasAnswer = block.kind == "exercise" &&
+                splitExerciseBody(block.body).second.isNotBlank()
             val exerciseExtra =
-                if (block.kind == "exercise" && showsReveal) 48.dp.toPx().toInt() + answerBadge else 0
+                if (hasAnswer && showsReveal) 48.dp.toPx().toInt() + answerBadge else 0
             // The ruled lines the reader writes their own answer on. Measured
             // with the SAME function the renderer draws from, deliberately:
             // an estimate that computes independently of its renderer is the
             // bug this file has produced twice in one day.
             val answerSpace = if (block.kind == "exercise" && showsReveal) {
-                val lines = answerSpaceLineCount(splitExerciseBody(block.body).second)
+                val lines = answerSpaceLineCount(
+                    splitExerciseBody(block.body).second,
+                    block.params["space"] != "blank",
+                )
                 if (lines == 0) {
                     0
                 } else {

@@ -248,9 +248,19 @@ internal val ANSWER_RULE_SPACING = 30.dp
  * and past six the page is mostly rules — at which point the exercise has
  * stopped being a question and become a form.
  */
-internal fun answerSpaceLineCount(answer: String): Int {
+internal fun answerSpaceLineCount(answer: String, ruled: Boolean = true): Int {
     val text = answer.trim()
+    // No answer, no space. An exercise that is purely an instruction — "throw
+    // it five times" — has nothing to compare against and nothing to write.
     if (text.isEmpty()) return 0
+    // A MAKING task is sized generously and flat, never from the answer's
+    // length. Its stored answer describes what success looks like — "a
+    // continuous, messy, but remarkably accurate line drawing" — and the
+    // number of characters in that description says nothing whatever about
+    // how much room a drawing of a mug needs. Deriving from it produced four
+    // lines' worth of space because the sentence happened to be 150
+    // characters long.
+    if (!ruled) return 6
     return (text.length / 42 + 1).coerceIn(2, 6)
 }
 
@@ -3299,15 +3309,16 @@ private fun ExerciseBlock(
         // go. Revealing must not land printed text on top of the reader's own
         // handwriting, and after the tap the two sit one above the other,
         // which is the whole point of writing first and comparing after.
+        val ruledSpace = f.params["space"] != "blank"
         AnswerSpace(
-            lines = answerSpaceLineCount(answer),
+            lines = answerSpaceLineCount(answer, ruledSpace),
             fontScale = fontScale,
             // Ruled unless the chapter model said otherwise. Ruled is the
             // right default for a study book — most answers are written — and
             // it is also the milder failure: blank space under a question
             // still reads as somewhere to answer, where rules across a drawing
             // read as a mistake.
-            ruled = f.params["space"] != "blank",
+            ruled = ruledSpace,
         )
         Spacer(Modifier.height(8.dp))
         if (revealed || answer.isEmpty()) {

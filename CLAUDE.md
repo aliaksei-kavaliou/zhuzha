@@ -537,6 +537,14 @@ yet" note that used to live here was two months stale.
       structure rather than an invitation — while a dotted rule is the established "fill this
       in" mark and cannot be mistaken for the frame. Defined in dp, so it scales to the
       Boox's panel; verified at 1x on the emulator only.
+      **Sizing from the answer only works when the answer is what you would WRITE** (Aliaksei:
+      "probably not all tasks has an answer like this one"). A making-task's stored answer
+      describes what success looks like — "a continuous, messy, but remarkably accurate line
+      drawing" — and its character count says nothing about the room a drawing of a mug
+      needs; deriving from it gave four lines because the sentence happened to be 150
+      characters. A blank space is sized flat and generously instead. And an exercise with NO
+      answer draws no space and no reveal button, but was still reserving 48dp plus a badge
+      for a control that never appears.
 - [ ] **A split exercise is greedy, and a box should prefer to move (2026-09-30)** — found
       by Aliaksei checking page 17 of the sketching book. The page is mechanically correct
       and editorially poor: the last piece carries a sentence FRAGMENT ("about mistakes;
