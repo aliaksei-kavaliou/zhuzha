@@ -605,6 +605,24 @@ yet" note that used to live here was two months stale.
       carry none under today's rules. Regenerating the chapter will likely drop them under
       the budget, at which point this fix moves them whole too — the demo regeneration and
       this change compound rather than merely queueing.
+- [x] **The running head lines up with the text (2026-09-30)** — Aliaksei, from the Boox:
+      "top and bottom status bars has bigger margin then a content". Measured off a
+      screenshot rather than eyeballed: header 53.9dp from the edge against the body's
+      40.5dp, right margin 50.1 against 41.1. The footer was already aligned (1dp, glyph
+      side-bearing). Cause was touch padding doing double duty — the `≡ Contents` Box adds
+      12dp horizontal for its tap target and the chapter counter 8dp at the end, on top of
+      the margin the parent column already applies. Both are cancelled with an equal
+      `offset` rather than removed, because the tap target is the point of them; the target
+      now extends INTO the margin, which is the easiest place to hit a header. The counter's
+      end padding became conditional — it is a separator from the bookmark ribbon, so it
+      exists only when the ribbon does.
+- [ ] **A drawing task should get a BIGGER working area** — Aliaksei's idea, 2026-09-30,
+      raised as the dot grid started working: the room under an exercise is sized from the
+      ANSWER, which is the right measure for something you write and the wrong one for
+      something you draw. A mug takes more page than a sentence about a mug does. The grid
+      exists now; how much of it a making-task deserves is the open question, and it
+      interacts with pagination — a taller box is likelier to exceed a page, which is the
+      one case that still splits.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

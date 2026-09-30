@@ -2293,8 +2293,21 @@ private fun ReaderHeader(
         // an unrestyled Material default in an app whose rule is to restyle
         // every one of them. The padding here is the same shape the menu rows
         // use, so the header and the menus agree about what a tap target is.
+        // THE PADDING MUST NOT MOVE THE TEXT. Measured on the Boox from a
+        // screenshot after Aliaksei reported the bars looking wrong: the
+        // header sat 53.9dp from the edge against the body's 40.5dp, because
+        // this Box's 12dp of touch padding pushed the label inward while the
+        // page's own margin was already applied by the parent. A running head
+        // that does not line up with the text under it reads as a mistake,
+        // and on a 7in page 13dp is visible.
+        //
+        // Offset it back out by exactly what the padding adds, rather than
+        // dropping the padding: the tap target is the point of it. This is
+        // strictly better than shrinking it, because the target now extends
+        // 12dp INTO the margin, which is the easiest place to hit a header.
         Box(
             modifier = Modifier
+                .offset(x = (-12).dp)
                 .clickable { onOpenContents() }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
@@ -2305,7 +2318,11 @@ private fun ReaderHeader(
             Text(
                 text = t("Ch {n}/{total}", "n" to chapterN, "total" to chapterCount),
                 style = MaterialTheme.typography.bodySmall.copy(color = Muted),
-                modifier = Modifier.padding(end = 8.dp),
+                // Only a SEPARATOR from the ribbon, so it exists only when the
+                // ribbon does. Unconditional, it held the chapter counter 8dp
+                // off the right margin the body text uses — the same
+                // misalignment as the Contents label, mirrored.
+                modifier = Modifier.padding(end = if (isBookmarked) 8.dp else 0.dp),
             )
         }
         // Bookmark ribbon: appears in the header only when this page is
@@ -2318,6 +2335,10 @@ private fun ReaderHeader(
                 onClick = onBookmarkToggle,
                 enabled = canBookmark,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+                // Same correction as the Contents label, mirrored: cancel the
+                // button's own content padding so the ribbon sits on the
+                // page's right margin instead of 8dp inside it.
+                modifier = Modifier.offset(x = 8.dp),
             ) {
                 Canvas(modifier = Modifier.size(width = 14.dp, height = 20.dp)) {
                     val w = size.width
