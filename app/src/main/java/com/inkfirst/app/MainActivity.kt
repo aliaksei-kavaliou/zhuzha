@@ -11,6 +11,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.app.Activity
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -90,6 +96,33 @@ class MainActivity : ComponentActivity() {
 private fun InkFirstApp() {
     val nav = rememberNavController()
     val context = LocalContext.current
+
+    // The status bar is hidden while a chapter is open and shown everywhere
+    // else — and it is owned HERE, by the one thing that knows which screen is
+    // up, rather than by ReaderScreen itself.
+    //
+    // ReaderScreen owned it first and lost it on chapter-to-chapter
+    // navigation. Compose composes the incoming destination before disposing
+    // the outgoing one, so the new screen hid the bar and the old screen's
+    // onDispose then showed it again — the bar came back while still inside
+    // the reader, which is exactly where it was not wanted. A single owner
+    // keyed on the current route has no ordering to get wrong.
+    val route = nav.currentBackStackEntryAsState().value?.destination?.route
+    val view = LocalView.current
+    LaunchedEffect(route) {
+        val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
+        val bars = WindowCompat.getInsetsController(window, view)
+        bars.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        // The navigation bar always stays: the reader's only back affordance
+        // is one "≡ Contents" link, and a screen you can get stuck in is worse
+        // than a screen with a clock on it.
+        if (route == Routes.READER) {
+            bars.hide(WindowInsetsCompat.Type.statusBars())
+        } else {
+            bars.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
 
     // Resolve at cold start: if the last-read pointer names a course + chapter
     // that still exist on disk, push the Reader on top of Library so back

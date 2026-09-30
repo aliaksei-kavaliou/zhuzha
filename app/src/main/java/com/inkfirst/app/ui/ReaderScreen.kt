@@ -249,18 +249,23 @@ internal val ANSWER_RULE_SPACING = 30.dp
  * stopped being a question and become a form.
  */
 internal fun answerSpaceLineCount(answer: String, ruled: Boolean = true): Int {
-    val text = answer.trim()
-    // No answer, no space. An exercise that is purely an instruction — "throw
-    // it five times" — has nothing to compare against and nothing to write.
-    if (text.isEmpty()) return 0
-    // A MAKING task is sized generously and flat, never from the answer's
-    // length. Its stored answer describes what success looks like — "a
-    // continuous, messy, but remarkably accurate line drawing" — and the
-    // number of characters in that description says nothing whatever about
-    // how much room a drawing of a mug needs. Deriving from it produced four
-    // lines' worth of space because the sentence happened to be 150
-    // characters long.
+    // A MAKING task asked for room EXPLICITLY, and needs it whether or not
+    // the book is holding an answer to compare against. Checked first for
+    // that reason: the regenerated chapter 2 wrote "draw the outline of your
+    // coffee mug" as `space="blank"` with no answer line at all — a pure
+    // making-task — and the no-answer rule below was handing it nowhere to
+    // draw. The model had already said what it wanted.
+    //
+    // Sized flat, never from the answer's length. A making-task's answer,
+    // where it has one, describes what success looks like — "a continuous,
+    // messy, but remarkably accurate line drawing" — and the number of
+    // characters in that sentence says nothing about the room a drawing of a
+    // mug needs.
     if (!ruled) return 6
+    val text = answer.trim()
+    // No answer and no request for space: an exercise that is purely an
+    // instruction has nothing to compare against and nothing to write.
+    if (text.isEmpty()) return 0
     return (text.length / 42 + 1).coerceIn(2, 6)
 }
 
@@ -340,30 +345,6 @@ fun ReaderScreen(
     var showFormatMenu by remember { mutableStateOf(false) }
     // Which pane of the menu is open. Reset when the menu closes, so it
     // always opens on reading.
-    // The status bar is a clock over a book. It costs ~5% of the height of
-    // every page — the single largest slice of the 22.5% the top of the page
-    // was eating on a 640px screen — and a reading surface is the one place
-    // where that trade is obviously wrong. Hidden while the reader is up and
-    // restored on the way out, so the Library and Settings keep theirs.
-    //
-    // The status bar only; the navigation bar stays. Hiding both would take
-    // the system back gesture away from a screen whose own back affordance is
-    // a single "≡ Contents" at the top, and a reader you can get stuck in is
-    // worse than a reader with a clock. A swipe from the edge brings it back
-    // transiently either way.
-    //
-    // Nothing else has to change: the content box measures whatever is left,
-    // so pagination follows the taller page automatically.
-    val readerView = LocalView.current
-    DisposableEffect(Unit) {
-        val window = (readerView.context as? Activity)?.window
-        val bars = window?.let { WindowCompat.getInsetsController(it, readerView) }
-        bars?.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        bars?.hide(WindowInsetsCompat.Type.statusBars())
-        onDispose { bars?.show(WindowInsetsCompat.Type.statusBars()) }
-    }
-
     var menuPane by remember { mutableStateOf(MenuPane.READING) }
     // Which picture the reader has asked to redraw, held until they confirm:
     // false is the opening picture, true the closing one, null neither.
