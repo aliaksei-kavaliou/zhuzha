@@ -545,6 +545,13 @@ yet" note that used to live here was two months stale.
       characters. A blank space is sized flat and generously instead. And an exercise with NO
       answer draws no space and no reveal button, but was still reserving 48dp plus a badge
       for a control that never appears.
+      **A making-task gets a DOT GRID, not empty space** (Aliaksei: "still better then empty
+      space", and "some editors uses grids to make hand drawing easier"). It is what a
+      sketchbook actually uses — dots give proportion and alignment to work against without
+      lines cutting through the drawing — and for this book's subject it is a genuine drawing
+      aid rather than only a mark of intent. Steps by the same measure as the dotted rules,
+      so the two treatments share a vertical rhythm; that step is also about 5mm, which is
+      what dot-grid paper uses.
 - [ ] **A split exercise is greedy, and a box should prefer to move (2026-09-30)** — found
       by Aliaksei checking page 17 of the sketching book. The page is mechanically correct
       and editorially poor: the last piece carries a sentence FRAGMENT ("about mistakes;

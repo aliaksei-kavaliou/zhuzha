@@ -3395,13 +3395,31 @@ private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
             .height(ANSWER_RULE_SPACING * fontScale * lines),
     ) {
         // Same room either way; only the treatment differs. A task you answer
-        // by MAKING something — "draw the outline of the mug in one unbroken
-        // line" — gets clear space, because rules across a drawing are worse
-        // than no rules at all. Ruled lines are for a task you answer in
-        // words. Found on the first real page of the sketching book, where
-        // nearly every exercise is a drawing task.
-        if (!ruled) return@Canvas
+        // by MAKING something gets a DOT GRID rather than rules — what a
+        // sketchbook actually uses, because dots give proportion and
+        // alignment to work against without lines cutting through the
+        // drawing. Rules across a drawing are worse than nothing; an empty
+        // rectangle reads as space nobody filled in. A grid says "work here"
+        // to a reader with no stylus too, which is the same argument the
+        // ruled lines earn their place on.
+        //
+        // The grid steps by the same measure as the rules, so the two
+        // treatments share a vertical rhythm and read as one family. It is
+        // also about 5mm, which is what dot-grid paper uses.
         val step = size.height / lines
+        if (!ruled) {
+            val radius = 0.75.dp.toPx()
+            var y = step
+            while (y <= size.height + 0.5f) {
+                var x = step
+                while (x < size.width) {
+                    drawCircle(Hairline, radius, Offset(x, y))
+                    x += step
+                }
+                y += step
+            }
+            return@Canvas
+        }
         val stroke = 1.dp.toPx()
         // Dotted, not solid. The box around this already has solid hairline
         // borders, so solid rules inside it read as table rows — structure
