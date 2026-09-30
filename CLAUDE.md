@@ -552,10 +552,14 @@ yet" note that used to live here was two months stale.
       place on a making-task only when it says what to CHECK, what a common mistake looks
       like, or how to tell a good result from a plausible-looking bad one.
       **The classification does not have to be perfect, because the failure is asymmetric**:
-      you can write on a dot grid, but you cannot comfortably draw on writing lines. So a
-      mismarked making-task is the only expensive case, and inverting the default — grid
-      unless the model marks a WRITING task — would move the burden of marking onto the case
-      whose failure is harmless. Not done: it flips a default across every book.
+      you can write on a dot grid, but you cannot comfortably draw on writing lines. So the
+      default is INVERTED (2026-09-30, Aliaksei's call) — the room is a dot grid unless the
+      model writes `space="lines"`, with `space="none"` for a task that produces nothing.
+      Forgetting to mark a fence now lands on the harmless side. The param is read at RENDER
+      time, so this restyles every exercise in every book already on disk; the SIZE is still
+      taken from the answer whenever there is one, so nothing repaginates — only the marks
+      change. Verified on a chapter written months before any of this: same three rows, now
+      a grid.
       **A making-task gets a DOT GRID, not empty space** (Aliaksei: "still better then empty
       space", and "some editors uses grids to make hand drawing easier"). It is what a
       sketchbook actually uses — dots give proportion and alignment to work against without

@@ -248,25 +248,16 @@ internal val ANSWER_RULE_SPACING = 30.dp
  * and past six the page is mostly rules — at which point the exercise has
  * stopped being a question and become a form.
  */
-internal fun answerSpaceLineCount(answer: String, ruled: Boolean = true): Int {
-    // A MAKING task asked for room EXPLICITLY, and needs it whether or not
-    // the book is holding an answer to compare against. Checked first for
-    // that reason: the regenerated chapter 2 wrote "draw the outline of your
-    // coffee mug" as `space="blank"` with no answer line at all — a pure
-    // making-task — and the no-answer rule below was handing it nowhere to
-    // draw. The model had already said what it wanted.
-    //
-    // Sized flat, never from the answer's length. A making-task's answer,
-    // where it has one, describes what success looks like — "a continuous,
-    // messy, but remarkably accurate line drawing" — and the number of
-    // characters in that sentence says nothing about the room a drawing of a
-    // mug needs.
-    if (!ruled) return 6
+internal fun answerSpaceLineCount(answer: String, ruled: Boolean = false): Int {
+    // Sized from the answer whenever there is one, whatever the treatment —
+    // so inverting the default changed how the space LOOKS in books already
+    // written without changing how much of it there is.
     val text = answer.trim()
-    // No answer and no request for space: an exercise that is purely an
-    // instruction has nothing to compare against and nothing to write.
-    if (text.isEmpty()) return 0
-    return (text.length / 42 + 1).coerceIn(2, 6)
+    if (text.isNotEmpty()) return (text.length / 42 + 1).coerceIn(2, 6)
+    // Nothing to size against. Writing lines with nothing to write toward are
+    // noise, so they get none; a grid is working space, and a making-task
+    // usually carries no answer at all, so it gets the full measure.
+    return if (ruled) 0 else 6
 }
 
 internal const val PLATE_WIDTH_FRACTION = 0.72f
@@ -3290,9 +3281,14 @@ private fun ExerciseBlock(
         // go. Revealing must not land printed text on top of the reader's own
         // handwriting, and after the tap the two sit one above the other,
         // which is the whole point of writing first and comparing after.
-        val ruledSpace = f.params["space"] != "blank"
+        // Default is the GRID, and the model opts out of it. Inverted on
+        // 2026-09-30, Aliaksei's call, because the failure is asymmetric: you
+        // can write on a dot grid, but you cannot comfortably draw on writing
+        // lines. Forgetting to mark a fence should land on the harmless side.
+        val spaceKind = f.params["space"]
+        val ruledSpace = spaceKind == "lines"
         AnswerSpace(
-            lines = answerSpaceLineCount(answer, ruledSpace),
+            lines = if (spaceKind == "none") 0 else answerSpaceLineCount(answer, ruledSpace),
             fontScale = fontScale,
             // Ruled unless the chapter model said otherwise. Ruled is the
             // right default for a study book — most answers are written — and

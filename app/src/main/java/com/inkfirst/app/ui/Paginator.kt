@@ -875,10 +875,15 @@ private fun estimateHeight(
             // an estimate that computes independently of its renderer is the
             // bug this file has produced twice in one day.
             val answerSpace = if (block.kind == "exercise" && showsReveal) {
-                val lines = answerSpaceLineCount(
-                    splitExerciseBody(block.body).second,
-                    block.params["space"] != "blank",
-                )
+                val spaceKind = block.params["space"]
+                val lines = if (spaceKind == "none") {
+                    0
+                } else {
+                    answerSpaceLineCount(
+                        splitExerciseBody(block.body).second,
+                        spaceKind == "lines",
+                    )
+                }
                 if (lines == 0) {
                     0
                 } else {
