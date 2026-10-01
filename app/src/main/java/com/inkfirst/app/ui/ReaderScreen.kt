@@ -238,26 +238,39 @@ private val DRAG_CHAPTER_THRESHOLD = 80.dp
  */
 internal val ANSWER_RULE_SPACING = 30.dp
 
+/** Rows of dot grid a making-task gets. See [answerSpaceLineCount]. */
+internal const val GRID_ROWS = 8
+
 /**
- * How many ruled lines an exercise offers for a written answer.
+ * How much working room an exercise offers, in rows of [ANSWER_RULE_SPACING].
  *
- * Derived from the answer the book is holding, which is something paper cannot
- * do: a printed workbook guesses how many lines to rule, and this one knows.
+ * TWO MEASURES, BECAUSE THERE ARE TWO KINDS OF WORK. Ruled lines are for a
+ * WRITTEN answer, so the answer the book is holding is exactly the right
+ * measure — something paper cannot do, since a printed workbook has to guess
+ * how many lines to rule and this one knows. Clamped at both ends: fewer than
+ * two does not read as somewhere to write, and past six the page is mostly
+ * rules, at which point the exercise has stopped being a question and become a
+ * form.
  *
- * Clamped at both ends. Fewer than two does not read as somewhere to write,
- * and past six the page is mostly rules — at which point the exercise has
- * stopped being a question and become a form.
+ * A GRID IS SIZED FROM THE TASK INSTEAD, because the answer's length says
+ * nothing about the room a drawing needs — a mug takes more page than a
+ * sentence about a mug does. It used to be sized from the answer whatever the
+ * treatment, which was deliberate at the time (inverting the default changed
+ * how the space LOOKED in existing books without changing how much of it there
+ * was) and wrong as a rule. Seen on the Boox 2026-10-01: a reader drew eleven
+ * circles across a grid sized by a 180-character sentence, and the revealed
+ * answer printed straight over the bottom row of them.
+ *
+ * This is deliberately generous and the page is allowed to take it back —
+ * pagination shrinks the room when a box will not otherwise fit, which is what
+ * makes being generous here safe.
  */
 internal fun answerSpaceLineCount(answer: String, ruled: Boolean = false): Int {
-    // Sized from the answer whenever there is one, whatever the treatment —
-    // so inverting the default changed how the space LOOKS in books already
-    // written without changing how much of it there is.
+    if (!ruled) return GRID_ROWS
     val text = answer.trim()
     if (text.isNotEmpty()) return (text.length / 42 + 1).coerceIn(2, 6)
-    // Nothing to size against. Writing lines with nothing to write toward are
-    // noise, so they get none; a grid is working space, and a making-task
-    // usually carries no answer at all, so it gets the full measure.
-    return if (ruled) 0 else 6
+    // Writing lines with nothing to write toward are noise, so they get none.
+    return 0
 }
 
 internal const val PLATE_WIDTH_FRACTION = 0.72f
@@ -3309,7 +3322,15 @@ private fun ExerciseBlock(
         val spaceKind = f.params["space"]
         val ruledSpace = spaceKind == "lines"
         AnswerSpace(
-            lines = if (spaceKind == "none") 0 else answerSpaceLineCount(answer, ruledSpace),
+            // A row count written by PAGINATION outranks the natural one: the
+            // page could not hold the box at its full size and gave the
+            // working room up to fit it. See FENCE_SPACE_ROWS.
+            lines = if (spaceKind == "none") {
+                0
+            } else {
+                f.params[FENCE_SPACE_ROWS]?.toIntOrNull()
+                    ?: answerSpaceLineCount(answer, ruledSpace)
+            },
             fontScale = fontScale,
             // Ruled unless the chapter model said otherwise. Ruled is the
             // right default for a study book — most answers are written — and
@@ -3325,7 +3346,11 @@ private fun ExerciseBlock(
                 // aligned rather than centred: the answer usually runs to
                 // several lines and a centred badge would float oddly.
                 Row {
-                    val answerBadge = loadBadge("answer")
+                    // Pagination drops the mascot when the page needs the
+                    // width it was taking from the answer beside it. See
+                    // FENCE_PLAIN_ANSWER.
+                    val answerBadge =
+                        if (f.params[FENCE_PLAIN_ANSWER] == null) loadBadge("answer") else null
                     if (answerBadge != null) {
                         Image(
                             bitmap = answerBadge,

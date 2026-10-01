@@ -653,13 +653,38 @@ yet" note that used to live here was two months stale.
       splits — "TRY THIS (continued)" then the grid, then "Look at what you just made". Note
       the interaction with the open item below: a BIGGER drawing area makes this split more
       common, and an oversized box is the one case that no longer moves whole.
-- [ ] **A drawing task should get a BIGGER working area** — Aliaksei's idea, 2026-09-30,
-      raised as the dot grid started working: the room under an exercise is sized from the
-      ANSWER, which is the right measure for something you write and the wrong one for
-      something you draw. A mug takes more page than a sentence about a mug does. The grid
-      exists now; how much of it a making-task deserves is the open question, and it
-      interacts with pagination — a taller box is likelier to exceed a page, which is the
-      one case that still splits.
+- [x] **The working room is sized from the TASK, and the page can take it back
+      (2026-10-01)** — Aliaksei's idea from 2026-09-30, built after he found the defect it
+      predicted. `answerSpaceLineCount` sized the room from the ANSWER whatever the
+      treatment. That is right for something you WRITE — a printed workbook guesses how many
+      lines to rule and this one knows — and says nothing about the room a drawing needs: a
+      mug takes more page than a sentence about a mug does. Seen on the Boox: a reader drew
+      eleven circles across a grid sized by a 180-character sentence, and the revealed answer
+      printed straight over the bottom row of them, breaking the one rule the feature was
+      built on.
+      Two measures now. Ruled lines keep sizing from the answer, clamped 2..6. A grid gets a
+      flat `GRID_ROWS = 8`, deliberately generous — **and generosity is only safe because the
+      page is allowed to take it back.**
+      **A LADDER OF COURTESIES.** When a box will not fit a page, what yields is what the
+      reader loses least by: the room to work in first (all the way to nothing — a phone has
+      no stylus, and a box with no room still asks its question and shows its answer, where a
+      clipped one does neither), then the answer's mascot, because a 72dp badge sits BESIDE
+      the answer text and on a 320dp page takes nearly a quarter of the line from it, turning
+      a seven-line answer into twelve. The task and the answer never yield. Carried as
+      `FENCE_SPACE_ROWS` / `FENCE_PLAIN_ANSWER`, pagination-written params the model never
+      writes and the file never holds — the pattern `FENCE_CONT_FROM` already set. Both
+      honoured by the estimate AND the renderer, which is this file's standing rule.
+      **And when even the ladder cannot make it fit, the oversize branch places the RELAXED
+      box, not the original.** Getting that wrong was the bug twice over in one sitting:
+      having given up the room and the mascot, the code fell through and clipped the
+      full-sized box, so the reader lost the same words AND kept the decoration that cost
+      them. Least-clipped beats most-clipped.
+      **Device-verified on the emulator at 320x640**: the answer that was sliced in half now
+      renders complete, ", you did it right." and the bottom border included; the exercise
+      that fits keeps its full 8-row grid untouched. **NOT re-verified on the Boox** — it
+      came off the cable before the build went over. Expect the ladder never to fire there:
+      the box already fit with room to spare at the old size.
+
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

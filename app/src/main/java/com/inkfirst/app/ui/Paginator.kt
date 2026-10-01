@@ -283,11 +283,77 @@ fun paginate(
             continue
         }
 
+        // What the ladder below settled on, when even that could not be made
+        // to fit: the oversize branch places THIS rather than the original.
+        var relaxed: Block.CustomFence? = null
+        var relaxedH = 0
+
+        // Nothing left to cut, and it still overflows a whole page. Before
+        // placing it and letting the page clip it, give up the working room:
+        // the task and the answer are content, the room to write is a
+        // courtesy. Only at the top of a page, because anywhere else the
+        // newPage() below gets the box a full page first and we arrive back
+        // here with the real question — does it fit a page of its own.
+        if (atTop && block is Block.CustomFence && h > budget) {
+            // A LADDER OF COURTESIES, given up in the order of how much the
+            // reader loses by it. The room to work in goes first; it is the
+            // only thing here a reader can do without and still answer the
+            // question. The answer's mascot goes second, because on a narrow
+            // page it costs the text beside it nearly a quarter of its width
+            // — decoration charged to content. What is never given up is the
+            // task or the answer, which is the whole point: a clipped box
+            // loses words with no way to reach them.
+            // Explicit type: assigning the smart-cast value to a var loses it.
+            var best: Block.CustomFence = block
+            var bestH = h
+            withShrunkWritingSpace(best, bestH - budget, density, fontScale)?.let { room ->
+                best = room
+                bestH = estimateHeight(
+                    room, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                    hasFigureImage, hasBadge, atPageTop = true,
+                )
+            }
+            if (bestH > budget && best.params[FENCE_PLAIN_ANSWER] == null) {
+                val plain = best.copy(params = best.params + (FENCE_PLAIN_ANSWER to "1"))
+                val plainH = estimateHeight(
+                    plain, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                    hasFigureImage, hasBadge, atPageTop = true,
+                )
+                if (plainH < bestH) {
+                    best = plain
+                    bestH = plainH
+                }
+            }
+            if (best !== block) {
+                if (bestH <= budget) {
+                    pages.last().add(PageItem(best, i, carriedPx))
+                    height += bestH
+                    carry = null
+                    carriedPx = 0
+                    i++
+                    continue
+                }
+                // It STILL does not fit, and the oversize branch below is now
+                // the only option — but it must place the relaxed box rather
+                // than the original. Giving up the room and the mascot and
+                // then clipping the full-sized box is the worst of both: the
+                // reader loses the same words AND keeps the decoration that
+                // cost them. Least-clipped beats most-clipped.
+                //
+                // It often renders whole even here, because `budget` carries
+                // a 10% safety margin for measurement slop — a box a little
+                // over budget is usually still inside the page.
+                relaxed = best
+                relaxedH = bestH
+            }
+        }
+
         if (atTop) {
             // Taller than a whole page and nothing to split: place it anyway,
-            // or we would loop forever.
-            pages.last().add(PageItem(block, i, carriedPx))
-            height += h
+            // or we would loop forever. The relaxed form if the ladder made
+            // one — it is smaller, so less of it is lost.
+            pages.last().add(PageItem(relaxed ?: block, i, carriedPx))
+            height += if (relaxed != null) relaxedH else h
             carry = null
             carriedPx = 0
             i++
@@ -473,6 +539,71 @@ internal const val FENCE_CONT_FROM = "contFrom"
 
 /** This piece carries on over the leaf: open its foot, withhold the answer. */
 internal const val FENCE_CONT_TO = "contTo"
+
+/**
+ * How many rows of working room this box gets, decided by PAGINATION.
+ *
+ * Written only when a box would not otherwise fit a page, and read by the
+ * renderer in place of the natural count. Like [FENCE_CONT_FROM] it is a
+ * param the model never writes and the file on disk never holds — it exists
+ * for the length of one layout.
+ */
+internal const val FENCE_SPACE_ROWS = "spaceRows"
+
+/**
+ * Rows of working room worth drawing at all. Below this it reads as a stray
+ * band of dots rather than as somewhere to work, so the room goes to nothing
+ * instead.
+ */
+private const val MIN_WORKING_ROWS = 2
+
+/**
+ * Print the answer without its mascot, because the page needs the width.
+ *
+ * The second rung of the same ladder as [FENCE_SPACE_ROWS]. The answer badge
+ * sits BESIDE the answer text, so on a narrow page a 72dp mascot takes close
+ * to a quarter of the line away from it: on a 320dp screen it turned a
+ * seven-line answer into a twelve-line one, which was most of what pushed the
+ * box off the page. Decided by pagination, never written by the model.
+ */
+internal const val FENCE_PLAIN_ANSWER = "plainAnswer"
+
+/**
+ * Give back working room until the box fits, or give it up entirely.
+ *
+ * THE WRITING SPACE IS THE SLACK. A box holds two things the reader cannot do
+ * without — the task and, once revealed, the answer — plus one courtesy, the
+ * room to work in. When the three together exceed a page, the courtesy is what
+ * yields, because clipping either of the other two loses content with no way
+ * to reach it. Seen on a 320x640 screen: the last line of an answer sliced in
+ * half by the page edge and ", you did it right." unreachable.
+ *
+ * It yields all the way to nothing rather than stopping at [MIN_WORKING_ROWS].
+ * A phone has no stylus anyway, and a box with no room to write still asks its
+ * question and still shows its answer, where a clipped one does neither.
+ *
+ * Returns null when there is nothing to give — no room to start with, a
+ * `space="none"` box, or a count pagination already wrote.
+ */
+private fun withShrunkWritingSpace(
+    block: Block.CustomFence,
+    overflowPx: Int,
+    density: Density,
+    fontScale: Float,
+): Block.CustomFence? = with(density) {
+    if (block.kind != "exercise") return null
+    if (block.params[FENCE_SPACE_ROWS] != null) return null
+    val spaceKind = block.params["space"]
+    if (spaceKind == "none") return null
+    val natural = answerSpaceLineCount(splitExerciseBody(block.body).second, spaceKind == "lines")
+    if (natural <= 0) return null
+    val rowPx = (ANSWER_RULE_SPACING * fontScale).toPx()
+    if (rowPx <= 0f) return null
+    val drop = kotlin.math.ceil(overflowPx / rowPx).toInt().coerceAtLeast(1)
+    val kept = (natural - drop).let { if (it < MIN_WORKING_ROWS) 0 else it }
+    if (kept >= natural) return null
+    return block.copy(params = block.params + (FENCE_SPACE_ROWS to kept.toString()))
+}
 
 /**
  * Splits a bordered block so its first lines fill [availablePx].
@@ -889,7 +1020,12 @@ private fun estimateHeight(
             // beside the answer text once it is shown. Reserved whether or
             // not the reader has revealed it — revealing must not reflow the
             // page under their thumb.
-            val answerBadge = if (hasBadge("answer")) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+            val answerBadge =
+                if (block.params[FENCE_PLAIN_ANSWER] == null && hasBadge("answer")) {
+                    (BADGE_SIZE * fontScale).toPx().toInt()
+                } else {
+                    0
+                }
             // Only the piece that actually SHOWS the reveal button reserves
             // room for it. A middle piece of a split exercise has neither the
             // button nor the answer, and reserving both left half a page of
@@ -941,13 +1077,18 @@ private fun estimateHeight(
             // bug this file has produced twice in one day.
             val answerSpace = if (block.kind == "exercise" && showsReveal) {
                 val spaceKind = block.params["space"]
+                // A count written by pagination outranks the natural one —
+                // the same precedence the renderer uses, which is the point:
+                // an estimate that computes independently of its renderer is
+                // the bug this file has produced more than once.
                 val lines = if (spaceKind == "none") {
                     0
                 } else {
-                    answerSpaceLineCount(
-                        splitExerciseBody(block.body).second,
-                        spaceKind == "lines",
-                    )
+                    block.params[FENCE_SPACE_ROWS]?.toIntOrNull()
+                        ?: answerSpaceLineCount(
+                            splitExerciseBody(block.body).second,
+                            spaceKind == "lines",
+                        )
                 }
                 if (lines == 0) {
                     0
