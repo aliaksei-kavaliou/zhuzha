@@ -92,6 +92,29 @@ class ChapterPromptTest {
 
     // --- pictures ---------------------------------------------------------
 
+    /**
+     * The working area is withheld only when the task leaves no mark at all.
+     *
+     * The first regenerated demo chapter marked a ten-second warm-up scribble
+     * `space="none"` and then said, in the very next paragraph, "Look at what
+     * you just made" — so the book pointed at an artefact the layout had
+     * decided did not exist. The old rule said the room was for a task that
+     * "needs no working room at all, because nothing is produced", which
+     * silently asks TWO questions: is anything made, and does it belong on
+     * this page. The task said "on your paper", so the model answered the
+     * second one and withheld the grid.
+     */
+    @Test
+    fun `space none is only for a task that leaves no mark anywhere`() {
+        val prompt = buildChapterPrompt(course, course.chapters[0], memory = "")
+        assertTrue(prompt.contains("NO MARK ANYWHERE"))
+        // Working on the reader's own paper must NOT be grounds for withholding
+        // the room: on a stylus device many will work on the page itself.
+        assertTrue(prompt.contains("EVEN IF YOU TELL THE READER TO WORK ON THEIR OWN PAPER"))
+        // And the asymmetry is stated, not left to be inferred.
+        assertTrue(prompt.contains("an unused grid costs a little blank space"))
+    }
+
     @Test
     fun `the figure section names the ceiling the illustrator will enforce`() {
         val prompt = buildChapterPrompt(course, course.chapters[0], memory = "")

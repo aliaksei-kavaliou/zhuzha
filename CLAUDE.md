@@ -629,6 +629,30 @@ yet" note that used to live here was two months stale.
       A dot grid on PAPER is light grey because ink reproduces greys; the equivalent
       perceptual weight here is a small BLACK dot, ~0.3mm, which is what dot-grid paper uses.
       Confirmed on the device.
+- [x] **"No working room" is not the same as "not on this page" (2026-10-01)** — Aliaksei,
+      reading chapter 1 on the device: "check task on page 10, isn't it require a space to
+      draw?" It was marked ```exercise space="none"``` — a ten-second warm-up scribble with
+      no working area at all — and the page CONTRADICTED ITSELF: the very next line under the
+      box read "Look at what you just made." The book pointed at an artefact the layout had
+      decided did not exist.
+      The prompt's criterion was "needs no working room at all, because nothing is produced",
+      which silently asks TWO questions — is anything made, and does it belong on this page.
+      The task says "on your paper", so the model answered the second and withheld the room.
+      Same chapter, the circles task says "on your page" and got a grid: one rule, two
+      answers, which is the signature of an ambiguous principle rather than a bad generation.
+      Same shape as the screener's `refuse` criterion — the examples were fine, the PRINCIPLE
+      was the problem.
+      Now: `space="none"` is only for a task that leaves NO MARK ANYWHERE, and the prompt
+      says explicitly that work on the reader's own paper still earns room, because on a
+      stylus device many will work on the page — plus the asymmetry, since an unused grid
+      costs a little blank space while a missing one leaves a reader with nowhere to work.
+      Unit-tested. The demo chapter was HAND-EDITED rather than regenerated: the same
+      generation got the answer discrimination, the figures and the cover match right, and
+      re-rolling all of that to fix one param is a bad trade.
+      **Device-verified**: the task now carries a grid, and the box exceeds a page so it
+      splits — "TRY THIS (continued)" then the grid, then "Look at what you just made". Note
+      the interaction with the open item below: a BIGGER drawing area makes this split more
+      common, and an oversized box is the one case that no longer moves whole.
 - [ ] **A drawing task should get a BIGGER working area** — Aliaksei's idea, 2026-09-30,
       raised as the dot grid started working: the room under an exercise is sized from the
       ANSWER, which is the right measure for something you write and the wrong one for
