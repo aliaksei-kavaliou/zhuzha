@@ -899,10 +899,42 @@ private fun estimateHeight(
             // reveal. An exercise that is pure instruction shows none, and
             // was reserving 48dp plus a badge for a control that never
             // appears.
-            val hasAnswer = block.kind == "exercise" &&
-                splitExerciseBody(block.body).second.isNotBlank()
+            val answerText = splitExerciseBody(block.body).second.trim()
+            val hasAnswer = block.kind == "exercise" && answerText.isNotBlank()
+            // THE REVEALED STATE IS THE TALL ONE, AND IT WAS NEVER MEASURED.
+            // This reserved the button (48dp) plus the answer badge, on the
+            // assumption that the 72dp mascot dominates whatever text sits
+            // beside it. It does not: a diagnostic answer — the kind the
+            // chapter prompt now asks for, saying what to CHECK rather than
+            // describing the artefact — runs to several lines, in a column
+            // the badge itself narrows. Reported from page 16 of the demo
+            // chapter: the last line was sliced in half by the page edge and
+            // ", you did it right." was unreachable.
+            //
+            // A block with TWO STATES has to fit the taller one, because
+            // revealing must not reflow the page — ink is anchored to a block
+            // index, so a reflow would move the reader's own handwriting out
+            // from under the answer they wrote it to compare against. Measure
+            // the answer exactly as the renderer draws it: same "Answer: "
+            // prefix, same 16sp, and in the column the badge leaves behind.
+            val revealedHeight = if (hasAnswer && showsReveal) {
+                val gap = if (answerBadge > 0) answerBadge + 10.dp.toPx().toInt() else 0
+                val measured = measurer.measure(
+                    text = AnnotatedString(parseInlines("Answer: $answerText").plainText()),
+                    style = TextStyle(
+                        fontSize = 16.sp * fontScale,
+                        lineHeight = 26.sp * fontScale * lineSpacing,
+                        fontFamily = FontFamily.Serif,
+                    ),
+                    constraints = Constraints(maxWidth = (innerWidth - gap).coerceAtLeast(1)),
+                )
+                // The revealed row is as tall as the taller of badge and text.
+                maxOf(answerBadge, measured.size.height)
+            } else {
+                0
+            }
             val exerciseExtra =
-                if (hasAnswer && showsReveal) 48.dp.toPx().toInt() + answerBadge else 0
+                if (hasAnswer && showsReveal) maxOf(48.dp.toPx().toInt(), revealedHeight) else 0
             // The ruled lines the reader writes their own answer on. Measured
             // with the SAME function the renderer draws from, deliberately:
             // an estimate that computes independently of its renderer is the
