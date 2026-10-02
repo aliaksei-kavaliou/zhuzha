@@ -748,9 +748,11 @@ yet" note that used to live here was two months stale.
       book prints, and every `values-*` translation complete with matching placeholders — a
       missing one falls back to English silently, which is the same failure the runtime
       translator had and which resources do not fix by themselves.
-      **`ExportScreen` is still whole-English and still outside the test's list.** It has a
-      dozen literals including full sentences; a half-translated screen is worse than a
-      consistent one. Known and recorded, not forgotten.
+      **`ExportScreen` is English and that is now CORRECT, not a gap.** It had been carried
+      as unfinished work since the morning; the new line resolves it without a line of code.
+      It is a screen you operate — a switch, a save button, a result line — and none of its
+      words are typeset into anything. What the EXPORT itself prints goes through `labels`
+      and is in the book's 17. Do not "finish" it.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
