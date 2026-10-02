@@ -753,12 +753,33 @@ yet" note that used to live here was two months stale.
       It is a screen you operate — a switch, a save button, a result line — and none of its
       words are typeset into anything. What the EXPORT itself prints goes through `labels`
       and is in the book's 17. Do not "finish" it.
-- [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
-      the above, left undone on purpose. §1 keeps the cover and the closing picture through
-      a rewrite because they came from the outline; they come from the chapter's opening
-      now, and a rewrite is explicitly told to change its metaphors. Redrawing both every
-      time spends ~6¢ nobody asked for, so this is a decision about money rather than a bug
-      to fix on sight. The Opening row already offers the redraw.
+- [x] **A rewrite redraws the chapter's own two pictures (2026-10-02)** — open since
+      2026-09-28 and closed by DELETING A SPECIAL CASE rather than adding a rule. §1 kept the
+      cover and the closing picture through a rewrite because both came from the OUTLINE,
+      which a rewrite does not change. That stopped being true the day the cover started
+      being briefed from the chapter's own opening (§10.1) and the closing from the cover:
+      both now describe prose that a rewrite is explicitly told to replace with different
+      metaphors, so keeping them reinstates the very "two books" defect §10.1 was written to
+      fix.
+      **The money objection turned out to be weaker than it looked.** It had been parked as
+      "~6¢ nobody asked for" — but a rewrite ALREADY drops and redraws every inline figure,
+      9¢ on a three-figure chapter, without asking. The cover and closing are now in exactly
+      the same position, so keeping them was the inconsistency, not the economy.
+      Aliaksei's framing, and it is the right one: "you normally won't redraw a chapter
+      constantly, but you have an option and you know what it costs."
+      **The other half is therefore the PRICE.** This app's rule is that every row which
+      spends names its cost, and rewriting was the one place that spent silently — the dialog
+      even promised "the chapter's pictures are kept", which had been false since 09-28. It
+      now reads "Its pictures are drawn again from the new text — about 5, ~15¢", counted as
+      inline slots + 2 and suppressed entirely for a book whose figure policy does not draw
+      on its own. An estimate, since the rewritten chapter may ask for a different number of
+      figures, which is what the "~" is for.
+      **The idea Aliaksei rejected is worth keeping**: passing the old cover's description
+      INTO the rewrite so the new prose keeps the metaphor. It inverts the dependency — the
+      cover serves the chapter — and fights the rewrite prompt, which asks for a different
+      route. "When we say rewrite we suppose content to be changed."
+      Verified on the emulator by opening the dialog and reading it back; the teardown itself
+      is NOT yet exercised, since running it costs a real generation.
 - [x] **The reader menu scrolls (2026-09-28)** — open since 2026-09-22 and closed because
       430 colleagues are about to open this app on phones. It sized to its content, so below
       ~700px everything after "Chapter" was off-screen and unreachable — Rewrite, Figures,

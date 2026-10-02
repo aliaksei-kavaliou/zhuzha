@@ -1306,6 +1306,12 @@ fun ReaderScreen(
                 RewriteChapterDialog(
                     chapterTitle = ch.title,
                     marksLost = describeChapterMarks(store, c, chapterSlug),
+                    // The inline slots this chapter has, plus its own two
+                    // pictures. An estimate: the rewritten chapter may ask for
+                    // a different number of figures, which is why the price
+                    // carries a "~".
+                    picturesRedrawn =
+                        if (c.figurePolicy.automatic) figureSlots + 2 else 0,
                     laterChapters = c.chapters
                         .filter { it.n > ch.n && it.status != ChapterStatus.PENDING }
                         .map { it.n },
@@ -5020,9 +5026,13 @@ private fun drawCourseBadges(
  *
  * Best-effort like every other picture pass, and after the prose is saved, so
  * a failure costs a picture rather than a chapter. Missing only: a chapter
- * that already has a cover keeps it, which is what makes this safe on a
- * rewrite — a rewrite deliberately keeps the cover and the closing picture,
- * since both come from the outline rather than from the body.
+ * that already has a cover keeps it, which makes this idempotent.
+ *
+ * On a REWRITE the two files are deleted before this runs (see
+ * CourseStore.clearChapterPictures), so "missing only" redraws them. They used
+ * to be kept deliberately, on the grounds that both came from the outline
+ * rather than from the body — true until the cover started being briefed from
+ * the chapter's own opening.
  *
  * The closing picture needs the cover: it is the cover's scene resolved, and
  * takes the cover's own brief and image as input. So it is drawn second, and
@@ -5255,6 +5265,13 @@ private fun compileChapter(
                     // by hand. One generation deep — see archiveChapter.
                     store.archiveChapter(course.slug, chapter.slug)
                     store.clearChapterMarks(course.slug, chapter.slug)
+                    // The cover and the closing picture go too. They were kept
+                    // while they came from the OUTLINE, which a rewrite does
+                    // not change; since 2026-09-28 the cover is briefed from
+                    // the chapter's own opening and the closing from the cover,
+                    // so both describe prose that is about to be replaced by a
+                    // model explicitly told to find different metaphors.
+                    store.clearChapterPictures(course.slug, chapter.slug)
                     // The saved reading position is a block index into prose
                     // that no longer exists.
                     store.updateChapterProgress(course.slug, chapterN, 0)
@@ -5411,6 +5428,16 @@ private fun RewriteChapterDialog(
     chapterTitle: String,
     marksLost: String,
     laterChapters: List<Int>,
+    /**
+     * How many pictures the rewrite will draw again, or 0 for a book whose
+     * figure policy does not draw on its own.
+     *
+     * Named with its price because this app's rule is that every row which
+     * spends says what it costs, and rewriting had been the one place that
+     * spent without saying — it has always redrawn the inline figures, and now
+     * redraws the cover and closing picture too.
+     */
+    picturesRedrawn: Int,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
@@ -5446,8 +5473,13 @@ private fun RewriteChapterDialog(
                     )
                 }
                 Text(
-                    text = "The old chapter and its questions stay on disk as files, " +
-                        "and the chapter's pictures are kept.",
+                    text = "The old chapter and its questions stay on disk as files." +
+                        if (picturesRedrawn > 0) {
+                            " Its pictures are drawn again from the new text — about " +
+                                "$picturesRedrawn, ${pictureCost(picturesRedrawn)}."
+                        } else {
+                            ""
+                        },
                     fontFamily = FontFamily.Serif,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -5459,9 +5491,13 @@ private fun RewriteChapterDialog(
                     // has not complained about.
                     val list = laterChapters.joinToString(", ")
                     Text(
-                        text = "Chapter${if (laterChapters.size == 1) "" else "s"} $list " +
-                            "already exist and were written against the old version of " +
-                            "this one. They are left alone.",
+                        text = if (laterChapters.size == 1) {
+                            "Chapter $list already exists and was written against the " +
+                                "old version of this one. It is left alone."
+                        } else {
+                            "Chapters $list already exist and were written against the " +
+                                "old version of this one. They are left alone."
+                        },
                         fontFamily = FontFamily.Serif,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,

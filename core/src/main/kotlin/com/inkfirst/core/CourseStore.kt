@@ -599,6 +599,32 @@ class CourseStore(private val root: File) {
         pictureNamed(courseSlug, "$chapterSlug-tail")
 
     /**
+     * Throws away the chapter's own two pictures, so a rewrite redraws them.
+     *
+     * They used to be KEPT through a rewrite, and that was right while they
+     * were briefed from the outline — a rewrite does not change the outline.
+     * Since 2026-09-28 the cover is briefed from the chapter's own OPENING and
+     * the closing picture from the cover, so both now depend on prose that a
+     * rewrite is explicitly told to replace. Keeping them was leaving a cover
+     * for a metaphor the chapter no longer contains, which is exactly the
+     * defect that change was made to fix (design.md §10.1).
+     *
+     * So the special case goes rather than a rule arriving: a rewrite already
+     * drops and redraws every INLINE figure, and these two are now in the same
+     * position. The brief goes with them — it describes the old opening, and
+     * [readCoverBrief] is what the closing picture is written from.
+     *
+     * Returns how many files were actually removed, which is only ever 0..2.
+     */
+    fun clearChapterPictures(courseSlug: String, chapterSlug: String): Int {
+        var removed = 0
+        coverFile(courseSlug, chapterSlug)?.let { if (it.delete()) removed++ }
+        tailFile(courseSlug, chapterSlug)?.let { if (it.delete()) removed++ }
+        File(root, "$courseSlug/figures/$chapterSlug-cover.txt").takeIf { it.isFile }?.delete()
+        return removed
+    }
+
+    /**
      * A picture in this course's `figures/` by base name, whatever extension
      * the model's bytes turned out to be.
      *
