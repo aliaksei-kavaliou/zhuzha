@@ -704,10 +704,14 @@ yet" note that used to live here was two months stale.
       **Verified on the emulator by injecting stylus events**: a vertical mark in the grid
       produces `workingRoom=true` and no chip (the log shows it still resolved text, which
       is exactly the trap), and a margin bar on a prose page still produces `workingRoom=false`
-      and its chip. **NOT verified: a deliberate underline or circle INSIDE an exercise's
-      question**, which must still raise the chip. The emulator cannot answer it — injected
-      stylus events mis-anchor (seen anchoring to block 15 while the page showed 10-11), and
-      the real path is the Onyx overlay. **Check that on the Boox before trusting this.**
+      and its chip.
+      **Confirmed on the Boox with the real pen, 2026-10-02**: drawing the ten circles as the
+      ANSWER raises no chip. That is the reported defect closed on the path that matters —
+      the emulator could not have shown it, since injected stylus events mis-anchor (seen
+      picking block 15 while the page showed 10-11).
+      **Still unconfirmed: a deliberate underline or circle INSIDE an exercise's question**,
+      which must still raise the chip. If the centre test is too eager the symptom is "I can
+      no longer ask about exercise text", and the fix is loosening it.
 - [x] **The shelf is the shelf and the book is the book (2026-10-02)** — Aliaksei: "when I
       read a Russian book on Kindle or iOS Books, they do not translate the app interface by
       a book." He is right and that is the convention everywhere; InkFirst had the whole
