@@ -21,7 +21,7 @@ Name origin: "Ink First" = e-ink-first design + a nod to Head First. GitHub name
 
 - Primary device: **Onyx Boox Go 7 (black, 2025 gen)** — 7" e-ink, Android-based, stylus support, sideloaded APK.
 - E-ink rules: **no animations, no scrolling** in reading UI. Paginated everything. High contrast, no gradients, generous tap targets. This is a feature, not a limitation — the book-page metaphor is the whole point.
-- Standard Android app; Boox runs Android (Go 7: Android 12). Develop/test on emulator or any Android phone, verify on device via sideload.
+- Standard Android app; Boox runs Android (Go 7: **Android 13, API 33** — read off the device 2026-10-02; this said Android 12 and was wrong). Develop/test on emulator or any Android phone, verify on device via sideload.
 - Onyx SDK (onyxsdk-pen 1.5.4) provides low-latency raw pen input. **Integrated and working**
   as of 2026-09-15, after three failed attempts — it is sparsely documented and several of its
   behaviours are counter-intuitive enough to have cost whole sessions. Read design.md §11 and
