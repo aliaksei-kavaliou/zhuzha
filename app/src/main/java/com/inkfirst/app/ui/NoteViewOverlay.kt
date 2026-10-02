@@ -100,10 +100,10 @@ fun NoteViewOverlay(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onDelete) {
-                    Text("Delete", color = Muted)
+                    Text(t("Delete"), color = Muted)
                 }
                 TextButton(onClick = onClose) {
-                    Text("Close", color = Ink)
+                    Text(t("Close"), color = Ink)
                 }
             }
         }

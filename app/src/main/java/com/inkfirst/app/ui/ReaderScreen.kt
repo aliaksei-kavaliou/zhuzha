@@ -1054,7 +1054,7 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     pendingGestureStroke = null
                 }) {
-                    Text("Delete", color = Paper)
+                    Text(labels.t("Delete"), color = Paper)
                 }
                 TextButton(onClick = { pendingGestureStroke = null }) {
                     Text(labels.t("Cancel"), color = Paper)
@@ -1102,7 +1102,7 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     viewingStroke = null
                 }) {
-                    Text("Delete", color = Paper)
+                    Text(labels.t("Delete"), color = Paper)
                 }
                 TextButton(onClick = { viewingStroke = null }) {
                     Text(labels.t("Cancel"), color = Paper)
@@ -4693,7 +4693,7 @@ private fun CompilePrompt(
         // follows this automatically.
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
     ) {
-        TextButton(onClick = onBack) { Text("← Back", color = Ink) }
+        TextButton(onClick = onBack) { Text("← " + t("Back"), color = Ink) }
         Spacer(Modifier.weight(1f))
         Text(
             text = t("Ch {n}/{total}", "n" to chapter.n, "total" to chapterCount),
@@ -4812,7 +4812,7 @@ private fun CompilePrompt(
                 onClick = onCompile,
                 colors = ButtonDefaults.buttonColors(containerColor = Ink),
             ) {
-                Text("Try again", color = Paper)
+                Text(t("Try again"), color = Paper)
             }
         }
         CompileState.Idle -> {
@@ -4820,7 +4820,7 @@ private fun CompilePrompt(
                 onClick = onCompile,
                 colors = ButtonDefaults.buttonColors(containerColor = Ink),
             ) {
-                Text("Compile chapter", color = Paper)
+                Text(t("Compile chapter"), color = Paper)
             }
         }
     }

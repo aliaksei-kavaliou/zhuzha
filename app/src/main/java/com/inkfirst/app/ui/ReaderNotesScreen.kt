@@ -129,7 +129,7 @@ fun ReaderNotesScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onBack) { Text("≡ Contents", color = Ink) }
+                TextButton(onClick = onBack) { Text("≡ " + t("Contents"), color = Ink) }
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = "How the reading has gone",

@@ -708,6 +708,30 @@ yet" note that used to live here was two months stale.
       question**, which must still raise the chip. The emulator cannot answer it — injected
       stylus events mis-anchor (seen anchoring to block 15 while the page showed 10-11), and
       the real path is the Onyx overlay. **Check that on the Boox before trusting this.**
+- [x] **The book speaks its language on the chip and the overlays too, and a TEST now says
+      so (2026-10-02)** — the pen chip's "Delete" sat between a translated "Ask about this"
+      and a translated "Cancel", in English. Pulling that thread found eleven more: the whole
+      compile prompt ("Back", "Try again", "Compile chapter" — a page OF the book, it carries
+      the running head), every button on the note overlays, the Ask panel's "Older"/"Newer"
+      and its placeholder, and both note placeholders. **"Cancel" and "Save" were already
+      DECLARED and simply never wired**, which is exactly the September miss repeating.
+      The real fix is the guard, not the eleven. `BookChromeLiteralsTest` scans the book's
+      own screens for `Text("…")` literals and fails with file:line for any string not in
+      `BOOK_CHROME_STRINGS`. This defect had shipped three times, always silently — a label
+      that is never declared stays English in every translated book for ever, and nothing
+      downstream notices. `BOOK_CHROME_STRINGS`'s own doc argues a build-time source scan is
+      not worth it for deriving the LIST, and that still stands: this is the cheaper half,
+      which only refuses to let the two drift apart.
+      **It paid for itself on the first run**, catching two the hand-grep had missed because
+      they open with a glyph: `Text("← Close")` in the Ask panel and `Text("≡ Contents")` in
+      the notes screen. Both are now `"← " + t("Close")`, the pattern the reader header
+      already used.
+      Scope is the BOOK's screens only. Library, Settings, New course and Backup belong to
+      the person rather than to a book and stay in English — the line already drawn for
+      `language` and `units`.
+      **`ExportScreen` is NOT done and is deliberately left whole-English**: it has a dozen
+      literals including sentences, and a half-translated screen is worse than a consistent
+      English one. It is outside the test's list with this comment as the record.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

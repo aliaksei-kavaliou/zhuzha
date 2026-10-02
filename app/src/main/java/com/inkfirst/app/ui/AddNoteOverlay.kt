@@ -95,7 +95,7 @@ fun AddNoteOverlay(
                     .heightIn(min = 96.dp),
                 placeholder = {
                     Text(
-                        text = "Type your note…",
+                        text = t("Type your note…"),
                         fontFamily = FontFamily.Serif,
                         fontSize = 15.sp,
                         color = Muted,
@@ -119,7 +119,7 @@ fun AddNoteOverlay(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onCancel) {
-                    Text("Cancel", color = Ink)
+                    Text(t("Cancel"), color = Ink)
                 }
                 Spacer(Modifier.padding(horizontal = 4.dp))
                 Button(
@@ -127,7 +127,7 @@ fun AddNoteOverlay(
                     onClick = { onSave(note) },
                     colors = ButtonDefaults.buttonColors(containerColor = Ink),
                 ) {
-                    Text("Save", color = Paper)
+                    Text(t("Save"), color = Paper)
                 }
             }
         }

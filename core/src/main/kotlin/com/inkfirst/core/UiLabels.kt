@@ -175,6 +175,27 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "RECAP",
     "FIGURE",
     "Delete this note",
+    // The chip over a pen mark offers this beside "Ask about this" and "Add
+    // note", which were declared from the start — so a Russian book showed
+    // two translated buttons and an English one. A bare verb, separate from
+    // "Delete this note": that one names its object because it sits in a
+    // list of notes, and this one acts on the mark you are looking at.
+    "Delete",
+    // The chapter that has not been written yet. It is a page OF THE BOOK —
+    // it carries the running head and the chapter number — so it speaks the
+    // book's language like the rest of the furniture.
+    "Back",
+    "Try again",
+    "Compile chapter",
+    // The overlays that sit ON the page: writing a note, reading one back,
+    // and the Ask panel. They are the book's furniture as much as the block
+    // labels are — "Cancel" and "Save" were even DECLARED already and simply
+    // never wired, which is the same miss as the block labels in September.
+    "Close",
+    "Type your note…",
+    "Ask a question…",
+    "Older",
+    "Newer",
     // The exported book — see [EpubExport]. An EPUB is still the book, so it
     // speaks the book's language like every other piece of its furniture.
     "Export this book",

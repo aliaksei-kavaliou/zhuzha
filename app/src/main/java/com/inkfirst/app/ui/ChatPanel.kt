@@ -203,7 +203,7 @@ fun ChatPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onClose) { Text("← Close", color = Ink) }
+                TextButton(onClick = onClose) { Text("← " + t("Close"), color = Ink) }
                 Spacer(Modifier.weight(1f))
                 // Says the gesture exists, and only while there is somewhere
                 // to go. Not a control — the feed is moved by swiping it,
@@ -215,10 +215,10 @@ fun ChatPanel(
                     // exactly what went wrong with the first pair. "Older" and
                     // "newer" name the axis and cannot be read backwards.
                     TextButton(onClick = showOlder) {
-                        Text("Older", color = Ink)
+                        Text(t("Older"), color = Ink)
                     }
                     TextButton(onClick = showNewer) {
-                        Text("Newer", color = Ink)
+                        Text(t("Newer"), color = Ink)
                     }
                     Spacer(Modifier.width(4.dp))
                 }
@@ -361,7 +361,7 @@ fun ChatPanel(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                    placeholder = { Text("Ask a question…") },
+                    placeholder = { Text(t("Ask a question…")) },
                     enabled = !pending,
                 )
                 Spacer(Modifier.width(8.dp))
