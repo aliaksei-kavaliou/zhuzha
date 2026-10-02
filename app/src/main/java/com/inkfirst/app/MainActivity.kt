@@ -4,6 +4,11 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -28,6 +33,7 @@ import com.inkfirst.app.ui.InkFirstTheme
 import com.inkfirst.app.ui.LibraryScreen
 import com.inkfirst.app.ui.NewCourseScreen
 import com.inkfirst.app.ui.PageKeys
+import com.inkfirst.app.ui.ReaderChrome
 import com.inkfirst.app.ui.ReaderNotesScreen
 import com.inkfirst.app.ui.ReaderScreen
 import com.inkfirst.app.ui.SearchScreen
@@ -58,6 +64,17 @@ private object Routes {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // EDGE TO EDGE, so a system bar PAINTS OVER the app instead of
+        // shrinking it. With the default (true) the window gives up its top
+        // 24dp whenever the status bar is visible, and in the reader that is
+        // not cosmetic: the paginator measures what is left, so the bar
+        // appearing took chapter 1 from 20 pages to 22 and back on close.
+        // Measured, 2026-10-02, before this line existed.
+        //
+        // The space is given back deliberately below, per route, which is
+        // what makes the reader able to keep the full height while every
+        // other screen still sits inside the bars.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             InkFirstTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -109,7 +126,12 @@ private fun InkFirstApp() {
     // keyed on the current route has no ordering to get wrong.
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val view = LocalView.current
-    LaunchedEffect(route) {
+    // Also keyed on the menu: opening it means you have stopped reading and
+    // started operating the app, which is when a clock is worth seeing. Free
+    // now that the window is edge-to-edge — the bar paints over the running
+    // head instead of pushing the page down.
+    val menuOpen = ReaderChrome.menuOpen
+    LaunchedEffect(route, menuOpen) {
         val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
         val bars = WindowCompat.getInsetsController(window, view)
         bars.systemBarsBehavior =
@@ -117,7 +139,7 @@ private fun InkFirstApp() {
         // The navigation bar always stays: the reader's only back affordance
         // is one "≡ Contents" link, and a screen you can get stuck in is worse
         // than a screen with a clock on it.
-        if (route == Routes.READER) {
+        if (route == Routes.READER && !menuOpen) {
             bars.hide(WindowInsetsCompat.Type.statusBars())
         } else {
             bars.show(WindowInsetsCompat.Type.statusBars())
@@ -154,6 +176,18 @@ private fun InkFirstApp() {
         }
     }
 
+    // Now that the window no longer reserves space for the bars, each screen
+    // asks for what it wants. Everything but the reader sits inside both bars,
+    // exactly where it sat before. The READER takes only the navigation bar:
+    // it hides the status bar anyway, and when the menu shows it again it must
+    // paint OVER the running head rather than push the page down.
+    //
+    // Net effect on heights: unchanged. A non-reader screen had
+    // screen − status − nav and still does; the reader had screen − nav and
+    // still does. The migration itself repaginates nothing.
+    val barInsets =
+        if (route == Routes.READER) WindowInsets.navigationBars else WindowInsets.systemBars
+    Box(Modifier.windowInsetsPadding(barInsets)) {
     NavHost(navController = nav, startDestination = Routes.LIBRARY) {
         composable(Routes.LIBRARY) {
             LibraryScreen(
@@ -284,5 +318,6 @@ private fun InkFirstApp() {
                 },
             )
         }
+    }
     }
 }

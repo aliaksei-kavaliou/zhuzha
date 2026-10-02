@@ -56,6 +56,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import android.graphics.Rect as AndroidRect
 import android.app.Activity
 import androidx.compose.ui.platform.LocalView
@@ -783,6 +784,14 @@ fun ReaderScreen(
     // language — the header, the page numbers, the menu over the page. The
     // Library and Settings that got here are not part of this and stay in
     // the reader's own language. See [LocalLabels].
+    // Reported, not decided: MainActivity owns the bars (see ReaderChrome).
+    // Cleared on the way out so a menu left open when you leave the chapter
+    // cannot strand the shelf without its status bar.
+    DisposableEffect(showFormatMenu) {
+        ReaderChrome.menuOpen = showFormatMenu
+        onDispose { ReaderChrome.menuOpen = false }
+    }
+
     CompositionLocalProvider(LocalLabels provides labels) {
     Box(
         modifier = Modifier
@@ -2323,7 +2332,19 @@ private fun ReaderHeader(
         // Above the header is 4dp rather than 8dp for the same reason: with
         // the status bar hidden the header sits at the very edge of the glass,
         // where there is nothing above it to be separated from.
-        modifier = modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+        // ONE STRIP, ONE OWNER AT A TIME. With the menu open the system bar
+        // paints across this row — it has to, since reserving space for it
+        // would push the page down and repaginate the chapter. Rather than
+        // let the clock cut through the glyphs, the running head stands down
+        // while the menu is up: you are operating the app, not reading, and
+        // the menu carries its own way to Contents.
+        //
+        // alpha, not a conditional: the row keeps its height, so nothing below
+        // it moves and the page count cannot change.
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (ReaderChrome.menuOpen) 0f else 1f)
+            .padding(top = 4.dp, bottom = 8.dp),
     ) {
         // Explicit-destination nav rather than popBackStack — the auto-resume
         // cold-start pushes Reader directly on top of Library with no

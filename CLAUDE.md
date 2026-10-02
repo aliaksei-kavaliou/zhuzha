@@ -799,6 +799,38 @@ yet" note that used to live here was two months stale.
       a drag inside the menu no longer closes it; a drag on the PAGE still closes it and does
       not also turn; swipe-to-turn still works with the menu closed; and the content genuinely
       scrolls once it overflows.
+- [x] **The window is edge-to-edge, so the bars can OVERLAY (2026-10-02)** — Aliaksei: "can
+      we overlay it instead of recalculating the pages, same as we do with our menu?" Yes,
+      and that one question named the whole problem. The menu can float because it is OURS,
+      drawn inside our window; the system bar is drawn above it, and whether our window
+      SHRINKS for it is `decorFitsSystemWindows`. It was the default `true`, so showing the
+      bar took the top 24dp away from the paginator.
+      **Measured before deciding, which is what settled it.** With the bar forced on, chapter
+      1 went 20 pages → 22, and the capture showed the content pushed DOWN rather than
+      covered. So tying the bar to the menu would have repaginated on every open and again on
+      every close. I had reasoned that correctly at first, then talked myself out of it after
+      the swipe test — a TRANSIENT bar (the top-edge swipe) overlays and does not reflow,
+      while a persistent `bars.show()` resizes. Two different things with one name.
+      `WindowCompat.setDecorFitsSystemWindows(window, false)` once, then the space is given
+      back PER ROUTE in the one place that already owns the bars: everything but the reader
+      pads for `systemBars`, the reader pads for `navigationBars` only. Net heights are
+      unchanged — a non-reader screen had screen − status − nav and still does, the reader had
+      screen − nav and still does — so **the migration itself repaginates nothing**, which was
+      the property to protect.
+      The menu now shows the clock, battery and wifi, which is what every reader app does:
+      opening the menu means you have stopped reading and started operating. **The running
+      head stands down while it is up** (`alpha`, not a conditional, so the row keeps its
+      height and nothing below it moves) — one strip, one owner at a time. Without that the
+      bar cut through the glyphs of "≡ Contents", which reads as a bug rather than a choice.
+      **Device-verified on both.** Emulator: menu closed 20 pages, menu open, closed again 20
+      pages; Library and Settings sit correctly inside the bars; the Contents screen's own
+      pagination stayed "Page 2 of 4". Boox: clock/wifi/80% appear with the menu, prose does
+      not move, and closing it brings the header back at "Page 13 of 15".
+      Worth knowing it was coming anyway: `targetSdk 35` makes edge-to-edge mandatory on
+      Android 15+, so this is the posture Google enforces shortly regardless.
+      Also learned: on Onyx a top-edge swipe does NOT peek at the status bar — it opens the
+      whole Control Center (wifi, Bluetooth, Front Light sliders). So before this change the
+      only way to check the time mid-chapter was to summon a settings panel over the page.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what
