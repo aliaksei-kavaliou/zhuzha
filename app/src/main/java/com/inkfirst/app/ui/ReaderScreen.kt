@@ -2082,14 +2082,26 @@ private fun PagedContent(
                             // of the two failed.
                             val enclosing = isEnclosingStroke(enriched)
                             val verticalMark = isVerticalMarkStroke(enriched)
+                            // A mark in the room the box offered you to work
+                            // in is an ANSWER, not a selection. Decided here
+                            // rather than inside the extractors because it
+                            // disqualifies the gesture outright, whichever
+                            // shape it had — a circle and a vertical line in
+                            // the grid are both the reader working.
+                            val inWorkingRoom = anchor != null && strokeIsInWorkingRoom(
+                                enriched, anchor, widthPx, measurer, density,
+                                fontScale, lineSpacing, badgeHeightPx,
+                            )
                             android.util.Log.d(
                                 "InkGesture",
                                 "stroke pts=${enriched.points.size} enclosing=$enclosing " +
                                     "vertical=$verticalMark " +
-                                    "text=${enriched.annotatedText?.take(40)?.ifBlank { "<blank>" } ?: "<null>"}",
+                                    "text=${enriched.annotatedText?.take(40)?.ifBlank { "<blank>" } ?: "<null>"} " +
+                                    "workingRoom=$inWorkingRoom",
                             )
                             if ((enclosing || verticalMark) &&
-                                !enriched.annotatedText.isNullOrBlank()
+                                !enriched.annotatedText.isNullOrBlank() &&
+                                !inWorkingRoom
                             ) {
                                 // No explicit unlock needed here, unlike the
                                 // tap chip: this fires at the end of a stroke,
@@ -4203,6 +4215,58 @@ private fun blockTextGeometry(
         }
         is Block.Rule -> null
     }
+}
+
+/**
+ * Is this mark the reader DOING the task rather than selecting part of it?
+ *
+ * An exercise offers room to work in below its question — a dot grid or ruled
+ * lines — and a mark made there is an answer, not a gesture. Without this,
+ * every circle of "draw ten circles on your page" popped the Ask/Note chip:
+ * the stroke is enclosing, it is anchored to the exercise block, and the
+ * near-miss fallback in [extractStrokeText] let it claim the last line of the
+ * question. Reported from the Boox 2026-10-02, drawing the ten circles.
+ *
+ * Asked GEOMETRICALLY rather than by "did the model mark this fence as a
+ * drawing task", because the room is offered whatever the treatment — you can
+ * write an answer on ruled lines and that is not a selection either.
+ *
+ * The test is the stroke's CENTRE, not its top: a circle drawn around the last
+ * line of the question dips below the text and must still count as marking it,
+ * while one drawn in the first row of the grid sits below the text even if its
+ * top edge grazes a descender.
+ */
+private fun strokeIsInWorkingRoom(
+    stroke: InkStroke,
+    block: Block,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    density: Density,
+    fontScale: Float,
+    lineSpacing: Float,
+    badgeHeightPx: (String) -> Float = { 0f },
+): Boolean {
+    val fence = block as? Block.CustomFence ?: return false
+    if (fence.kind != "exercise") return false
+    if (fence.params["space"] == "none") return false
+    if (stroke.points.isEmpty() || widthPx <= 0) return false
+    val geometry = blockTextGeometry(
+        block, widthPx, density, measurer, fontScale, lineSpacing, badgeHeightPx,
+    ) ?: return false
+    if (geometry.plain.isBlank()) return false
+    val layout = measurer.measure(
+        text = AnnotatedString(geometry.plain),
+        style = geometry.style,
+        constraints = Constraints(maxWidth = geometry.widthPx),
+    )
+    var minY = Float.POSITIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    stroke.points.forEach { p ->
+        val y = p.y - geometry.topOffsetPx
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+    }
+    return (minY + maxY) / 2f > layout.size.height
 }
 
 private fun extractStrokeText(

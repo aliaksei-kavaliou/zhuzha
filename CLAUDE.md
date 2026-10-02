@@ -685,6 +685,29 @@ yet" note that used to live here was two months stale.
       came off the cable before the build went over. Expect the ladder never to fire there:
       the box already fit with room to spare at the old size.
 
+- [x] **A mark in the working room is an answer, not a selection (2026-10-02)** — Aliaksei,
+      doing the ten-circles exercise on the Boox: "I got chip appeared all the time". Every
+      circle he drew AS THE ANSWER popped the Ask/Add-note chip. The gesture test already
+      required a shape AND text — `(enclosing || verticalMark) && !annotatedText.isNullOrBlank()`
+      — and the text half was passing, because a circle in the grid is anchored to the
+      exercise block and the near-miss fallback let it claim the question's last line; a
+      vertical mark did worse, reading ACROSS blocks and quoting a confident, wrong passage
+      from a neighbour. So the guard was there and the thing it guarded against was not
+      "no text" but "text the reader never pointed at".
+      `strokeIsInWorkingRoom` is the third test: a mark whose vertical CENTRE is below the
+      question text of a box that offers room is the reader working. Asked GEOMETRICALLY
+      rather than from the `space` param, because the room is offered whatever the treatment
+      — writing an answer on ruled lines is not a selection either. Centre rather than top,
+      so a circle drawn AROUND the last line still marks it while one in the first grid row
+      does not. Decided at the dispatch site rather than inside the extractors, since it
+      disqualifies the gesture whatever shape it had.
+      **Verified on the emulator by injecting stylus events**: a vertical mark in the grid
+      produces `workingRoom=true` and no chip (the log shows it still resolved text, which
+      is exactly the trap), and a margin bar on a prose page still produces `workingRoom=false`
+      and its chip. **NOT verified: a deliberate underline or circle INSIDE an exercise's
+      question**, which must still raise the chip. The emulator cannot answer it — injected
+      stylus events mis-anchor (seen anchoring to block 15 while the page showed 10-11), and
+      the real path is the Onyx overlay. **Check that on the Boox before trusting this.**
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening
