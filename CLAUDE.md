@@ -719,23 +719,30 @@ yet" note that used to live here was two months stale.
       chapter byline (Chapter {n} · ~{n} min · Day {n}), and the words the EPUB carries
       (Exercise, Recap, Answers, Answer {n}, Your notes, Your questions, Contents). It had
       been 98.
-      The other ~80 moved to `res/values/strings.xml` plus `values-ru`, following the DEVICE
-      language like every reader app. That is better engineering on its own: deterministic,
+      The other ~80 moved to `res/values/strings.xml`, following the DEVICE language like
+      every reader app. That is better engineering on its own: deterministic,
       free, offline, reviewable before it ships — the Greek-omicron bug was in the runtime
       path, and a silent homoglyph in a menu is worse than in a heading — and plural-aware if
       we ever need it. Runtime translation stays for the book's 17 because **the set of BOOK
       languages is open-ended and the set of UI languages is not**: someone will ask for a
       Spanish book tomorrow, and we can ship UI for the languages we choose.
-      **Moving the line without `values-ru` would have been a regression for the only user**,
-      which is the trap worth recording: today's design gave Aliaksei a Russian UI for Russian
-      books BY ACCIDENT, and convention-correct + English-only is worse for him than what he
-      had. The two halves are one change.
-      **Device-verified on the emulator, both ways.** Default locale: `Contents` / `Ch 1/7` /
-      `Page 9 of 20`, and `TRY THIS` in the English book. Switched to Russian with
-      `adb shell cmd locale set-app-locales com.inkfirst --locales ru`: `≡ Содержание`,
-      `Гл. 1/7`, `Стр. 9 / 20`, the whole menu Russian — while the English book's prose AND
-      its `TRY THIS` label stayed English, because the BOOK is English. That is exactly the
-      Kindle model.
+      **The UI is ENGLISH ONLY, and that is a decision rather than an omission.** A
+      `values-ru` was written and deleted the same day, Aliaksei's call: he is a native
+      Russian speaker who runs his devices in English, the testers are English-speaking, and
+      the reason worth keeping is that **Russian labels run long and Cyrillic sits poorly in a
+      cramped interface**. I had argued the opposite an hour earlier — that moving the line
+      without a Russian UI would be a regression, since the old design gave him a Russian
+      interface for Russian books by accident. He was better placed to judge it, and the
+      accident was never something he wanted. A book written in Russian is still Russian; it
+      is the SHELF that stays English. Another language later is one `values-xx` folder, and
+      the Russian that existed is recoverable from the commit that removed it.
+      **Device-verified on the emulator at three points.** With `values-ru` present and the
+      app forced to Russian via `adb shell cmd locale set-app-locales com.inkfirst --locales
+      ru`, the chrome read `≡ Содержание` / `Гл. 1/7` / `Стр. 9 / 20` while the English book's
+      prose AND its `TRY THIS` label stayed English — proving the split works in both
+      directions, which is the Kindle model. After deleting `values-ru`, the same forced-ru
+      run comes back `Contents` / `Ch 1/7` / `Page 9 of 20`: the English fallback is real and
+      not merely the absence of an alternative.
       `BookChromeLiteralsTest` now guards both halves: no bare literal in a book screen (it
       must be `t(…)` or `stringResource`), nothing declared for per-book translation that no
       book prints, and every `values-*` translation complete with matching placeholders — a
