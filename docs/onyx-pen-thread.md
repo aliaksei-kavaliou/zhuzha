@@ -771,3 +771,62 @@ Recorded because being wrong in writing is the point of this file:
 Both were settled by one log line — `contact down tool=` on every contact, not only on the
 rejected ones. "Ink only from the pen" is decided entirely by that number and it was invisible
 except on rejection. Keep it.
+
+## T9 · CLI → device · 2026-10-02 (reading session: working room, chip ghost)
+
+### A mark in the working room is an answer, not a selection — CLOSED
+
+Every circle of "draw ten circles on your page" raised the Ask/Add-note chip. The gesture test
+already demanded a shape AND text, and the text half was passing: a circle in the grid anchors
+to the exercise block, and the near-miss fallback let it claim the last line of the question.
+A vertical mark did worse — `extractMarkedPassage` reads across blocks, so it returned a
+confident, wrong quote from a neighbouring paragraph. What the guard needed to exclude was
+never "no text", it was "text the reader never pointed at".
+
+`strokeIsInWorkingRoom` is the third test: a mark whose vertical CENTRE sits below the question
+text of a box that offers room is the reader doing the task. Geometric rather than reading the
+`space` param, because the room is offered whatever the treatment. Centre rather than top, so a
+circle drawn AROUND the last line still marks it. **Confirmed on the device with the real pen.**
+
+Still unconfirmed: a deliberate underline or circle INSIDE an exercise's question, which must
+still raise the chip. The emulator cannot answer it — injected stylus events mis-anchor (seen
+picking block 15 while the page showed blocks 10-11).
+
+### The chip ghost was PEN INK ON THE CHIP — and two timing theories were wrong first
+
+Reported: a chip ghost that appears "randomly, and only with the stylus, not a finger tap", on
+Delete and on Cancel.
+
+I was wrong twice before Aliaksei named it.
+
+1. **"The close does not wait for the frame."** The repaint effect waits two frames on open and
+   none on close, so I made it wait on both. Wrong, and already written down: T8 records that
+   two frames prove Compose has drawn the frame, not that the controller has taken it, which is
+   why `chipClose` is deliberately held OUT of `IMMEDIATE_REASONS` to wait out the debounce
+   instead. The change also delayed QUEUEING the rect, opening a new race. Reverted, with the
+   reason left in the code so it is not re-added.
+2. **"The chipClose unlock is being cancelled."** Every `scheduleUnlock` cancels the last, so a
+   pen event inside the 200ms kills the chip's unlock and leaves its repaint armed but
+   unperformed. That mechanism is REAL and still latent — but it was not this symptom, and
+   shipping it alongside the actual fix would have made neither testable. Reverted and kept as
+   the next candidate if ghosting survives.
+
+**The cause:** `setLimitRect(bounds, emptyList())`. The second argument is the exclude list and
+had always been empty. Raw drawing is a hardware path — the driver inks wherever the pen lands
+inside the limit rect, below Android's framebuffer, regardless of what Compose drew on top. So
+tapping the chip's buttons with the stylus left a real pen mark ON the pill, and the driver's
+own copy outlived the chip.
+
+It explains what neither timing theory could: why only the stylus (a finger does not ink), and
+why it was random (it depends where on the button the nib lands and how far it moves).
+
+The chip is cut out of the drawable region while it is up, padded like a repaint rect, and the
+page is given back when it closes. **NOT yet confirmed — a ghost lives on the panel and
+`screencap` reads the framebuffer, where the chip is already gone. The new
+`limitRect(…) holes=[…]` log line is the half that can be checked without eyes on the glass.**
+
+### Method note
+
+The device tip stands and earned its place again: a ghost invisible to `screencap` is driver
+ink or EPD residue, never app state. What it cannot tell you is WHICH — that took the exclude
+list being empty, which is a thing to read rather than measure.

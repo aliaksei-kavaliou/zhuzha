@@ -835,6 +835,27 @@ yet" note that used to live here was two months stale.
       Also learned: on Onyx a top-edge swipe does NOT peek at the status bar — it opens the
       whole Control Center (wifi, Bluetooth, Front Light sliders). So before this change the
       only way to check the time mid-chapter was to summon a settings panel over the page.
+- [ ] **Chip ghost: the stylus inks ON the chip — fix shipped, NOT yet confirmed
+      (2026-10-02)** — Aliaksei: the chip ghosts "randomly, and only with the stylus, not a
+      finger tap", on Delete and on Cancel. His diagnosis, after two wrong ones from me:
+      **the pen draws on the chip.** `setLimitRect(bounds, emptyList())` — the second argument
+      is the exclude list and had always been empty. Raw drawing is a HARDWARE path, so the
+      driver inks wherever the nib lands inside the limit rect, below Android's framebuffer
+      and regardless of what Compose drew on top. The mark then outlives the chip, because the
+      driver keeps its own copy on the panel.
+      It explains what neither timing theory could: why only the stylus (a finger does not
+      ink), and why it is random (where on the button the nib lands, and how far it moves).
+      The chip is now cut out of the drawable region while it is up, padded like a repaint
+      rect. **Unconfirmed**: a ghost lives on the panel and `screencap` reads the framebuffer,
+      where the chip is already gone — so this needs eyes on the glass. The new
+      `limitRect(…) holes=[…]` log line is the half that can be checked without them.
+      **Two reverted theories, kept because the next person will have them too** — both are
+      written up in `docs/onyx-pen-thread.md` §T9. (1) "the close does not wait for the frame"
+      — already refuted by §T8, which is why `chipClose` is held out of `IMMEDIATE_REASONS`;
+      (2) "the chipClose unlock gets cancelled" — a REAL and still-latent mechanism (every
+      `scheduleUnlock` cancels the last, so a pen event inside the 200ms leaves the repaint
+      armed but unperformed), just not this symptom. It is the next candidate if ghosting
+      survives.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

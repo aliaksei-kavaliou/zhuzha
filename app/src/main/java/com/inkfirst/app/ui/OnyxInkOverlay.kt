@@ -188,6 +188,7 @@ internal fun OnyxInkOverlay(
     val resolveSwipeRef = rememberUpdatedState(resolveSwipe)
     val drawEnabledRef = rememberUpdatedState(drawingEnabled)
     val chipRectRef = rememberUpdatedState(chipRect)
+    val chipOpenRef = rememberUpdatedState(chipOpen)
     val tapActionRef = rememberUpdatedState(onTapAction)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
@@ -230,6 +231,13 @@ internal fun OnyxInkOverlay(
     val eraseEndedAtRef = remember { mutableStateOf(0L) }
     /** Set once the SurfaceView is built, so the interop filter can ask for an unlock. */
     val unlockRequestRef = remember { mutableStateOf<((String) -> Unit)?>(null) }
+
+    /**
+     * Re-applies the drawable region, so the chip can be cut out of it while
+     * it is up. Same shape as [unlockRequestRef]: the function lives inside
+     * the AndroidView, where the TouchHelper and the surface are.
+     */
+    val limitRectRequestRef = remember { mutableStateOf<((String) -> Unit)?>(null) }
     /**
      * Whether a repaint is owed, tracked separately from the unlock job that
      * asked for it. Unlock jobs supersede one another — each one cancels the
@@ -423,6 +431,11 @@ internal fun OnyxInkOverlay(
             // it. Without this the FIRST chip of a session repainted the
             // fallback band — a quarter of the screen — because the effect
             // ran before onGloballyPositioned had said where the chip was.
+            //
+            // Deliberately NOT done on close: see IMMEDIATE_REASONS, where
+            // "chipClose" is held out of the immediate set so its unlock waits
+            // out the debounce. Two frames here would only delay QUEUEING the
+            // rect, which risks another scheduleUnlock running first.
             if (chipOpen) {
                 withFrameNanos {}
                 withFrameNanos {}
@@ -450,6 +463,10 @@ internal fun OnyxInkOverlay(
                     ),
                 )
             }
+            // Cut the pill out of the drawable region while it is up, and
+            // give the page back when it goes. Without this the driver inks
+            // the reader's own tap onto the chip, and that mark outlives it.
+            limitRectRequestRef.value?.invoke(if (chipOpen) "chipShow" else "chipClose")
             unlockRequestRef.value?.invoke(if (chipOpen) "chipShow" else "chipClose")
         }
         chipWasOpenRef.value = chipOpen
@@ -1325,7 +1342,38 @@ internal fun OnyxInkOverlay(
                                 val loc = IntArray(2)
                                 surface.getLocationOnScreen(loc)
                                 val bounds = AndroidRect(0, 0, surface.width, surface.height)
-                                helper?.setLimitRect(bounds, emptyList())
+                                // THE CHIP IS A HOLE, NOT A SURFACE. Raw
+                                // drawing is a hardware path: the driver inks
+                                // wherever the pen lands inside the limit rect,
+                                // below Android's framebuffer and regardless of
+                                // what Compose has drawn on top. So tapping the
+                                // chip's Delete or Cancel with the STYLUS left a
+                                // real pen mark on the pill — which is what the
+                                // "chip ghost" was. Aliaksei's diagnosis, and it
+                                // explains the two things my timing theories did
+                                // not: why only the stylus, never a finger, and
+                                // why it was random (it depends where on the
+                                // button the nib lands and how much it moves).
+                                //
+                                // The second argument of setLimitRect is exactly
+                                // for this and had always been emptyList().
+                                // Padded like a repaint rect, so a nib landing
+                                // on the pill's edge is excluded too.
+                                val holes = chipRectRef.value
+                                    ?.takeIf { chipOpenRef.value }
+                                    ?.let {
+                                        listOf(
+                                            AndroidRect(
+                                                it.left - REPAINT_PAD_PX.toInt(),
+                                                it.top - REPAINT_PAD_PX.toInt(),
+                                                it.right + REPAINT_PAD_PX.toInt(),
+                                                it.bottom + REPAINT_PAD_PX.toInt(),
+                                            ),
+                                        )
+                                    }
+                                    .orEmpty()
+                                helper?.setLimitRect(bounds, holes)
+                                Log.d(TAG, "limitRect($reason) holes=$holes")
                                 Log.d(TAG, "  (view origin on screen = ${loc[0]},${loc[1]})")
                                 if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
                                 Log.d(TAG, "limitRect($reason) viewLocal=$bounds")
@@ -1342,7 +1390,8 @@ internal fun OnyxInkOverlay(
                                 helper?.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
                                 if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
                                 Log.d(TAG, "TouchHelper opened ${width}x$height")
-                                applyLimitRect("created")
+                                limitRectRequestRef.value = { why -> applyLimitRect(why) }
+                            applyLimitRect("created")
                             } catch (t: Throwable) {
                                 Log.w(TAG, "TouchHelper init failed", t)
                             }
