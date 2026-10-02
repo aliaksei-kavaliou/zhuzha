@@ -32,6 +32,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.R
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -203,7 +205,7 @@ fun ChatPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onClose) { Text("← " + t("Close"), color = Ink) }
+                TextButton(onClick = onClose) { Text("← " + stringResource(R.string.close), color = Ink) }
                 Spacer(Modifier.weight(1f))
                 // Says the gesture exists, and only while there is somewhere
                 // to go. Not a control — the feed is moved by swiping it,
@@ -215,10 +217,10 @@ fun ChatPanel(
                     // exactly what went wrong with the first pair. "Older" and
                     // "newer" name the axis and cannot be read backwards.
                     TextButton(onClick = showOlder) {
-                        Text(t("Older"), color = Ink)
+                        Text(stringResource(R.string.older), color = Ink)
                     }
                     TextButton(onClick = showNewer) {
-                        Text(t("Newer"), color = Ink)
+                        Text(stringResource(R.string.newer), color = Ink)
                     }
                     Spacer(Modifier.width(4.dp))
                 }
@@ -361,7 +363,7 @@ fun ChatPanel(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                    placeholder = { Text(t("Ask a question…")) },
+                    placeholder = { Text(stringResource(R.string.ask_a_question)) },
                     enabled = !pending,
                 )
                 Spacer(Modifier.width(8.dp))

@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.R
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -190,7 +192,7 @@ fun CourseDetailScreen(
                 // Same idea as the Reader's "≡ Contents" — label the destination
                 // instead of the direction. Popping back from Contents lands on
                 // the Library shelf.
-                TextButton(onClick = onBack) { Text("≡ " + t("Library"), color = Ink) }
+                TextButton(onClick = onBack) { Text("≡ " + stringResource(R.string.library), color = Ink) }
             }
 
             val c = course
@@ -238,8 +240,23 @@ fun CourseDetailScreen(
                             .toMap()
                     }
             }
-            val tocBlocks = remember(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter, labels) {
-                buildTocBlocks(c, effectiveCurrentSlug, readerNoteCount, questionsByChapter, labels)
+            // Resolved here rather than inside buildTocBlocks: that function is
+            // pure and unit-tested, and stringResource is @Composable.
+            val tocWords = TocWords(
+                contents = stringResource(R.string.contents_heading),
+                notes = stringResource(R.string.notes),
+                questions = stringResource(R.string.questions),
+                bookmarks = stringResource(R.string.bookmarks),
+                summary = { ch, mins, days ->
+                    context.getString(R.string.course_summary, ch, mins, days)
+                },
+            )
+            val tocBlocks = remember(
+                c, effectiveCurrentSlug, readerNoteCount, questionsByChapter, labels, tocWords,
+            ) {
+                buildTocBlocks(
+                    c, effectiveCurrentSlug, readerNoteCount, questionsByChapter, labels, tocWords,
+                )
             }
 
             PagedContents(
@@ -266,26 +283,48 @@ fun CourseDetailScreen(
     }
 }
 
+/**
+ * The app's words for the contents screen's own headings.
+ *
+ * [buildTocBlocks] is pure and unit-tested, so it cannot read resources
+ * itself. The screen fills this in from `R.string`; the defaults are the
+ * English the tests assert against.
+ */
+internal data class TocWords(
+    val contents: String = "Contents",
+    val notes: String = "Notes",
+    val questions: String = "Questions",
+    val bookmarks: String = "Bookmarks",
+    val summary: (chapters: Int, minutes: Int, days: Int) -> String =
+        { c, m, d -> "$c chapters · $m min/day · ~$d days" },
+)
+
 internal fun buildTocBlocks(
     course: Course,
     currentChapterSlug: String?,
     readerNoteCount: Int,
     questionsByChapter: Map<String, Map<String, String>> = emptyMap(),
-    /** The book's own words for its section headings — see [LocalLabels]. */
+    /**
+     * The BOOK's words — only the schedule label, which is part of the chapter
+     * byline and travels into the EPUB. See [LocalLabels].
+     */
     labels: UiLabels = UiLabels.ENGLISH,
+    /**
+     * The APP's words for the screen's own headings.
+     *
+     * Passed in rather than read from resources because this function is pure
+     * and unit-tested; `stringResource` is @Composable and would make it
+     * neither. English defaults keep the tests reading as prose.
+     */
+    words: TocWords = TocWords(),
 ): List<TocBlock> {
     val blocks = mutableListOf<TocBlock>()
     val totalDays = totalCourseDays(course)
     blocks += TocBlock.BookTitle(
         title = course.title,
-        subtitle = labels.t(
-            "{chapters} chapters · {minutes} min/day · ~{days} days",
-            "chapters" to course.chapters.size,
-            "minutes" to course.dailyMinutes,
-            "days" to totalDays,
-        ),
+        subtitle = words.summary(course.chapters.size, course.dailyMinutes, totalDays),
     )
-    blocks += TocBlock.SectionHeader(labels.t("Contents"))
+    blocks += TocBlock.SectionHeader(words.contents)
     val chaptersWithNotes = course.annotations.map { it.chapterSlug }.toSet()
     val schedule = courseDaySchedule(course).associateBy { it.chapterN }
     course.chapters.forEach { chapter ->
@@ -321,12 +360,12 @@ internal fun buildTocBlocks(
     // words rather than a passage they pointed at.
     val notes = inReadingOrder(course.annotations.filter { it.kind != "ask" })
     if (notes.isNotEmpty()) {
-        blocks += TocBlock.SectionHeader(labels.t("Notes"))
+        blocks += TocBlock.SectionHeader(words.notes)
         notes.forEach { blocks += TocBlock.NoteEntry(it, chapterLabel(it)) }
     }
     val questions = inReadingOrder(course.annotations.filter { it.kind == "ask" })
     if (questions.isNotEmpty()) {
-        blocks += TocBlock.SectionHeader(labels.t("Questions"))
+        blocks += TocBlock.SectionHeader(words.questions)
         questions.forEach { a ->
             blocks += TocBlock.QuestionEntry(
                 annotation = a,
@@ -336,7 +375,7 @@ internal fun buildTocBlocks(
         }
     }
     if (course.bookmarks.isNotEmpty()) {
-        blocks += TocBlock.SectionHeader(labels.t("Bookmarks"))
+        blocks += TocBlock.SectionHeader(words.bookmarks)
         course.bookmarks.forEach { bm ->
             val title = course.chapters.firstOrNull { it.slug == bm.chapterSlug }?.let {
                 "Ch ${it.n}: ${it.title}"
@@ -526,12 +565,12 @@ private fun PagedContents(
             ) {
                 Text(
                     text = if (pages.size <= 1) ""
-                    else t("Page {n} of {total}", "n" to pageIndex + 1, "total" to pages.size),
+                    else stringResource(R.string.page_n_of_total, pageIndex + 1, pages.size),
                     style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = if (pages.size > 1) t("tap ← / → edges to turn") else "",
+                    text = if (pages.size > 1) stringResource(R.string.tap_edges_to_turn) else "",
                     style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                     textAlign = TextAlign.End,
                 )
@@ -567,8 +606,8 @@ private fun RenderTocBlock(
 @Composable
 private fun ExportEntryBlock(onTap: () -> Unit) {
     EntryRow(
-        title = t("Export this book"),
-        subtitle = t("an EPUB for any e-reader"),
+        title = stringResource(R.string.export_this_book),
+        subtitle = stringResource(R.string.an_epub_for_any_e_reader),
         onTap = onTap,
     )
 }
@@ -611,13 +650,13 @@ private fun SearchEntryBlock(onTap: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = t("Search this book"),
+                text = stringResource(R.string.search_this_book),
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
                 color = Ink,
             )
             Text(
-                text = t("chapters, notes and questions"),
+                text = stringResource(R.string.chapters_notes_and_questions),
                 fontFamily = FontFamily.Serif,
                 fontStyle = FontStyle.Italic,
                 fontSize = 12.sp,
@@ -639,14 +678,14 @@ private fun ReaderNotesEntryBlock(entry: TocBlock.ReaderNotesEntry, onTap: () ->
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = t("How the reading has gone"),
+                text = stringResource(R.string.how_the_reading_has_gone),
                 fontFamily = FontFamily.Serif,
                 fontSize = 16.sp,
                 color = Ink,
             )
             Text(
                 text = when (entry.count) {
-                    0 -> t("nothing recorded yet")
+                    0 -> stringResource(R.string.nothing_recorded_yet)
                     1 -> "1 observation · feeds the next chapter"
                     else -> "${entry.count} observations · feed the next chapter"
                 },

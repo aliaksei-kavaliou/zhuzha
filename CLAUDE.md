@@ -708,30 +708,42 @@ yet" note that used to live here was two months stale.
       question**, which must still raise the chip. The emulator cannot answer it — injected
       stylus events mis-anchor (seen anchoring to block 15 while the page showed 10-11), and
       the real path is the Onyx overlay. **Check that on the Boox before trusting this.**
-- [x] **The book speaks its language on the chip and the overlays too, and a TEST now says
-      so (2026-10-02)** — the pen chip's "Delete" sat between a translated "Ask about this"
-      and a translated "Cancel", in English. Pulling that thread found eleven more: the whole
-      compile prompt ("Back", "Try again", "Compile chapter" — a page OF the book, it carries
-      the running head), every button on the note overlays, the Ask panel's "Older"/"Newer"
-      and its placeholder, and both note placeholders. **"Cancel" and "Save" were already
-      DECLARED and simply never wired**, which is exactly the September miss repeating.
-      The real fix is the guard, not the eleven. `BookChromeLiteralsTest` scans the book's
-      own screens for `Text("…")` literals and fails with file:line for any string not in
-      `BOOK_CHROME_STRINGS`. This defect had shipped three times, always silently — a label
-      that is never declared stays English in every translated book for ever, and nothing
-      downstream notices. `BOOK_CHROME_STRINGS`'s own doc argues a build-time source scan is
-      not worth it for deriving the LIST, and that still stands: this is the cheaper half,
-      which only refuses to let the two drift apart.
-      **It paid for itself on the first run**, catching two the hand-grep had missed because
-      they open with a glyph: `Text("← Close")` in the Ask panel and `Text("≡ Contents")` in
-      the notes screen. Both are now `"← " + t("Close")`, the pattern the reader header
-      already used.
-      Scope is the BOOK's screens only. Library, Settings, New course and Backup belong to
-      the person rather than to a book and stay in English — the line already drawn for
-      `language` and `units`.
-      **`ExportScreen` is NOT done and is deliberately left whole-English**: it has a dozen
-      literals including sentences, and a half-translated screen is worse than a consistent
-      English one. It is outside the test's list with this comment as the record.
+- [x] **The shelf is the shelf and the book is the book (2026-10-02)** — Aliaksei: "when I
+      read a Russian book on Kindle or iOS Books, they do not translate the app interface by
+      a book." He is right and that is the convention everywhere; InkFirst had the whole
+      interface following whichever book you opened, so the menu changed language per book.
+      **The line is now what gets TYPESET, not what is a control.** A string is the book's
+      when a printed copy would carry it, or when the exported EPUB does — there is no app
+      around an EPUB, so whatever it prints has to be the book's own language. That leaves 17
+      strings: the block labels (TRY THIS / RECAP / FIGURE / "(continued)" / Show answer), the
+      chapter byline (Chapter {n} · ~{n} min · Day {n}), and the words the EPUB carries
+      (Exercise, Recap, Answers, Answer {n}, Your notes, Your questions, Contents). It had
+      been 98.
+      The other ~80 moved to `res/values/strings.xml` plus `values-ru`, following the DEVICE
+      language like every reader app. That is better engineering on its own: deterministic,
+      free, offline, reviewable before it ships — the Greek-omicron bug was in the runtime
+      path, and a silent homoglyph in a menu is worse than in a heading — and plural-aware if
+      we ever need it. Runtime translation stays for the book's 17 because **the set of BOOK
+      languages is open-ended and the set of UI languages is not**: someone will ask for a
+      Spanish book tomorrow, and we can ship UI for the languages we choose.
+      **Moving the line without `values-ru` would have been a regression for the only user**,
+      which is the trap worth recording: today's design gave Aliaksei a Russian UI for Russian
+      books BY ACCIDENT, and convention-correct + English-only is worse for him than what he
+      had. The two halves are one change.
+      **Device-verified on the emulator, both ways.** Default locale: `Contents` / `Ch 1/7` /
+      `Page 9 of 20`, and `TRY THIS` in the English book. Switched to Russian with
+      `adb shell cmd locale set-app-locales com.inkfirst --locales ru`: `≡ Содержание`,
+      `Гл. 1/7`, `Стр. 9 / 20`, the whole menu Russian — while the English book's prose AND
+      its `TRY THIS` label stayed English, because the BOOK is English. That is exactly the
+      Kindle model.
+      `BookChromeLiteralsTest` now guards both halves: no bare literal in a book screen (it
+      must be `t(…)` or `stringResource`), nothing declared for per-book translation that no
+      book prints, and every `values-*` translation complete with matching placeholders — a
+      missing one falls back to English silently, which is the same failure the runtime
+      translator had and which resources do not fix by themselves.
+      **`ExportScreen` is still whole-English and still outside the test's list.** It has a
+      dozen literals including full sentences; a half-translated screen is worse than a
+      consistent one. Known and recorded, not forgotten.
 - [ ] **A rewrite keeps a cover drawn from an opening it no longer has** — the other half of
       the above, left undone on purpose. §1 keeps the cover and the closing picture through
       a rewrite because they came from the outline; they come from the chapter's opening

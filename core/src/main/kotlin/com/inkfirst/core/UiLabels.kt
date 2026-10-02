@@ -68,162 +68,68 @@ class UiLabels(translations: Map<String, String>) {
 }
 
 /**
- * Every string the book's own furniture shows, and therefore exactly what
- * gets sent for translation.
+ * Every string that is part of a BOOK, and therefore translated per course.
  *
- * Keeping the list here rather than scraping the UI means a new label has to
- * be added in two places. The alternative — deriving it from the code — was
- * not worth a build-time source scan for a list this size, and the failure
- * mode of forgetting is mild: the label stays English.
+ * THE LINE IS WHAT GETS TYPESET, NOT WHAT IS A CONTROL. A string belongs here
+ * when a printed copy would carry it, or when the exported EPUB does — there is
+ * no app around an EPUB, so whatever it prints has to be the book's own
+ * language. Block labels, the chapter byline and the exported words qualify.
  *
- * Counted strings are written so that a translation can avoid inflecting.
- * Russian needs three plural forms for "2 pages" and the app has no way to
- * choose between them, so the prompt asks for phrasings that work for any
- * number — the way e-readers write "Стр. 12 / 28" rather than a sentence.
+ * Everything else — the menu, the chip, the overlays, the page counter, the
+ * Library — belongs to the PERSON using the app and lives in
+ * `app/src/main/res/values/strings.xml`, following the device language the way
+ * every other reader does. A Russian novel on an English Kindle does not turn
+ * the menus Russian, and neither do we (2026-10-02; before that date this list
+ * held 98 strings and dragged the whole interface along with the book).
+ *
+ * Translated at RUNTIME by the model, unlike the app's own words, and that
+ * asymmetry is the point: the set of UI languages is ours to choose and ship,
+ * while the set of BOOK languages is open-ended — someone will ask for a
+ * Spanish book tomorrow. The cost of runtime translation (non-determinism, a
+ * call, no review before it ships) is worth paying for an open set and not for
+ * a closed one.
+ *
+ * Keeping the list here rather than scraping the UI means a new label has to be
+ * added in two places; `BookChromeLiteralsTest` is what stops the two drifting.
  */
 val BOOK_CHROME_STRINGS: List<String> = listOf(
-    // Where you are
-    "Contents",
-    "Library",
-    "Search",
-    "Page {n} of {total}",
-    "Ch {n}/{total}",
-    "You are here",
-    "Day {n}",
-    "Day {from}–{to}",
-    "~{n} min",
-    "Chapter {n}",
-    "unread",
-    "reading",
-    "done",
-    // The book's front matter
-    "{chapters} chapters · {minutes} min/day · ~{days} days",
-    "Search this book",
-    "chapters, notes and questions",
-    "How the reading has gone",
-    "nothing recorded yet",
-    "CONTENTS",
-    "Notes",
-    "Questions",
-    "Bookmarks",
-    "no question yet",
-    "tap ← / → edges to turn",
-    // The menu over the page
-    "Go to",
-    "Reading",
-    "Ask",
-    "Mark",
-    "Text",
-    "Font",
-    "Spacing",
-    "Align",
-    "Margin",
-    "Chapter",
-    "Figures",
-    "Opening",
-    "Closing",
-    "Badges",
-    "How it has gone",
-    "About this chapter",
-    "Bookmark this page",
-    "Remove bookmark",
-    "Tight",
-    "Normal",
-    "Relaxed",
-    "Left",
-    "Justify",
-    "Narrow",
-    "Wide",
-    "Notebook",
-    "Rewrite this chapter",
-    "Size, spacing, margins →",
-    "Pictures and rewrite →",
-    // The row's gutter already says WHAT is being drawn ("Figures", "Badges"),
-    // so the action needs no noun — which also means no plural to get wrong.
-    "Draw {n}",
-    "Draw opening picture",
-    "Draw closing picture",
-    "Redraw",
-    "Redraw this picture?",
-    "Which picture?",
-    "The one you have is replaced. This cannot be undone.",
-    "picture drawn",
-    "needs the chapter picture first",
+    // The block labels, set into the page itself. These were hardcoded English
+    // for the life of the app, so every exercise in a Russian book said "TRY
+    // THIS" — the one piece of the book nobody thought of as the book, because
+    // it is drawn as part of the page rather than as a control. Kept SHORT:
+    // they are set in small capitals in a narrow gutter, and a long word wraps.
+    "TRY THIS",
+    "RECAP",
+    "FIGURE",
     // A bordered block that ran past the foot of a page and carries on over
     // the leaf. A placeholder rather than a bare "(continued)" so a translator
     // can put it wherever their language wants it.
     "{label} (continued)",
-    // The closing picture is the cover's scene resolved, and it is briefed
-    // from the cover's own words — so redrawing the cover leaves it showing
-    // the previous metaphor. Said on the row rather than left to be noticed.
-    "no longer matches the opening",
-    "all drawn",
-    "all {n} drawn",
-    // Asking about a passage, and writing a note
-    "Ask about this",
-    "Add note",
-    "Cancel",
-    "Save",
+    // Inside the exercise box, so it is part of the block rather than a
+    // control beside it — and the EPUB prints its own form of the same thing.
     "Show answer",
-    // The labels printed on the blocks themselves. These were hardcoded
-    // English for the life of the app, so every exercise in a Russian book
-    // said "TRY THIS" — the one piece of book chrome nobody thought of as
-    // chrome, because it is drawn as part of the page rather than as a
-    // control. Kept SHORT: they are set in small capitals in a narrow
-    // gutter, and a long word there wraps.
-    "TRY THIS",
-    "RECAP",
-    "FIGURE",
-    "Delete this note",
-    // The chip over a pen mark offers this beside "Ask about this" and "Add
-    // note", which were declared from the start — so a Russian book showed
-    // two translated buttons and an English one. A bare verb, separate from
-    // "Delete this note": that one names its object because it sits in a
-    // list of notes, and this one acts on the mark you are looking at.
-    "Delete",
-    // The chapter that has not been written yet. It is a page OF THE BOOK —
-    // it carries the running head and the chapter number — so it speaks the
-    // book's language like the rest of the furniture.
-    "Back",
-    "Try again",
-    "Compile chapter",
-    // The overlays that sit ON the page: writing a note, reading one back,
-    // and the Ask panel. They are the book's furniture as much as the block
-    // labels are — "Cancel" and "Save" were even DECLARED already and simply
-    // never wired, which is the same miss as the block labels in September.
-    "Close",
-    "Type your note…",
-    "Ask a question…",
-    "Older",
-    "Newer",
-    // The exported book — see [EpubExport]. An EPUB is still the book, so it
-    // speaks the book's language like every other piece of its furniture.
-    "Export this book",
-    "an EPUB for any e-reader",
-    "Answers",
-    // The reader's footer, when a chapter is still missing pictures. Counted
-    // with the number AFTER the noun so no language has to inflect it.
-    "still to draw: {what}",
-    // "×{n}" rather than "{n} pictures", because a count in front of a noun
-    // inflects it in most languages and neither this app nor the reader can.
-    // It also has to JOIN cleanly: "still to draw: figures: 1" was the first
-    // attempt and reads as two labels stuck together.
-    "figures ×{n}",
-    "badges ×{n}",
-    "chapter picture",
-    "closing picture",
-    // The exported book names its blocks in words. On screen a badge carries
-    // that meaning; an EPUB has no badge, and a recap and an exercise are
-    // otherwise the same bordered paragraph. "{n}" must survive translation —
-    // see keepUsable — and must read correctly for ANY number, since neither
-    // this app nor the reader can inflect.
+    // The chapter byline: "Chapter 5 · ~15 min · Day 3". Typeset at the head of
+    // the chapter like a subtitle, and "Chapter {n}" travels into the EPUB.
+    // Counted strings are written so a translation can avoid inflecting:
+    // Russian needs three plural forms for "2 pages" and the app cannot choose
+    // between them, so the prompt asks for phrasings that work for any number.
+    "Chapter {n}",
+    "~{n} min",
+    "Day {n}",
+    "Day {from}–{to}",
+    // The exported book. An EPUB is the book with no app around it at all —
+    // whatever is printed in it has to be the book's language, because there is
+    // nothing else to fall back on. See [EpubExport].
+    "Contents",
     "Exercise",
     "Recap",
+    "Answers",
     "Answer {n}",
     "Your notes",
     "Your questions",
     "This copy includes your notes and questions.",
 )
+
 
 /** Whether a book's language needs any of this at all. */
 fun needsTranslation(language: String): Boolean =

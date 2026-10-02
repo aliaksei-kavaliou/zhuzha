@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,7 +97,7 @@ fun AddNoteOverlay(
                     .heightIn(min = 96.dp),
                 placeholder = {
                     Text(
-                        text = t("Type your note…"),
+                        text = stringResource(R.string.type_your_note),
                         fontFamily = FontFamily.Serif,
                         fontSize = 15.sp,
                         color = Muted,
@@ -119,7 +121,7 @@ fun AddNoteOverlay(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onCancel) {
-                    Text(t("Cancel"), color = Ink)
+                    Text(stringResource(R.string.cancel), color = Ink)
                 }
                 Spacer(Modifier.padding(horizontal = 4.dp))
                 Button(
@@ -127,7 +129,7 @@ fun AddNoteOverlay(
                     onClick = { onSave(note) },
                     colors = ButtonDefaults.buttonColors(containerColor = Ink),
                 ) {
-                    Text(t("Save"), color = Paper)
+                    Text(stringResource(R.string.save), color = Paper)
                 }
             }
         }

@@ -18,6 +18,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.R
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -129,7 +131,7 @@ fun ReaderNotesScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
             ) {
-                TextButton(onClick = onBack) { Text("≡ " + t("Contents"), color = Ink) }
+                TextButton(onClick = onBack) { Text("≡ " + stringResource(R.string.contents), color = Ink) }
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = "How the reading has gone",

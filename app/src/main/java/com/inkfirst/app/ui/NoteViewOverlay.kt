@@ -17,6 +17,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -100,10 +102,10 @@ fun NoteViewOverlay(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onDelete) {
-                    Text(t("Delete"), color = Muted)
+                    Text(stringResource(R.string.delete), color = Muted)
                 }
                 TextButton(onClick = onClose) {
-                    Text(t("Close"), color = Ink)
+                    Text(stringResource(R.string.close), color = Ink)
                 }
             }
         }

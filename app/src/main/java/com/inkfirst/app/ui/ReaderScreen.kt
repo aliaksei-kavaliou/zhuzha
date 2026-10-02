@@ -42,6 +42,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.R
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -571,19 +573,28 @@ fun ReaderScreen(
     //
     // Null once everything exists: a finished book page should be a book
     // page, not a status board.
-    val picturesOutstanding =
-        remember(pendingFigures, hasCover, hasTail, pendingBadges, labels) {
-        val missing = buildList {
-            if (pendingFigures > 0) add(labels.t("figures ×{n}", "n" to pendingFigures))
-            if (!hasCover) add(labels.t("chapter picture"))
+    // Resolved OUTSIDE remember: stringResource is @Composable and a remember
+    // block is not a composable scope.
+    val figuresWord = stringResource(R.string.figures_count, pendingFigures)
+    val badgesWord = stringResource(R.string.badges_count, pendingBadges)
+    val coverWord = stringResource(R.string.chapter_picture)
+    val closingWord = stringResource(R.string.closing_picture)
+    val outstandingWords = remember(
+        pendingFigures, hasCover, hasTail, pendingBadges,
+        figuresWord, badgesWord, coverWord, closingWord,
+    ) {
+        buildList {
+            if (pendingFigures > 0) add(figuresWord)
+            if (!hasCover) add(coverWord)
             // The closing picture is the cover resolved, so it is not
             // outstanding until there is a cover for it to pay off.
-            if (hasCover && !hasTail) add(labels.t("closing picture"))
-            if (pendingBadges > 0) add(labels.t("badges ×{n}", "n" to pendingBadges))
+            if (hasCover && !hasTail) add(closingWord)
+            if (pendingBadges > 0) add(badgesWord)
         }
-        if (missing.isEmpty()) null
-        else labels.t("still to draw: {what}", "what" to missing.joinToString(" · "))
     }
+    val picturesOutstanding =
+        if (outstandingWords.isEmpty()) null
+        else stringResource(R.string.still_to_draw, outstandingWords.joinToString(" · "))
     val readerStatus = when (val state = compileState) {
         CompileState.Running -> "Rewriting this chapter…"
         is CompileState.Illustrating ->
@@ -987,13 +998,13 @@ fun ReaderScreen(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 TextButton(onClick = { askToolbar.ask() }) {
-                    Text(labels.t("Ask about this"), color = Paper)
+                    Text(stringResource(R.string.ask_about_this), color = Paper)
                 }
                 TextButton(onClick = { askToolbar.addNote() }) {
-                    Text(labels.t("Add note"), color = Paper)
+                    Text(stringResource(R.string.add_note), color = Paper)
                 }
                 TextButton(onClick = clearSelection) {
-                    Text(labels.t("Cancel"), color = Paper)
+                    Text(stringResource(R.string.cancel), color = Paper)
                 }
             }
         }
@@ -1036,7 +1047,7 @@ fun ReaderScreen(
                     consumeStroke(stroke)
                     pendingGestureStroke = null
                 }) {
-                    Text(labels.t("Ask about this"), color = Paper)
+                    Text(stringResource(R.string.ask_about_this), color = Paper)
                 }
                 TextButton(onClick = {
                     pendingNoteQuote = text
@@ -1046,7 +1057,7 @@ fun ReaderScreen(
                     pendingNoteStroke = stroke
                     pendingGestureStroke = null
                 }) {
-                    Text(labels.t("Add note"), color = Paper)
+                    Text(stringResource(R.string.add_note), color = Paper)
                 }
                 TextButton(onClick = {
                     val updated = strokes - stroke
@@ -1054,10 +1065,10 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     pendingGestureStroke = null
                 }) {
-                    Text(labels.t("Delete"), color = Paper)
+                    Text(stringResource(R.string.delete), color = Paper)
                 }
                 TextButton(onClick = { pendingGestureStroke = null }) {
-                    Text(labels.t("Cancel"), color = Paper)
+                    Text(stringResource(R.string.cancel), color = Paper)
                 }
             }
         }
@@ -1086,14 +1097,14 @@ fun ReaderScreen(
                         consumeStroke(stroke)
                         viewingStroke = null
                     }) {
-                        Text(labels.t("Ask about this"), color = Paper)
+                        Text(stringResource(R.string.ask_about_this), color = Paper)
                     }
                     TextButton(onClick = {
                         pendingNoteQuote = blockText
                         pendingNoteStroke = stroke
                         viewingStroke = null
                     }) {
-                        Text(labels.t("Add note"), color = Paper)
+                        Text(stringResource(R.string.add_note), color = Paper)
                     }
                 }
                 TextButton(onClick = {
@@ -1102,10 +1113,10 @@ fun ReaderScreen(
                     store.saveStrokes(courseSlug, chapterSlug, updated)
                     viewingStroke = null
                 }) {
-                    Text(labels.t("Delete"), color = Paper)
+                    Text(stringResource(R.string.delete), color = Paper)
                 }
                 TextButton(onClick = { viewingStroke = null }) {
-                    Text(labels.t("Cancel"), color = Paper)
+                    Text(stringResource(R.string.cancel), color = Paper)
                 }
             }
         }
@@ -1185,9 +1196,9 @@ fun ReaderScreen(
                 pickingRedraw = false
             } else {
                 InkChoiceDialog(
-                    title = t("Which picture?"),
+                    title = stringResource(R.string.which_picture),
                     onDismiss = { pickingRedraw = false },
-                    dismissLabel = t("Cancel"),
+                    dismissLabel = stringResource(R.string.cancel),
                 ) {
                     Column(
                         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1244,9 +1255,9 @@ fun ReaderScreen(
                 confirmingRedraw = null
             } else {
                 InkDialog(
-                    title = t("Redraw this picture?"),
+                    title = stringResource(R.string.redraw_this_picture),
                     onDismiss = { confirmingRedraw = null },
-                    confirmLabel = t("Redraw") + " · ${pictureCost(1)}",
+                    confirmLabel = stringResource(R.string.redraw) + " · ${pictureCost(1)}",
                     onConfirm = {
                         confirmingRedraw = null
                         store.deleteChapterPicture(c.slug, ch.slug, closing = closing)
@@ -1274,10 +1285,10 @@ fun ReaderScreen(
                             )
                         }
                     },
-                    dismissLabel = t("Cancel"),
+                    dismissLabel = stringResource(R.string.cancel),
                 ) {
                     Text(
-                        text = t("The one you have is replaced. This cannot be undone."),
+                        text = stringResource(R.string.the_one_you_have_is_replaced_this_cannot_be_undone),
                         fontFamily = FontFamily.Serif,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -2241,7 +2252,7 @@ private fun PagedContent(
                 ) {
                     Text(
                         text = if (pages.isEmpty()) ""
-                        else t("Page {n} of {total}", "n" to pageIndex + 1, "total" to pages.size),
+                        else stringResource(R.string.page_n_of_total, pageIndex + 1, pages.size),
                         style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                         modifier = Modifier.weight(1f),
                     )
@@ -2336,12 +2347,12 @@ private fun ReaderHeader(
                 .clickable { onOpenContents() }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            Text("≡ " + t("Contents"), color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("≡ " + stringResource(R.string.contents), color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
         Spacer(Modifier.weight(1f))
         if (chapterN != null && chapterCount != null) {
             Text(
-                text = t("Ch {n}/{total}", "n" to chapterN, "total" to chapterCount),
+                text = stringResource(R.string.ch_n_of_total, chapterN, chapterCount),
                 style = MaterialTheme.typography.bodySmall.copy(color = Muted),
                 // Only a SEPARATOR from the ribbon, so it exists only when the
                 // ribbon does. Unconditional, it held the chapter counter 8dp
@@ -2469,14 +2480,14 @@ private fun FormatMenu(
 
     MenuSheet(modifier = modifier) {
         // Contents jump
-        MenuRow(label = t("Go to")) {
+        MenuRow(label = stringResource(R.string.go_to)) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenContents() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = t("Contents"),
+                    text = stringResource(R.string.contents),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2490,7 +2501,7 @@ private fun FormatMenu(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = t("Search"),
+                    text = stringResource(R.string.search),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2502,14 +2513,14 @@ private fun FormatMenu(
         // cross a line out. Reachable from the page as well as from Contents
         // on purpose: the moment you want to argue with an observation is the
         // moment you are reading the chapter it shaped.
-        MenuRow(label = t("Reading")) {
+        MenuRow(label = stringResource(R.string.reading)) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenReaderNotes() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = t("How it has gone"),
+                    text = stringResource(R.string.how_it_has_gone),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2518,14 +2529,14 @@ private fun FormatMenu(
         }
 
         // Ask about this chapter (general Q&A, no selection)
-        MenuRow(label = t("Ask")) {
+        MenuRow(label = stringResource(R.string.ask)) {
             Box(
                 modifier = Modifier
                     .clickable { onAskAboutChapter() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = t("About this chapter"),
+                    text = stringResource(R.string.about_this_chapter),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2534,14 +2545,14 @@ private fun FormatMenu(
         }
 
         // Bookmark toggle for the current page.
-        MenuRow(label = t("Mark")) {
+        MenuRow(label = stringResource(R.string.mark)) {
             Box(
                 modifier = Modifier
                     .clickable(enabled = canBookmark) { onToggleBookmark() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = if (isBookmarked) t("Remove bookmark") else t("Bookmark this page"),
+                    text = if (isBookmarked) stringResource(R.string.remove_bookmark) else stringResource(R.string.bookmark_this_page),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (canBookmark) Ink else Muted,
@@ -2558,14 +2569,14 @@ private fun FormatMenu(
         // rows below them fall off the bottom. It costs a tap, which font
         // size can afford: it is a set-once decision in practice (design.md
         // §11), unlike Contents or Ask which are used on every page.
-        MenuRow(label = t("Text")) {
+        MenuRow(label = stringResource(R.string.text)) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenTypeTools() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = t("Size, spacing, margins →"),
+                    text = stringResource(R.string.size_spacing_margins),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2584,14 +2595,14 @@ private fun FormatMenu(
         //
         // The row carries the drawing status when there is one, so progress
         // is visible from here without opening the panel to watch it.
-        MenuRow(label = t("Chapter")) {
+        MenuRow(label = stringResource(R.string.chapter)) {
             Box(
                 modifier = Modifier
                     .clickable { onOpenChapterTools() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = figureStatus ?: t("Pictures and rewrite →"),
+                    text = figureStatus ?: stringResource(R.string.pictures_and_rewrite),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2659,7 +2670,7 @@ private fun TypeToolsMenu(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "← " + t("Reading"),
+                    text = "← " + stringResource(R.string.reading),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2669,7 +2680,7 @@ private fun TypeToolsMenu(
 
         MenuDivider()
 
-        MenuRow(label = t("Font")) {
+        MenuRow(label = stringResource(R.string.font)) {
             TextButton(onClick = onFontSmaller, enabled = canShrink) {
                 Text("A−", fontSize = 16.sp, color = if (canShrink) Ink else Muted)
             }
@@ -2684,7 +2695,7 @@ private fun TypeToolsMenu(
         }
 
         // Line spacing
-        MenuRow(label = t("Spacing")) {
+        MenuRow(label = stringResource(R.string.spacing)) {
             ReaderPrefs.LINE_SPACINGS.forEachIndexed { i, v ->
                 SelectableChip(
                     label = ReaderPrefs.LINE_SPACING_LABELS[i],
@@ -2695,7 +2706,7 @@ private fun TypeToolsMenu(
         }
 
         // Alignment
-        MenuRow(label = t("Align")) {
+        MenuRow(label = stringResource(R.string.align)) {
             TextAlignPref.entries.forEach { pref ->
                 SelectableChip(
                     label = pref.label,
@@ -2708,7 +2719,7 @@ private fun TypeToolsMenu(
         // Margin — symmetric side padding. "Wide" doubles as marginalia
         // space for pen notes; "Narrow" maximizes text density. Reflows the
         // whole chapter on change (paginator reads content width).
-        MenuRow(label = t("Margin")) {
+        MenuRow(label = stringResource(R.string.margin)) {
             ReaderPrefs.HORIZONTAL_PADDINGS.forEachIndexed { i, v ->
                 SelectableChip(
                     label = ReaderPrefs.HORIZONTAL_PADDING_LABELS[i],
@@ -2772,7 +2783,7 @@ private fun ChapterToolsMenu(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = "← " + t("Reading"),
+                    text = "← " + stringResource(R.string.reading),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink,
@@ -2785,14 +2796,14 @@ private fun ChapterToolsMenu(
         // The repair mechanism the generate-a-book premise needs: the model
         // will occasionally write a dud, and without this the reader's only
         // option is to live with it for the rest of the course.
-        MenuRow(label = t("Chapter")) {
+        MenuRow(label = stringResource(R.string.chapter)) {
             Box(
                 modifier = Modifier
                     .clickable(enabled = !busyDrawing) { onRewriteChapter() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = t("Rewrite this chapter"),
+                    text = stringResource(R.string.rewrite_this_chapter),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (busyDrawing) Muted else Ink,
@@ -2832,13 +2843,13 @@ private fun ChapterToolsMenu(
                 // until the house style changed and there was no way to apply
                 // it. The row reports when there is nothing outstanding AND
                 // offers to redraw; the picker names which picture.
-                MenuRow(label = t("Figures")) {
+                MenuRow(label = stringResource(R.string.figures)) {
                     MenuAction(
                         text = figureStatus ?: when {
                             pendingFigures == 0 ->
-                                t("all {n} drawn", "n" to figureSlots) + " · " + t("Redraw")
+                                stringResource(R.string.all_n_drawn, figureSlots) + " · " + stringResource(R.string.redraw)
                             else ->
-                                t("Draw {n}", "n" to pendingFigures) +
+                                stringResource(R.string.draw_n, pendingFigures) +
                                     " · ${pictureCost(pendingFigures)}"
                         },
                         enabled = !busyDrawing && figureStatus == null,
@@ -2851,14 +2862,14 @@ private fun ChapterToolsMenu(
             // disappears when drawn, it sits permanently above Rewrite, which is
             // also a chapter-level action — two rows labelled "Chapter" doing
             // unrelated things. Opening/Closing reads as the pair it is.
-            MenuRow(label = t("Opening")) {
+            MenuRow(label = stringResource(R.string.opening)) {
                 MenuAction(
                     // A row that reports can also offer. Drawn rows used to be
                     // dead ends: the only way to replace a picture was to
                     // rewrite the chapter, which deliberately KEEPS its
                     // pictures, so a wrong one was permanent.
-                    text = if (hasCover) t("Redraw") + " · ${pictureCost(1)}"
-                    else t("Draw opening picture") + " · ${pictureCost(1)}",
+                    text = if (hasCover) stringResource(R.string.redraw) + " · ${pictureCost(1)}"
+                    else stringResource(R.string.draw_opening_picture) + " · ${pictureCost(1)}",
                     enabled = !busyDrawing,
                     onClick = if (hasCover) onRedrawCover else onDrawCover,
                 )
@@ -2867,15 +2878,15 @@ private fun ChapterToolsMenu(
             // The closing picture is the cover's scene resolved rather than a
             // picture in its own right, so it cannot be drawn first. Saying that
             // beats offering nothing and leaving the gap unexplained.
-            MenuRow(label = t("Closing")) {
+            MenuRow(label = stringResource(R.string.closing)) {
                 MenuAction(
                     text = when {
                         hasTail && tailStale ->
-                            t("no longer matches the opening") + " · " +
-                                t("Redraw") + " · ${pictureCost(1)}"
-                        hasTail -> t("Redraw") + " · ${pictureCost(1)}"
-                        !hasCover -> t("needs the chapter picture first")
-                        else -> t("Draw closing picture") + " · ${pictureCost(1)}"
+                            stringResource(R.string.no_longer_matches_the_opening) + " · " +
+                                stringResource(R.string.redraw) + " · ${pictureCost(1)}"
+                        hasTail -> stringResource(R.string.redraw) + " · ${pictureCost(1)}"
+                        !hasCover -> stringResource(R.string.needs_the_chapter_picture_first)
+                        else -> stringResource(R.string.draw_closing_picture) + " · ${pictureCost(1)}"
                     },
                     enabled = !busyDrawing && hasCover,
                     onClick = if (hasTail) onRedrawTail else onDrawTail,
@@ -2885,12 +2896,12 @@ private fun ChapterToolsMenu(
             // The book's mascot badges — the small marks on exercise and recap
             // blocks. Drawn once for the whole course, so after the first chapter
             // this row is a report rather than an offer.
-            MenuRow(label = t("Badges")) {
+            MenuRow(label = stringResource(R.string.badges)) {
                 MenuAction(
                     text = if (pendingBadges == 0) {
-                        t("all drawn")
+                        stringResource(R.string.all_drawn)
                     } else {
-                        t("Draw {n}", "n" to pendingBadges) +
+                        stringResource(R.string.draw_n, pendingBadges) +
                             " · ${pictureCost(pendingBadges)}"
                     },
                     enabled = !busyDrawing && pendingBadges > 0,
@@ -4693,10 +4704,10 @@ private fun CompilePrompt(
         // follows this automatically.
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 36.dp),
     ) {
-        TextButton(onClick = onBack) { Text("← " + t("Back"), color = Ink) }
+        TextButton(onClick = onBack) { Text("← " + stringResource(R.string.back), color = Ink) }
         Spacer(Modifier.weight(1f))
         Text(
-            text = t("Ch {n}/{total}", "n" to chapter.n, "total" to chapterCount),
+            text = stringResource(R.string.ch_n_of_total, chapter.n, chapterCount),
             style = MaterialTheme.typography.bodySmall.copy(color = Muted),
         )
     }
@@ -4812,7 +4823,7 @@ private fun CompilePrompt(
                 onClick = onCompile,
                 colors = ButtonDefaults.buttonColors(containerColor = Ink),
             ) {
-                Text(t("Try again"), color = Paper)
+                Text(stringResource(R.string.try_again), color = Paper)
             }
         }
         CompileState.Idle -> {
@@ -4820,7 +4831,7 @@ private fun CompilePrompt(
                 onClick = onCompile,
                 colors = ButtonDefaults.buttonColors(containerColor = Ink),
             ) {
-                Text(t("Compile chapter"), color = Paper)
+                Text(stringResource(R.string.compile_chapter), color = Paper)
             }
         }
     }
