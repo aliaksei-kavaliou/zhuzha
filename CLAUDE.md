@@ -917,6 +917,45 @@ yet" note that used to live here was two months stale.
       edges, so it would have reinstated exactly the land-whole-or-look-broken problem the frame
       had.
       The EPUB keeps its boxes deliberately: it is reflowable, so it never had this problem.
+- [x] **The rule IS the title block and the footer (2026-10-06)** — Aliaksei on the frameless
+      version: "for me it lost visual attraction. Maybe we can play with Title block and add
+      some footer, to have visual block on the page." He also asked for a UI review, and the
+      review found the flaw in that plan before a line of it was written: **a header appears
+      once at the start and a footer once at the end, so the MIDDLE page of a block spanning
+      three pages gets neither** — and the middle page is exactly the orphaned one. The device
+      has to be continuous ALONG the block, not attached to its ends.
+      A marginal rule is, and it subsumes what he asked for: **its top is the header and its
+      foot is the footer**, and because it sits beside the text it costs zero vertical space on
+      every page it touches — the resource this whole redesign was fighting for. 2dp black,
+      inside the text column with the content stepped in 14dp (the change bar of technical
+      setting, plus the set-off extract). **The foot turns right 14dp only on the piece where
+      the block ends**, so "no foot" means "carries on over the leaf": one bit of information,
+      carried by geometry, costing no words and no height. Inside the text column rather than
+      the page margin deliberately — the outer margin is where a pen mark MEANS something here,
+      and a printed rule out there invites tracing.
+      RECAP gets the same instrument with a DASHED stroke: a different speech act (the book
+      summarising itself, nothing to make, nothing to reveal) deserves a lighter claim, and
+      dashed rather than dotted because dots already mean "write here" in this app.
+      The block label went from `Muted` to black: the frame used to carry the block and the
+      label could afford to be quiet, but it is half the signal now — and grey is the one thing
+      this panel cannot render.
+      **The indent narrows the measure, so `FLOW_INDENT_DP` is duplicated in the paginator with
+      a comment saying it must agree** — an estimate that measures at one width while the
+      renderer draws at another is this file's recurring bug.
+- [x] **The dot grid is centred, and the answer says which word is the label (2026-10-06)** —
+      both from Aliaksei reading the frameless version. The grid's columns started one step in
+      from the left and stopped wherever the last one fell short of the right edge, so the
+      margins were a full step on one side and the remainder on the other, under text that is
+      flush to both. Rows had the same bias. It takes as many columns as fit now and shares the
+      remainder equally, both ways.
+      "Answer label probably needs to be bold" — it is, and the fix uncovered a localisation
+      bug beside it: the prefix was a hardcoded English `"Answer: "`, so **a Russian book
+      revealed its answers in English while its own EPUB printed them in Russian**. It is a
+      book-chrome string now (`"Answer:"`, colon included, since French wants a space before it
+      and some scripts want none), threaded into the paginator too — the estimate measures the
+      revealed answer, so it needs the same word the renderer draws. With no frame, the bold
+      label is also what marks where the answer starts: a run of italic that merely continues
+      reads as more task.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

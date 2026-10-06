@@ -69,6 +69,8 @@ fun paginate(
     hasFigureImage: (String) -> Boolean = { false },
     hasBadge: (String) -> Boolean = { false },
     inkTopMarginPx: Int = 0,
+    /** The book's own word for "Answer:", measured as the renderer draws it. */
+    answerPrefix: String = "Answer:",
 ): List<List<PageItem>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) {
         return listOf(blocks.mapIndexed { i, b -> PageItem(b, i) })
@@ -109,7 +111,7 @@ fun paginate(
         val atTop = pages.last().isEmpty()
         val h = estimateHeight(
             block, contentWidthPx, density, measurer, fontScale, lineSpacing,
-            hasFigureImage, hasBadge, atPageTop = atTop,
+            hasFigureImage, hasBadge, atPageTop = atTop, answerPrefix = answerPrefix,
         )
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
@@ -130,14 +132,14 @@ fun paginate(
                 minOf(
                     estimateHeight(
                         next, contentWidthPx, density, measurer, fontScale, lineSpacing,
-                        hasFigureImage, hasBadge,
+                        hasFigureImage, hasBadge, answerPrefix = answerPrefix,
                     ),
                     lineHeightPx * MIN_SPLIT_LINES,
                 )
             } else {
                 estimateHeight(
                     next, contentWidthPx, density, measurer, fontScale, lineSpacing,
-                    hasFigureImage, hasBadge,
+                    hasFigureImage, hasBadge, answerPrefix = answerPrefix,
                 )
             }
             if (h + nextH <= budget) h + nextH else h
@@ -267,14 +269,14 @@ fun paginate(
                 best = room
                 bestH = estimateHeight(
                     room, contentWidthPx, density, measurer, fontScale, lineSpacing,
-                    hasFigureImage, hasBadge, atPageTop = true,
+                    hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
                 )
             }
             if (bestH > budget && best.params[FENCE_PLAIN_ANSWER] == null) {
                 val plain = best.copy(params = best.params + (FENCE_PLAIN_ANSWER to "1"))
                 val plainH = estimateHeight(
                     plain, contentWidthPx, density, measurer, fontScale, lineSpacing,
-                    hasFigureImage, hasBadge, atPageTop = true,
+                    hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
                 )
                 if (plainH < bestH) {
                     best = plain
@@ -363,7 +365,7 @@ fun paginate(
                 relaxed = bare
                 relaxedH = estimateHeight(
                     bare, contentWidthPx, density, measurer, fontScale, lineSpacing,
-                    hasFigureImage, hasBadge, atPageTop = true,
+                    hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
                 )
             }
             if (relaxed != null && relaxedH <= budget) {
@@ -702,9 +704,8 @@ private fun splitFence(
     val text = question.trim()
     if (text.isBlank()) return null
 
-    // Full width: a flow block has no frame to sit inside. Must match the
-    // estimate and the renderer, or the line count drifts between them.
-    val innerWidth = widthPx.coerceAtLeast(1)
+    // Stepped in from the marginal rule, exactly as the renderer does it.
+    val innerWidth = (widthPx - FLOW_INDENT_DP.dp.toPx().toInt()).coerceAtLeast(1)
     val style = TextStyle(
         fontSize = 17.sp * fontScale,
         lineHeight = 28.sp * fontScale * lineSpacing,
@@ -907,6 +908,16 @@ private fun sliceInlines(inlines: List<Inline>, from: Int, to: Int): List<Inline
 private const val MIN_SPLIT_LINES = 2
 
 /**
+ * The step from a flow block's marginal rule to its text, in dp.
+ *
+ * Duplicated from `FLOW_RULE_INDENT` in ReaderScreen rather than shared,
+ * because that one is private to the renderer — but they MUST agree: the
+ * estimate measures the task at this width and the renderer draws it at that
+ * one, and a disagreement shows up as a clipped last line.
+ */
+internal const val FLOW_INDENT_DP = 14
+
+/**
  * Returns the page index that contains the block at [blockIndex]. Purely
  * arithmetic: sum block counts across pages until we find the range that
  * contains the index. Works whether pages was rebuilt with fresh block
@@ -1013,6 +1024,7 @@ private fun estimateHeight(
     hasFigureImage: (String) -> Boolean,
     hasBadge: (String) -> Boolean = { false },
     atPageTop: Boolean = false,
+    answerPrefix: String = "Answer:",
 ): Int = with(density) {
     when (block) {
         is Block.Heading -> {
@@ -1129,7 +1141,12 @@ private fun estimateHeight(
             // runs the full width of the page like the prose around it. Code
             // and undrawn-figure fallbacks keep their box and their inset.
             val flows = block.kind == "exercise" || block.kind == "recap"
-            val innerWidth = if (flows) widthPx else widthPx - 24.dp.toPx().toInt()
+            // A flow block has no frame, but it IS stepped in from its
+            // marginal rule, and the step narrows the measure. Must match
+            // FLOW_RULE_INDENT in the renderer or the line count drifts.
+            val innerWidth =
+                if (flows) widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
+                else widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
                 else -> block.body.trim()
@@ -1206,7 +1223,7 @@ private fun estimateHeight(
             val revealedHeight = if (hasAnswer && showsReveal) {
                 val gap = if (answerBadge > 0) answerBadge + 10.dp.toPx().toInt() else 0
                 val measured = measurer.measure(
-                    text = AnnotatedString(parseInlines("Answer: $answerText").plainText()),
+                    text = AnnotatedString(parseInlines("$answerPrefix $answerText").plainText()),
                     style = TextStyle(
                         fontSize = 16.sp * fontScale,
                         lineHeight = 26.sp * fontScale * lineSpacing,

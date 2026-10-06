@@ -1672,7 +1672,15 @@ private fun PagedContent(
             val textInsetPx = with(density) { horizontalPadding.dp.toPx() }
             val availableHeightPx = with(density) { (maxHeight - 40.dp).toPx().toInt() }
 
-            val pages = remember(blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion) {
+            // The answer's label is typeset into the page, so it is the
+            // book's word, not the app's — and the paginator measures the
+            // revealed answer, so it needs the same one. In the remember key
+            // because a book whose labels arrive late must repaginate.
+            val answerPrefix = labels.t("Answer:")
+            val pages = remember(
+                blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion,
+                answerPrefix,
+            ) {
                 paginate(
                     blocks = blocks,
                     contentWidthPx = widthPx,
@@ -1684,6 +1692,7 @@ private fun PagedContent(
                     hasFigureImage = hasFigureImage,
                     hasBadge = hasBadge,
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
+                    answerPrefix = answerPrefix,
                 )
             }
             // Page index is view state; the block anchor is for persistence
@@ -3339,6 +3348,7 @@ private fun ExerciseBlock(
         label = labels.t("TRY THIS"),
         fontScale = fontScale,
         badge = loadBadge("exercise"),
+        closer = !isHead,
         // A continuation says nothing at all. With no frame there is no open
         // edge to explain and no box to reintroduce: the italic simply
         // carries on over the leaf, the way a paragraph does.
@@ -3433,7 +3443,17 @@ private fun ExerciseBlock(
                         )
                     }
                     Text(
-                        text = renderInlines(parseInlines("Answer: $answer")),
+                        // The label in bold, the answer in italic like the
+                        // task it belongs to. With no frame to mark where the
+                        // answer starts, the word has to do it: a run of
+                        // italic that merely continues reads as more task.
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                append(labels.t("Answer:"))
+                            }
+                            append(" ")
+                            append(renderInlines(parseInlines(answer)))
+                        },
                         fontFamily = FontFamily.Serif,
                         fontSize = 16.sp * fontScale,
                         lineHeight = 26.sp * fontScale * lineSpacing,
@@ -3518,14 +3538,26 @@ private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
             // what dot-grid paper actually uses, so it reads as a guide
             // rather than as decoration.
             val radius = maxOf(1.dp.toPx(), 1.5f)
-            var y = step
-            while (y <= size.height + 0.5f) {
-                var x = step
-                while (x < size.width) {
-                    drawCircle(Ink, radius, Offset(x, y))
-                    x += step
+            // CENTRED, both ways. The columns used to start one step in from
+            // the left and stop wherever the last one fell short of the right
+            // edge, so the margins were a full step on the left and whatever
+            // was left over on the right — the grid read as shoved sideways
+            // under text that is flush to both margins. Rows had the same
+            // bias: a step of air at the top and none at the bottom, with the
+            // last row sitting exactly on the edge of the band.
+            //
+            // Take as many columns as fit, then share the remainder equally.
+            val cols = (size.width / step).toInt().coerceAtLeast(1)
+            val spanX = cols * step
+            val x0 = (size.width - spanX) / 2f
+            val spanY = (lines - 1) * step
+            val y0 = (size.height - spanY) / 2f
+            for (r in 0 until lines) {
+                for (c in 0..cols) {
+                    val x = x0 + c * step
+                    if (x < -0.5f || x > size.width + 0.5f) continue
+                    drawCircle(Ink, radius, Offset(x, y0 + r * step))
                 }
-                y += step
             }
             return@Canvas
         }
@@ -3565,6 +3597,13 @@ private fun RecapBlock(
         fontScale = fontScale,
         badge = loadBadge("recap"),
         opener = !isTail,
+        closer = f.params[FENCE_CONT_TO] == null,
+        // DASHED, because a recap is a different speech act: the book
+        // summarising itself, with nothing to make and nothing to reveal.
+        // Same instrument, lighter claim. Dashed rather than dotted on
+        // purpose — dots already mean "write here" in this app, and reusing
+        // them on the chrome would collide with the working room.
+        dashed = true,
     ) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
@@ -3733,13 +3772,66 @@ private fun FlowBlock(
     badge: ImageBitmap? = null,
     /** False on a piece that began on the page before. */
     opener: Boolean = true,
+    /** True on the piece the block ENDS on: the rule turns its foot. */
+    closer: Boolean = true,
+    /** A lighter claim on the reader — see [RecapBlock]. */
+    dashed: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // THE RULE IS THE HEADER AND THE FOOTER AT ONCE, which is why it is a
+    // rule and not the two devices it replaces. A title band appears once at
+    // the start and a footer once at the end — so the MIDDLE page of a block
+    // that runs over three pages would get neither, and the middle page is
+    // exactly the one that reads as orphaned. A marginal rule is continuous
+    // along the block, so every page it touches is marked, and because it
+    // sits BESIDE the text it costs no vertical space on any of them — the
+    // resource this whole redesign was fighting for.
+    //
+    // The convention is the change bar of technical setting, plus the
+    // set-off extract: a passage stepped in from the measure needs neither a
+    // box nor quotation marks. The foot is the end-bracket of marginal
+    // annotation: it turns right only on the piece where the block ends, so
+    // "no foot" means "carries on over the leaf" — one bit of information,
+    // carried by geometry, costing no words and no height.
+    //
+    // Inside the text column rather than out in the page margin, deliberately:
+    // the outer margin is where a pen mark MEANS something in this app (a
+    // passage-marking gesture), and a printed rule out there invites the
+    // reader to trace it.
+    val strokePx = with(LocalDensity.current) { FLOW_RULE_WIDTH.toPx() }
+    val footPx = with(LocalDensity.current) { FLOW_RULE_INDENT.toPx() }
+    val dashes = if (dashed) {
+        PathEffect.dashPathEffect(
+            floatArrayOf(with(LocalDensity.current) { 10.dp.toPx() }, with(LocalDensity.current) { 6.dp.toPx() }),
+            0f,
+        )
+    } else {
+        null
+    }
     Spacer(Modifier.height(4.dp))
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 8.dp)
+            .drawBehind {
+                val x = strokePx / 2f
+                drawLine(
+                    color = Ink,
+                    start = Offset(x, 0f),
+                    end = Offset(x, size.height),
+                    strokeWidth = strokePx,
+                    pathEffect = dashes,
+                )
+                if (closer) {
+                    drawLine(
+                        color = Ink,
+                        start = Offset(0f, size.height - strokePx / 2f),
+                        end = Offset(footPx, size.height - strokePx / 2f),
+                        strokeWidth = strokePx,
+                    )
+                }
+            }
+            .padding(start = FLOW_RULE_INDENT),
     ) {
         if (opener) {
             Row(
@@ -3761,13 +3853,25 @@ private fun FlowBlock(
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp * fontScale,
-                    color = Muted,
+                    letterSpacing = 1.5.sp,
+                    // Black. The frame used to carry the block and the label
+                    // could afford to be quiet; now the label is half the
+                    // signal, and grey is the one thing this panel cannot
+                    // render — it thresholds and dithers, so Muted at 11sp
+                    // is noise rather than softness.
+                    color = Ink,
                 )
             }
         }
         content()
     }
 }
+
+/** The marginal rule's weight. Never below one physical pixel on the panel. */
+private val FLOW_RULE_WIDTH = 2.dp
+
+/** How far the block's content steps in from its rule. */
+private val FLOW_RULE_INDENT = 14.dp
 
 @Composable
 private fun BorderedBlock(

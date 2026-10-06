@@ -125,6 +125,12 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "Recap",
     "Answers",
     "Answer {n}",
+    // The reader's own revealed answer, printed on the page above whatever
+    // the reader wrote by hand. It was a hardcoded "Answer: " literal until
+    // 2026-10-06, so a Russian book revealed its answers in English while its
+    // own EPUB printed them in Russian. The colon is inside the string: a
+    // French translator wants a space before it, and some scripts want none.
+    "Answer:",
     "Your notes",
     "Your questions",
     "This copy includes your notes and questions.",
