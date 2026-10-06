@@ -32,6 +32,22 @@ internal val Ink = Color(0xFF000000)
 internal val Paper = Color(0xFFFFFFFF)
 internal val Muted = Color(0xFF555555)
 internal val Hairline = Color(0xFF888888)
+
+/**
+ * The recap block's wash. The ONE grey in the app, and it is on probation.
+ *
+ * E-ink has no grey: the panel thresholds and dithers, which is why a
+ * 0.75dp grey dot vanished on the Boox and had to become a black one. A
+ * large FILL is a different case — the Go 7 has 16 levels, so a light wash
+ * can land on a real level instead of disappearing — but it is a different
+ * case in THEORY, and the emulator renders it perfectly either way, so the
+ * emulator cannot tell us. Verify on the panel before trusting it.
+ *
+ * Light enough to keep black text at full contrast, dark enough not to
+ * quantise straight to paper. If it dithers into noise, the fallback is the
+ * dashed marginal rule this replaced, which is known to work.
+ */
+internal val Wash = Color(0xFFE8E8E8)
 internal val Scrim = Color(0x40000000)
 
 /**

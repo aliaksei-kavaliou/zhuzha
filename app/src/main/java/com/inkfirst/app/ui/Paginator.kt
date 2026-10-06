@@ -719,7 +719,7 @@ private fun splitFence(
     // What the head spends before a word of body is drawn. The answer button
     // is NOT in it — the head never shows one — but the label row is, because
     // the head keeps the block's name and its mascot.
-    val labelTextHeight = (11.sp.toPx() * fontScale).toInt()
+    val labelTextHeight = (FLOW_LABEL_SP.sp.toPx() * fontScale).toInt()
     val badgeKind = badgeKindFor(block.kind)
     val badgeHeight =
         if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
@@ -916,6 +916,19 @@ private const val MIN_SPLIT_LINES = 2
  * one, and a disagreement shows up as a clipped last line.
  */
 internal const val FLOW_INDENT_DP = 14
+
+/**
+ * Air between a washed block's edge and its text, in dp. Mirrors `WASH_PAD`.
+ */
+internal const val WASH_PAD_DP = 10
+
+/**
+ * A block label's type size, in sp. Mirrors `FLOW_LABEL_SP`.
+ *
+ * Was 11 while the label sat inside a box that did the signalling. It is half
+ * the signal now, so it is bigger — Aliaksei, reading the ruled version.
+ */
+internal const val FLOW_LABEL_SP = 13
 
 /**
  * Returns the page index that contains the block at [blockIndex]. Purely
@@ -1144,9 +1157,12 @@ private fun estimateHeight(
             // A flow block has no frame, but it IS stepped in from its
             // marginal rule, and the step narrows the measure. Must match
             // FLOW_RULE_INDENT in the renderer or the line count drifts.
-            val innerWidth =
-                if (flows) widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
-                else widthPx - 24.dp.toPx().toInt()
+            val washed = block.kind == "recap"
+            val innerWidth = when {
+                washed -> widthPx - 2 * WASH_PAD_DP.dp.toPx().toInt()
+                flows -> widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
+                else -> widthPx - 24.dp.toPx().toInt()
+            }
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
                 else -> block.body.trim()
@@ -1173,7 +1189,7 @@ private fun estimateHeight(
             )
             // The label row is as tall as the taller of its two children —
             // the label text, or the mascot badge sitting beside it.
-            val labelTextHeight = (11.sp.toPx() * fontScale).toInt()
+            val labelTextHeight = (FLOW_LABEL_SP.sp.toPx() * fontScale).toInt()
             val badgeKind = badgeKindFor(block.kind)
             val badgeHeight =
                 if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
@@ -1276,7 +1292,11 @@ private fun estimateHeight(
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
             val outerSpacers = 8.dp.toPx().toInt()
             val wrapperVPad = 16.dp.toPx().toInt()
-            val borderInner = if (flows) 0 else 24.dp.toPx().toInt()
+            val borderInner = when {
+                washed -> 2 * WASH_PAD_DP.dp.toPx().toInt()
+                flows -> 0
+                else -> 24.dp.toPx().toInt()
+            }
             // The two 8dp gaps an exercise puts around its working room. They
             // used to hide inside the border's padding; with the frame gone
             // they have to be counted, and counting them errs tall, which is

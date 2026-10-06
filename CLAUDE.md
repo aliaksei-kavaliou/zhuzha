@@ -956,6 +956,25 @@ yet" note that used to live here was two months stale.
       revealed answer, so it needs the same word the renderer draws. With no frame, the bold
       label is also what marks where the answer starts: a run of italic that merely continues
       reads as more task.
+- [x] **A recap is washed, a task is ruled (2026-10-06)** — Aliaksei, looking at the ruled
+      version: "I would do recap without a border but with light gray background. As for try
+      this section just a vertical line will be enough probably, maybe the labels for the
+      blocks could be bigger."
+      **The recap is the one block a wash is safe on, and the reason is his own earlier one:
+      nothing is ever written on top of it.** He rejected a grey background that morning with
+      "we won't be able to draw on it" — true of an exercise, which offers working room, and
+      not true of a recap, which offers none. So the two blocks now differ by instrument rather
+      than by stroke: TRY THIS keeps the marginal rule, RECAP gets a `Wash` fill with 10dp of
+      air and corners rounded only where the block actually begins and ends, so a recap cut
+      across a page runs off the edge and reads as "carries on" instead of as a broken border.
+      Labels go 11sp → 13sp: they were sized when a frame did the signalling and they are half
+      the signal now.
+      **`Wash` (0xFFE8E8E8) is the one grey in the app and it is ON PROBATION.** E-ink
+      thresholds and dithers — that is why a grey dot had to become a black one in September —
+      but a large FILL is a different case in theory, since the Go 7 has 16 levels and a light
+      wash may land on a real one. In theory. **The emulator renders it perfectly either way,
+      so the emulator cannot answer this**; it needs the panel. If it dithers into noise the
+      fallback is the dashed marginal rule it replaced, which is one line and known to work.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

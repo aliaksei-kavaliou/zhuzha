@@ -65,6 +65,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -3598,12 +3600,13 @@ private fun RecapBlock(
         badge = loadBadge("recap"),
         opener = !isTail,
         closer = f.params[FENCE_CONT_TO] == null,
-        // DASHED, because a recap is a different speech act: the book
-        // summarising itself, with nothing to make and nothing to reveal.
-        // Same instrument, lighter claim. Dashed rather than dotted on
-        // purpose — dots already mean "write here" in this app, and reusing
-        // them on the chrome would collide with the working room.
-        dashed = true,
+        // WASHED rather than ruled. Aliaksei's call: a recap is the one block
+        // a wash is safe on, because it has no working room — nothing is ever
+        // written on top of it, which is the objection that rules a grey fill
+        // out everywhere else in this app. It also reads as a different
+        // speech act at a glance: the book summarising itself, where TRY THIS
+        // asks you for something.
+        wash = true,
     ) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
@@ -3776,6 +3779,12 @@ private fun FlowBlock(
     closer: Boolean = true,
     /** A lighter claim on the reader — see [RecapBlock]. */
     dashed: Boolean = false,
+    /**
+     * Fill the block instead of ruling it. A recap has no working room, so
+     * nothing is ever written on top of it — which is the objection that
+     * ruled a wash out everywhere else.
+     */
+    wash: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     // THE RULE IS THE HEADER AND THE FOOTER AT ONCE, which is why it is a
@@ -3808,12 +3817,37 @@ private fun FlowBlock(
     } else {
         null
     }
+    val cornerPx = with(LocalDensity.current) { 4.dp.toPx() }
     Spacer(Modifier.height(4.dp))
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             .drawBehind {
+                if (wash) {
+                    // A FILL HAS EDGES, so it has to handle a cut like the
+                    // box did — but far more gracefully, because a wash that
+                    // runs off the page bottom reads as "carries on", where a
+                    // broken border reads as a rendering fault. Corners are
+                    // rounded only where the block actually begins and ends.
+                    val top = if (opener) cornerPx else 0f
+                    val bottom = if (closer) cornerPx else 0f
+                    drawRoundRect(
+                        color = Wash,
+                        cornerRadius = CornerRadius(maxOf(top, bottom)),
+                    )
+                    if (top == 0f || bottom == 0f) {
+                        // Square off the cut edge the rounding just softened.
+                        val fillTop = if (top == 0f) 0f else cornerPx
+                        val fillBottom = if (bottom == 0f) size.height else size.height - cornerPx
+                        drawRect(
+                            color = Wash,
+                            topLeft = Offset(0f, fillTop),
+                            size = Size(size.width, (fillBottom - fillTop).coerceAtLeast(0f)),
+                        )
+                    }
+                    return@drawBehind
+                }
                 val x = strokePx / 2f
                 drawLine(
                     color = Ink,
@@ -3831,7 +3865,12 @@ private fun FlowBlock(
                     )
                 }
             }
-            .padding(start = FLOW_RULE_INDENT),
+            .padding(
+                start = if (wash) WASH_PAD else FLOW_RULE_INDENT,
+                end = if (wash) WASH_PAD else 0.dp,
+                top = if (wash) WASH_PAD else 0.dp,
+                bottom = if (wash) WASH_PAD else 0.dp,
+            ),
     ) {
         if (opener) {
             Row(
@@ -3852,7 +3891,7 @@ private fun FlowBlock(
                     text = label,
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp * fontScale,
+                    fontSize = FLOW_LABEL_SP.sp * fontScale,
                     letterSpacing = 1.5.sp,
                     // Black. The frame used to carry the block and the label
                     // could afford to be quiet; now the label is half the
@@ -3872,6 +3911,9 @@ private val FLOW_RULE_WIDTH = 2.dp
 
 /** How far the block's content steps in from its rule. */
 private val FLOW_RULE_INDENT = 14.dp
+
+/** Air between a washed block's edge and its text. */
+private val WASH_PAD = WASH_PAD_DP.dp
 
 @Composable
 private fun BorderedBlock(
