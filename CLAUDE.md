@@ -1070,6 +1070,26 @@ yet" note that used to live here was two months stale.
       that ends before one is genuinely short.
       **Verified by eye on the tightest pages**, because the per-page harness becomes
       unreliable once blocks split (one block index, two drawn heights, two pages).
+- [x] **A zero step is an infinite grid (2026-10-06)** — Aliaksei: "check the emulator, app
+      stacked." It had: 103% CPU, an ANR, main thread wedged. **Mine, from the grid-centring
+      change the same afternoon.**
+      `AnswerSpace` centres its dots by dividing the width by the row step to get a column
+      count. The step is `height / lines`, so a layout pass that hands the Canvas NO height
+      makes it zero — and a Float divided by zero is `Infinity`, whose `toInt()` is
+      `Int.MAX_VALUE`. The draw phase then tries to put two billion dots in every row. Diagnosed
+      from the ANR trace rather than by reading: `kill -3`, and the main thread's stack is
+      sitting in `AnswerSpace` → `drawCircle`, which named the function in one step.
+      **The old uncentred loop had the same hole by a different route** — `while (x < width) { x
+      += step }` with a zero step never terminates either — which is presumably why neither was
+      caught: the condition is rare, and both versions hang when it happens, so it never looked
+      like a regression from anything. Guarded now (`step <= 0.5f` draws nothing) and the column
+      count is clamped as well, belt and braces on the one loop in the file whose bound comes
+      out of a division.
+      Verified by stress rather than by a single run: the chapter walked twice with every
+      answer revealed, then opened at all four font scales — 0 ANRs, CPU back to idle.
+      **Method note worth keeping: an app that spins is a stack trace, not a bisect.**
+      `adb shell kill -3 <pid>` dumps `/data/anr/`, and the main thread's frames name the
+      culprit immediately — much faster than reverting changes one at a time.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

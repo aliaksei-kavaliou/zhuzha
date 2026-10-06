@@ -3533,6 +3533,15 @@ private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
         // treatments share a vertical rhythm and read as one family. It is
         // also about 5mm, which is what dot-grid paper uses.
         val step = size.height / lines
+        // A ZERO STEP IS AN INFINITE GRID. `cols` below divides the width by
+        // this, and a Float divided by zero is Infinity, whose toInt() is
+        // Int.MAX_VALUE — so one layout pass that hands this Canvas no height
+        // asks it to draw two billion dots per row, and the app wedges at
+        // 100% CPU with an ANR. Caught on the emulator the same afternoon the
+        // centring went in; the old uncentred loop had the same hole by a
+        // different route (`x += 0` never terminates), which is why neither
+        // was noticed. Nothing sane to draw, so draw nothing.
+        if (step <= 0.5f || !step.isFinite()) return@Canvas
         if (!ruled) {
             // E-INK HAS NO GREY. Reported from the Boox: the dots were
             // "almost invisible". They were 0.75dp of Hairline (0xFF888888),
@@ -3559,7 +3568,9 @@ private fun AnswerSpace(lines: Int, fontScale: Float, ruled: Boolean) {
             // last row sitting exactly on the edge of the band.
             //
             // Take as many columns as fit, then share the remainder equally.
-            val cols = (size.width / step).toInt().coerceAtLeast(1)
+            // Clamped as well as guarded: belt and braces on the one loop
+            // in this file whose bound comes from a division.
+            val cols = (size.width / step).toInt().coerceIn(1, 128)
             val spanX = cols * step
             val x0 = (size.width - spanX) / 2f
             val spanY = (lines - 1) * step
