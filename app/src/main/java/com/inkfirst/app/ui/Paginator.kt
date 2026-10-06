@@ -310,24 +310,48 @@ fun paginate(
                 relaxedFence = best
                 relaxedFenceH = bestH
             }
-            // It fits a page now. Place it whole if this page is empty;
-            // otherwise give it the fresh page it has earned — a box that
-            // fits somewhere whole must never be cut.
+            // It fits a page now. Place it whole if this page is empty.
+            //
+            // IT NO LONGER EARNS A FRESH PAGE JUST BY FITTING ONE. "A box
+            // would rather move than be cut" was written when a cut cost a
+            // frame, a label, a mascot and two lots of padding on every
+            // piece. A flow block has none of those: a cut costs what a cut
+            // paragraph costs, which is nothing. So the rule that was worth
+            // a short page before a box is not worth it any more — and left
+            // alone it produced the worst page of the day, a single line of
+            // prose above nine tenths of a blank sheet, because the exercise
+            // after it preferred a page of its own.
+            //
+            // Figures and code fences still move: a picture cannot be cut,
+            // and a boxed listing pays the old price.
+            val wouldRatherMove = block.kind != "exercise" && block.kind != "recap"
             if (bestH <= budget) {
-                if (!atTop) {
+                if (!atTop && wouldRatherMove) {
                     newPage()
                     continue
                 }
-                pages.last().add(PageItem(best, i, carriedPx))
-                height += bestH
-                carry = null
-                carriedPx = 0
-                i++
-                continue
+                if (!atTop) {
+                    // Fall through to the split: filling this page beats
+                    // leaving it empty, and splitFence refuses anyway when
+                    // the head would be too small to be worth the break.
+                    relaxedFence = best
+                    relaxedFenceH = bestH
+                } else {
+                    pages.last().add(PageItem(best, i, carriedPx))
+                    height += bestH
+                    carry = null
+                    carriedPx = 0
+                    i++
+                    continue
+                }
             }
         }
 
-        if (block is Block.CustomFence && !atTop && h <= budget) {
+        // Same rule for a block that fits a page untouched: only the kinds
+        // that cannot be cut cheaply get a page of their own.
+        if (block is Block.CustomFence && !atTop && h <= budget &&
+            block.kind != "exercise" && block.kind != "recap"
+        ) {
             newPage()
             continue
         }

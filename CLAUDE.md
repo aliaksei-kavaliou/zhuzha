@@ -1022,6 +1022,24 @@ yet" note that used to live here was two months stale.
       The chapter went 16 pages to 17, which is the expected direction and not a regression: a
       box that used to be CUT now fits a page of its own and MOVES there whole, and the page
       before it loses its tail. That trade was taken deliberately on 2026-09-30.
+- [x] **A flow block no longer earns a page of its own (2026-10-06)** — Aliaksei: "now check
+      page 12, do you think it's good?" It was not: one line of prose, "Let us practice this
+      right now.", above nine tenths of a blank sheet.
+      **The rule had outlived its reason.** "A box would rather move than be cut"
+      (2026-09-30) was argued from what a cut COST: a frame to leave open, a name and a mascot
+      to reintroduce, two lots of padding, on every piece. A flow block has none of those — a
+      cut costs what a cut paragraph costs, which is nothing — so the box was still claiming a
+      fresh page by a right it no longer had, and the page before it paid. The move is now
+      kept only for the kinds that still cannot be cut cheaply: a figure, because a picture
+      cannot be cut at all, and a code fence, because it is still boxed.
+      The result is better than a split page, as it happens: with the exercise no longer
+      reserving itself a page, the one-line paragraph packs back onto the page above and the
+      exercise opens page 12 whole — task, five-row grid and Show answer together. **The
+      chapter went 17 pages to 15**, and the page before it now ends with an ordinary four
+      lines of white rather than being one.
+      Worth noting the shape of the day: the frame came off at noon, and three of the
+      afternoon's fixes were rules that had been written to pay for it. A rule argued from a
+      cost should be re-read when the cost goes.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
