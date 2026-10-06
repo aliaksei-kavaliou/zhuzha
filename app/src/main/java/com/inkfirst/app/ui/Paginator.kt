@@ -4,6 +4,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.unit.Constraints
@@ -765,12 +766,24 @@ private fun splitFence(
     val text = question.trim()
     if (text.isBlank()) return null
 
-    // Stepped in from the marginal rule, exactly as the renderer does it.
-    val innerWidth = (widthPx - FLOW_INDENT_DP.dp.toPx().toInt()).coerceAtLeast(1)
+    // Inset exactly as the renderer insets it — and the two flow kinds are
+    // not inset the same way. An exercise is STEPPED IN from its marginal
+    // rule; a recap is PADDED on both sides by its wash. Measuring a recap
+    // at the exercise's inset made its lines 6dp too long AND skipped the
+    // wash's own 20dp of vertical padding, so the head took more lines than
+    // the page could hold and the last one came off the bottom edge.
+    // Reported from chapter 2, page 14.
+    val washed = block.kind == "recap"
+    val sideInset =
+        if (washed) 2 * WASH_PAD_DP.dp.toPx().toInt() else FLOW_INDENT_DP.dp.toPx().toInt()
+    val innerWidth = (widthPx - sideInset).coerceAtLeast(1)
     val style = TextStyle(
         fontSize = 17.sp * fontScale,
         lineHeight = 28.sp * fontScale * lineSpacing,
         fontFamily = FontFamily.Serif,
+        // Italic, like the renderer. This function chooses the cut POINT, so
+        // measuring a different wrap puts the break in the wrong place.
+        fontStyle = FontStyle.Italic,
     )
     val layout = measurer.measure(
         text = AnnotatedString(parseInlines(text).plainText()),
@@ -788,7 +801,8 @@ private fun splitFence(
     // a continuation opens with nothing, so it spends nothing.
     val opensBlock = block.params[FENCE_CONT_FROM] == null
     val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() else 0) +
-        8.dp.toPx().toInt() + 16.dp.toPx().toInt()
+        8.dp.toPx().toInt() + 16.dp.toPx().toInt() +
+        (if (washed) 2 * WASH_PAD_DP.dp.toPx().toInt() else 0)
 
     val room = availablePx - chrome
     if (room <= 0) return null
@@ -900,7 +914,6 @@ private fun splitFence(
     val backstopLine = (fitting - 2).coerceAtLeast(MIN_SPLIT_LINES - 1)
     val backstop = layout.getLineStart(backstopLine.coerceAtMost(fitting - 1))
     val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = (lineCut - backstop).coerceAtLeast(0))
-
     val tailBody = buildString {
         append(text.substring(cut).trimStart())
         if (answer.isNotBlank()) {
@@ -1268,6 +1281,14 @@ private fun estimateHeight(
                     fontSize = 17.sp * fontScale,
                     lineHeight = 28.sp * fontScale * lineSpacing,
                     fontFamily = FontFamily.Serif,
+                    // MEASURE WHAT IS DRAWN. Exercise and recap are set in
+                    // italic since the frame came off, and italic breaks
+                    // lines differently — different glyph widths, different
+                    // wrap points. The estimate went on measuring them
+                    // upright, so the renderer could draw a line the
+                    // paginator never counted, and a recap came off the foot
+                    // of page 14 with its last line sliced in half.
+                    fontStyle = if (flows) FontStyle.Italic else FontStyle.Normal,
                 )
             }
             val body = measurer.measure(
@@ -1335,6 +1356,7 @@ private fun estimateHeight(
                         fontSize = 16.sp * fontScale,
                         lineHeight = 26.sp * fontScale * lineSpacing,
                         fontFamily = FontFamily.Serif,
+                        fontStyle = FontStyle.Italic,
                     ),
                     constraints = Constraints(maxWidth = (innerWidth - gap).coerceAtLeast(1)),
                 )
@@ -1435,15 +1457,12 @@ private fun measureListItem(
         style = style,
         constraints = Constraints(maxWidth = bodyWidth),
     )
-    // Plus one line of allowance, the same as a heading gets and for the
-    // same unexplained reason: measured against the drawn height, a list
-    // item still comes out short of what Compose lays out even once the
-    // hanging indent is accounted for. Erring tall is the safe direction —
-    // a page that under-fills by a few pixels is invisible, a page that
-    // over-fills loses a line off the bottom.
-    val itemSlack = (30.sp * fontScale * lineSpacing).toPx().toInt()
+    // No allowance any more. The line this used to add was covering a
+    // MERGED-STYLE mismatch — the renderer inherited Material's letterSpacing
+    // and the measurer did not — and that is fixed where it belongs, in
+    // ListItemBlock, which now passes a whole TextStyle. See [flowBodyStyle].
     maxOf(result.size.height, measurer.measure(AnnotatedString(prefix), style).size.height) +
-        10.dp.toPx().toInt() + itemSlack
+        10.dp.toPx().toInt()
 }
 
 private fun List<Inline>.plainText(): String = joinToString("") { i ->

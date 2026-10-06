@@ -49,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1685,6 +1686,8 @@ private fun PagedContent(
             // PAGINATION reads it now: a block with its answer open measures
             // to the answer, one with it closed measures to the button.
             val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
+            /** Block whose answer was just opened; the page follows it. */
+            var revealTarget by remember(blocks) { mutableIntStateOf(-1) }
             // Opening an answer REPAGINATES. Read as a sorted key rather than
             // passed as a map, so this composition actually subscribes to the
             // snapshot and the key changes with it — a lambda closing over
@@ -1723,6 +1726,54 @@ private fun PagedContent(
             // Resync only for anchors that aren't already on this page — that
             // is what distinguishes an external jump from the echo of our own
             // page turn.
+            // REVEALING MUST NOT MOVE THE READER. Opening an answer
+            // repaginates, `pageIndex` is remembered against `pages`, so it
+            // is re-derived from the anchor — and the anchor is the page's
+            // FIRST block, which after the reflow may well sit on another
+            // page. Reported: "show answer on page 14 opens answer but
+            // changes the page."
+            //
+            // So the reveal names its own target and the page follows it.
+            // indexOfLast, not indexOf: a split block appears on two pages
+            // and the answer is always on the last piece — the one that
+            // carries the reveal.
+            // REVEALING MUST NOT MOVE THE READER. Opening an answer
+            // repaginates, and `pageIndex` is remembered against `pages`, so
+            // it is re-derived from the anchor — which is the page's FIRST
+            // block, and after the reflow that may sit elsewhere. Reported:
+            // "show answer on page 14 opens answer but changes the page."
+            //
+            // Keyed on pageIndex as well as pages, and it does NOT clear the
+            // target until the page it asked for is the page being shown.
+            // One shot was not enough: the index is re-initialised again on
+            // the next rebuild, and the correction has to outlive that.
+            //
+            // The target is the piece that CARRIES the answer, not the block:
+            // a split exercise puts its task on one page and its reveal on
+            // another and both pieces share the block's index, so following
+            // the index alone lands on the task — which is where the reader
+            // already was, one page back.
+            LaunchedEffect(pages, pageIndex, revealTarget) {
+                val target = revealTarget
+                if (target < 0) return@LaunchedEffect
+                val p = pages.indexOfFirst { page ->
+                    page.any {
+                        it.index == target &&
+                            (it.block as? Block.CustomFence)?.params?.get(FENCE_CONT_TO) == null
+                    }
+                }
+                when {
+                    p < 0 -> revealTarget = -1
+                    pageIndex != p -> {
+                        pageIndex = p
+                        // Agree with the anchor machinery rather than fight
+                        // it: block `target` is on this page, so its own
+                        // resync sees nothing to do.
+                        onAnchorChange(target)
+                    }
+                    else -> revealTarget = -1
+                }
+            }
             LaunchedEffect(anchorBlockIndex, pages) {
                 val onThisPage = pages.getOrNull(pageIndex)
                     ?.any { it.index == anchorBlockIndex } == true
@@ -1842,7 +1893,10 @@ private fun PagedContent(
                     TapAction.CloseMenu -> onToggleMenu()
                     TapAction.DismissChip -> onDismissChip()
                     TapAction.ClearSelection -> onClearSelection()
-                    is TapAction.PressButton -> revealed[action.blockIndex] = true
+                    is TapAction.PressButton -> {
+                        revealed[action.blockIndex] = true
+                        revealTarget = action.blockIndex
+                    }
                     is TapAction.OpenMarker -> onOpenAnnotation(action.annotation)
                     is TapAction.ShowStrokeChip -> onStrokeTapped(action.stroke)
                     TapAction.ToggleMenu -> onToggleMenu()
@@ -2052,7 +2106,10 @@ private fun PagedContent(
                                         textAlign = textAlign,
                                         annotations = blockAnnotations,
                                         revealed = revealed[globalIdx] == true,
-                                        onReveal = { revealed[globalIdx] = true },
+                                        onReveal = {
+                                            revealed[globalIdx] = true
+                                            revealTarget = globalIdx
+                                        },
                                         onOpenAnnotation = onOpenAnnotation,
                                         onMarkerBounds = { a, r ->
                                             markerRects[a.created + "|" + a.quote] = a to r
@@ -3323,16 +3380,12 @@ private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Floa
     Row(modifier = Modifier.padding(start = 18.dp, bottom = 10.dp)) {
         Text(
             text = prefix,
-            fontFamily = FontFamily.Serif,
-            fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale * lineSpacing,
+            style = listItemStyle(fontScale, lineSpacing),
             color = Ink,
         )
         Text(
             text = renderInlines(inlines),
-            fontFamily = FontFamily.Serif,
-            fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale * lineSpacing,
+            style = listItemStyle(fontScale, lineSpacing),
             color = Ink,
         )
     }
@@ -3375,14 +3428,12 @@ private fun ExerciseBlock(
                 // often as a paragraph does, and rendering the body as a plain
                 // string dropped every inline style inside a bordered block.
                 text = renderInlines(parseInlines(question)),
-                fontFamily = FontFamily.Serif,
-                fontSize = 17.sp * fontScale,
-                lineHeight = 28.sp * fontScale * lineSpacing,
                 // ITALIC IS THE FRAME NOW. The border used to say "this is a
                 // thing you DO"; it also made the block a unit that had to
                 // land whole or reintroduce itself. Italic says the same at
-                // no cost to the page, because styled text flows.
-                fontStyle = FontStyle.Italic,
+                // no cost to the page, because styled text flows. The style is
+                // passed WHOLE — see [flowBodyStyle].
+                style = flowBodyStyle(fontScale, lineSpacing),
                 color = Ink,
             )
             Spacer(Modifier.height(8.dp))
@@ -3466,10 +3517,7 @@ private fun ExerciseBlock(
                             append(" ")
                             append(renderInlines(parseInlines(answer)))
                         },
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 16.sp * fontScale,
-                        lineHeight = 26.sp * fontScale * lineSpacing,
-                        fontStyle = FontStyle.Italic,
+                        style = answerBodyStyle(fontScale, lineSpacing),
                         color = Ink,
                     )
                 }
@@ -3631,10 +3679,16 @@ private fun RecapBlock(
     ) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
-            fontFamily = FontFamily.Serif,
-            fontSize = 17.sp * fontScale,
-            lineHeight = 28.sp * fontScale * lineSpacing,
-            fontStyle = FontStyle.Italic,
+            // EXPLICIT STYLE, NOT MERGED PARAMS. A `Text` given fontSize/fontFamily
+                // one by one MERGES them onto the ambient LocalTextStyle and keeps
+                // everything else it carries — including Material's letterSpacing of
+                // 0.5sp. The paginator measures a bare TextStyle with no such spacing,
+                // so the renderer fitted ~2 characters fewer per line than the estimate
+                // believed: a recap sized for 13 lines drew 15, and its last line came
+                // off the bottom of the page. ParagraphBlock has always passed a whole
+                // style, which is exactly why paragraphs measured to the pixel and
+                // everything else drifted. Pass the style the measurer uses.
+            style = flowBodyStyle(fontScale, lineSpacing),
             color = Ink,
         )
     }
@@ -3789,6 +3843,38 @@ private fun UnknownFenceBlock(
  * box is a convention readers expect, and the figure box is a placeholder for
  * a picture rather than something to read.
  */
+/**
+ * The body style of a flow block — exercise and recap — built WHOLE.
+ *
+ * Passing fontSize and fontFamily to `Text` as separate parameters merges them
+ * onto the ambient `LocalTextStyle` and inherits everything else it carries,
+ * Material's 0.5sp letterSpacing included. The paginator measures a bare
+ * `TextStyle`, so the two disagreed by about two characters a line and a
+ * recap sized for 13 lines drew 15. Anything the paginator measures has to be
+ * drawn from a style it can reproduce exactly.
+ */
+private fun flowBodyStyle(fontScale: Float, lineSpacing: Float) = TextStyle(
+    fontSize = 17.sp * fontScale,
+    lineHeight = 28.sp * fontScale * lineSpacing,
+    fontFamily = FontFamily.Serif,
+    fontStyle = FontStyle.Italic,
+)
+
+/** The revealed answer's style. Same rule as [flowBodyStyle]. */
+private fun answerBodyStyle(fontScale: Float, lineSpacing: Float) = TextStyle(
+    fontSize = 16.sp * fontScale,
+    lineHeight = 26.sp * fontScale * lineSpacing,
+    fontFamily = FontFamily.Serif,
+    fontStyle = FontStyle.Italic,
+)
+
+/** A list item's style, marker and body alike. Same rule as [flowBodyStyle]. */
+private fun listItemStyle(fontScale: Float, lineSpacing: Float) = TextStyle(
+    fontSize = 18.sp * fontScale,
+    lineHeight = 30.sp * fontScale * lineSpacing,
+    fontFamily = FontFamily.Serif,
+)
+
 @Composable
 private fun FlowBlock(
     label: String,

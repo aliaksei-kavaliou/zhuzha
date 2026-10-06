@@ -1090,6 +1090,41 @@ yet" note that used to live here was two months stale.
       **Method note worth keeping: an app that spins is a stack trace, not a bisect.**
       `adb shell kill -3 <pid>` dumps `/data/anr/`, and the main thread's frames name the
       culprit immediately — much faster than reverting changes one at a time.
+- [x] **A merged style is not the style you measured (2026-10-06)** — Aliaksei: "recap on
+      page 14 doesn't fit the block, last line half cut." The paginator sized that head at 13
+      lines and the renderer drew 15 of the same 428 characters at the same 268px width, which
+      should be impossible — and is the single best bug of the day, because it had been quietly
+      paying for three separate workarounds.
+      **`Text(fontSize = …, fontFamily = …)` MERGES onto the ambient `LocalTextStyle` and keeps
+      everything else it carries — Material's `letterSpacing = 0.5sp` included.
+      `Text(style = TextStyle(…))` REPLACES it.** The paginator measures a bare `TextStyle`, so
+      every block drawn with merged parameters fitted about two characters fewer per line than
+      the estimate believed. Half a point per character is ~15px a line: a 268px measure
+      behaving like 248.
+      It also answers the question left open that afternoon — why paragraphs measured to the
+      pixel while headings, the byline and list items each came out a line short.
+      **`ParagraphBlock` has always passed a whole style; nothing else did.** The list item's
+      "one line of allowance for a residual whose cause is unexplained" was this, and it is
+      deleted rather than tuned: the hanging-indent measurement plus a real style is exact.
+      Exercise, recap, the revealed answer and both halves of a list item now take their style
+      from `flowBodyStyle` / `answerBodyStyle` / `listItemStyle`, which are the same objects the
+      measurer could construct. **Proved rather than eyeballed**: with the paginator and the
+      renderer both logging, `fitting=13 of 15` now meets `drewLines=13`, where it had met 15.
+      Headings and the byline still merge, and still carry their one-line allowance — safe, and
+      a line per heading is the price. Converting them is the obvious follow-up.
+      **The rule to keep: anything the paginator measures must be drawn from a style the
+      paginator can reproduce exactly. Pass the whole `TextStyle`, never the parts.**
+- [x] **Revealing an answer no longer moves the reader (2026-10-06)** — Aliaksei: "show answer
+      on page 14 opens answer but changes the page." Opening an answer repaginates, and
+      `pageIndex` is remembered against `pages`, so it was re-derived from the anchor — the
+      page's FIRST block, which after the reflow can sit elsewhere. The reveal names its own
+      target now and the page follows it.
+      Two details earned their place. The target is the PIECE that carries the answer, not the
+      block: a split exercise puts its task on one page and its reveal on another and both
+      share the block index, so following the index alone landed on the task, one page back —
+      which is exactly what the first attempt did. And the correction is keyed on `pageIndex`
+      as well as `pages`, clearing only once the page it asked for is the page being shown:
+      one shot was not enough, because the index is re-initialised again on the next rebuild.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
