@@ -830,3 +830,82 @@ page is given back when it closes. **NOT yet confirmed — a ghost lives on the 
 The device tip stands and earned its place again: a ghost invisible to `screencap` is driver
 ink or EPD residue, never app state. What it cannot tell you is WHICH — that took the exclude
 list being empty, which is a thing to read rather than measure.
+
+## T10 · device → CLI · 2026-10-05 (the exclude rect does not come back)
+
+Aliaksei, after a weekend of reading: *"now you block the whole space where it can appear, so
+no drawings on it, but when there is no chip I still can't draw. Only some lines first
+appeared but on page back and force the image appeare. I would say current decision worth than
+bug we are trying to fix."*
+
+**Reverted.** T9's diagnosis of the ghost is still believed — the pen does ink the pill — but
+the cure took a band of the page away permanently, and a dead page beats a ghost on a pill.
+
+### The symptom pair names the layer
+
+Two things happen together and only one layer can produce both:
+
+- Nothing inks in the band while the pen is on the glass.
+- The stroke IS there after a page turn and back.
+
+So the POINTS arrive, the stroke is captured and saved, and our Compose rendering draws it on
+the next pass — it is only the driver's live ink that is missing. The app-side filter is not
+rejecting anything; the hardware is refusing to draw. And the chip is `align(BottomCenter)`
+with 64dp of bottom padding, so it occupies very nearly the same rectangle every time: one
+fixed band near the bottom of every page stopped taking ink.
+
+### What the SDK actually does with that list (read, not guessed)
+
+Decompiled from the aars in the Gradle cache (`javap -c -p` after unzipping `classes.jar` —
+no decompiler needed to read a call chain):
+
+```
+TouchHelper.setLimitRect(Rect, List<Rect>)
+  → AppTouchRender.setLimitRect             (mode 4 = FEATURE_APP_PEN_TOUCH_RENDER)
+      → AppTouchInputReader.setLimitRectList(view, singletonList(bounds))
+      → AppTouchInputReader.setExcludeRectList(view, holes)
+            if (holes == null) return                       // null is a no-op, empty is not
+            CollectionUtils.safeAddAll(this.b, holes, true)  // true = clear() first
+            EpdController.setScreenHandWritingRegionExclude(view, holes.toArray())
+              → SDMDevice: Rect[] → int[4n] → ReflectUtil.invokeMethodSafely(…)   // firmware
+```
+
+Two halves, and they part company on empty:
+
+- `safeAddAll(dst, src, true)` clears `dst` first, so the SDK's OWN in-process list is emptied
+  correctly. That is the list the input reader hit-tests against — which is exactly why the
+  points still arrive and the stroke still saves.
+- The firmware gets `new int[0]`. A zero-length region array is the most likely thing in that
+  chain to be read as "nothing to do" rather than as "clear what you have", and the
+  observed behaviour is precisely that: set once, never released.
+
+That is a theory about firmware, which is where this chain stops being readable. What is NOT a
+theory is that the two layers diverge, and that the divergence predicts both symptoms.
+
+### If you try again, two candidates — in this order
+
+1. **Never send an empty array.** Hand back one degenerate rect (`Rect(0, 0, 1, 1)`) when there
+   is no chip, so the firmware always receives a non-empty region list that REPLACES the last
+   one. Cost: a single pixel in the corner that does not take ink. Cheap, and it tests the
+   theory above directly — if the band comes back to life, the empty array was the bug.
+2. **Stop the driver rendering instead of carving the page up.**
+   `setRawDrawingRenderEnabled(false)` → `EpdPenManager.pauseDrawing()` →
+   `setScreenHandWritingPenState(view, PEN_PAUSE)`, and `(true)` → `PEN_DRAWING`. A symmetric
+   pair: the firmware is TOLD a state in both directions, where an exclusion is told once and
+   has to be un-told with an absence. The input path is untouched, so a stroke drawn while the
+   chip is up is still captured and still saved — it renders a beat late instead of live.
+   The risk is the mirror of this bug and worse: a pause that fails to resume kills the pen
+   EVERYWHERE, not in a band. So it only ships with a re-assert — resume on stroke begin
+   whenever the chip is closed, and at every site that already calls `setRawDrawingEnabled(true)`
+   — which makes a stuck pause cost one late stroke instead of the session.
+
+Both change behaviour at the driver, and neither can be seen by `screencap`. Neither should
+ship without eyes on the glass, and neither should ship in the same build as the other.
+
+### Method note
+
+The regression was not visible in any log we had. `limitRect(chipClose) holes=[]` was printed
+faithfully and was TRUE — the app asked for the hole to be removed. What no log could show is
+that the ask was dropped one layer further down. When a fix is a request to another process,
+logging that we asked is not evidence that it happened.
+

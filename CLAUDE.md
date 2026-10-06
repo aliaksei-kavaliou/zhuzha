@@ -835,27 +835,38 @@ yet" note that used to live here was two months stale.
       Also learned: on Onyx a top-edge swipe does NOT peek at the status bar — it opens the
       whole Control Center (wifi, Bluetooth, Front Light sliders). So before this change the
       only way to check the time mid-chapter was to summon a settings panel over the page.
-- [ ] **Chip ghost: the stylus inks ON the chip — fix shipped, NOT yet confirmed
-      (2026-10-02)** — Aliaksei: the chip ghosts "randomly, and only with the stylus, not a
-      finger tap", on Delete and on Cancel. His diagnosis, after two wrong ones from me:
-      **the pen draws on the chip.** `setLimitRect(bounds, emptyList())` — the second argument
-      is the exclude list and had always been empty. Raw drawing is a HARDWARE path, so the
-      driver inks wherever the nib lands inside the limit rect, below Android's framebuffer
-      and regardless of what Compose drew on top. The mark then outlives the chip, because the
-      driver keeps its own copy on the panel.
-      It explains what neither timing theory could: why only the stylus (a finger does not
-      ink), and why it is random (where on the button the nib lands, and how far it moves).
-      The chip is now cut out of the drawable region while it is up, padded like a repaint
-      rect. **Unconfirmed**: a ghost lives on the panel and `screencap` reads the framebuffer,
-      where the chip is already gone — so this needs eyes on the glass. The new
-      `limitRect(…) holes=[…]` log line is the half that can be checked without them.
-      **Two reverted theories, kept because the next person will have them too** — both are
-      written up in `docs/onyx-pen-thread.md` §T9. (1) "the close does not wait for the frame"
-      — already refuted by §T8, which is why `chipClose` is held out of `IMMEDIATE_REASONS`;
-      (2) "the chipClose unlock gets cancelled" — a REAL and still-latent mechanism (every
-      `scheduleUnlock` cancels the last, so a pen event inside the 200ms leaves the repaint
-      armed but unperformed), just not this symptom. It is the next candidate if ghosting
-      survives.
+- [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
+      weekend of reading: "now you block the whole space where it can appear... but when there
+      is no chip I still can't draw. Only some lines first appeared but on page back and force
+      the image appeare. I would say current decision worth than bug we are trying to fix."
+      He is right and it is backed out. A dead band of every page beats a ghost on a pill.
+      **The diagnosis still stands.** The pen DOES ink the chip: raw drawing is a hardware
+      path, so the driver marks wherever the nib lands inside the limit rect, below Android's
+      framebuffer and regardless of what Compose drew on top — which is why only the stylus
+      ever did it and why it was random. `setLimitRect`'s second argument is the exclude list
+      and cutting the pill out of it was the right shape of fix.
+      **What broke is the RELEASE, not the cut.** The chip is `BottomCenter`, so it occupies
+      nearly the same rectangle every time and one fixed band stopped taking ink for the rest
+      of the session. The symptom pair names the layer: nothing inks live, but the stroke is
+      there after a page turn — so the points arrived, the stroke saved, and only the driver's
+      live ink was missing. Decompiling the SDK (`javap` on the cached aars) shows the two
+      halves parting company on empty: `safeAddAll(list, holes, true)` clears the SDK's own
+      in-process list correctly, while the firmware is handed `new int[0]`, and a zero-length
+      region array is almost certainly read as "nothing to do" rather than "clear what you
+      have".
+      **The lesson generalises past this bug: logging that we ASKED is not evidence it
+      happened.** `limitRect(chipClose) holes=[]` printed faithfully every time and was true;
+      the request was dropped a layer below anything we can log.
+      Two candidates for the next attempt, in order, written up with the call chain in
+      `docs/onyx-pen-thread.md` §T10: (1) never send an empty array — hand back one degenerate
+      `Rect(0,0,1,1)` so the firmware always gets a list that REPLACES the last; (2) pause the
+      driver's rendering while the chip is up (`setRawDrawingRenderEnabled` → `PEN_PAUSE` /
+      `PEN_DRAWING`), a symmetric pair that is told a state in both directions. Neither is
+      visible to `screencap`; neither ships without eyes on the glass, and not in the same
+      build as the other. **(2) is built, on the branch `pen-chip-render-pause`, waiting for
+      the device.**
+      **Still latent from §T9:** every `scheduleUnlock` cancels the last, so a pen event inside
+      the 200ms leaves a repaint armed but unperformed. Real, not this symptom.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what
