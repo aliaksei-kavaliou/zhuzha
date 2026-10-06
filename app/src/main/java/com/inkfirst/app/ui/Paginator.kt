@@ -1191,6 +1191,21 @@ private fun estimateHeight(
             }
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
+                // THE ANSWER IS NOT PART OF THE BODY. The renderer splits the
+                // fence and draws the question only, handing the answer to
+                // the reveal below — but this measured the WHOLE body, the
+                // `answer:` line included, and then added the answer's height
+                // AGAIN as the reveal's reservation. So every exercise has
+                // been carrying a phantom second copy of its own answer,
+                // which is six or eight lines of a page that nothing draws.
+                //
+                // Found from Aliaksei turning the font DOWN and asking why a
+                // page broke early with a hand's width of white under it: at
+                // 0.85 the answer is long in lines and the phantom is at its
+                // biggest. It explains the stubborn gap at the foot of every
+                // page an exercise shares, and a good deal of the splitting
+                // this file has been tuning around all day.
+                "exercise" -> splitExerciseBody(block.body).first.trim()
                 else -> block.body.trim()
             }
             val bodyStyle = when (block.kind) {

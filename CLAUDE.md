@@ -1003,6 +1003,25 @@ yet" note that used to live here was two months stale.
       noticed. Drawn with `BlendMode.Multiply` now — white × anything is that thing, so the
       field disappears and the lines stay black — which costs nothing and needs no change to
       the PNGs every existing book has already paid an API call for.
+- [x] **The answer was measured twice (2026-10-06)** — and it had been since the day
+      exercises got an answer at all. The renderer splits a fence with `splitExerciseBody` and
+      draws the QUESTION only, handing the answer to the reveal below it. The estimate
+      measured `block.body` — the whole fence, the `answer:` line included — and then added
+      the answer's height AGAIN as the reveal's reservation. **Every exercise has been
+      carrying a phantom second copy of its own answer**: six to eight lines of page that
+      nothing draws.
+      Found the way everything in this file gets found. Aliaksei turned the font DOWN and
+      asked why a page broke early with a hand's width of white under it: at 0.85 the answer
+      runs to the most lines it ever will, so the phantom is at its biggest. It explains the
+      stubborn gap at the foot of every page an exercise shares — and a good deal of the
+      splitting this file spent the day tuning around, since a box measured several lines too
+      tall is a box that does not fit when it should.
+      One line: measure `splitExerciseBody(block.body).first` for an exercise. The demo
+      chapter at 0.85 now puts the whole ten-circles exercise — task, five-row grid and Show
+      answer — on ONE page, where it had been cut across two with a gap under the second.
+      The chapter went 16 pages to 17, which is the expected direction and not a regression: a
+      box that used to be CUT now fits a page of its own and MOVES there whole, and the page
+      before it loses its tail. That trade was taken deliberately on 2026-09-30.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
