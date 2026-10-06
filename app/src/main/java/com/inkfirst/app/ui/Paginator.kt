@@ -931,7 +931,17 @@ private fun splitFence(
     return SplitFence(
         head = block.copy(
             body = text.substring(0, cut).trimEnd(),
-            params = block.params + (FENCE_CONT_TO to "1"),
+            // NO WORKING ROOM ON A HEAD THE TASK RUNS PAST. `block.params`
+            // may already carry a row count — the ladder writes one, and the
+            // split now works on the relaxed form — and the renderer draws
+            // room whenever a head has one. That put three rows of dots in
+            // the MIDDLE of a sentence: "…with your eyes, very" and then the
+            // grid, with the rest of the task overleaf. Reported from
+            // chapter 2, pages 6-7. Room belongs after the whole task, so a
+            // text-cut head gets an explicit nil rather than an inherited
+            // count. The part split above is the one case that gives a head
+            // room, and it only does so when the task fits whole.
+            params = block.params + (FENCE_CONT_TO to "1") + (FENCE_SPACE_ROWS to "0"),
         ),
         tail = block.copy(
             body = tailBody,

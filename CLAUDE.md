@@ -1125,6 +1125,18 @@ yet" note that used to live here was two months stale.
       which is exactly what the first attempt did. And the correction is keyed on `pageIndex`
       as well as `pages`, clearing only once the page it asked for is the page being shown:
       one shot was not enough, because the index is re-initialised again on the next rebuild.
+- [x] **No working room on a head the task runs past (2026-10-06)** — Aliaksei: "page 6-7
+      ch2 :( dots and text". Three rows of dot grid in the MIDDLE of a sentence — "…with your
+      eyes, very", then the grid, then the rest of the task overleaf.
+      `splitFence`'s text-cut path copied `block.params` onto the head, and those params can
+      already carry a row count: the ladder writes one, and since this morning the split works
+      on the RELAXED form, so the count is usually there. The renderer draws room on a head
+      whenever it has an explicit count — which is the rule the part split needs — so the head
+      drew room it had no business having. A text-cut head now carries an explicit nil. The
+      part split stays the one case that gives a head room, and it only does so when the whole
+      task fits above it.
+      Verified on the reported pages: 6 ends with the task, 7 carries its last lines, then the
+      grid, then the prose.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
