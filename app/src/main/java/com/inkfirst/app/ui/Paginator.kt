@@ -220,14 +220,13 @@ fun paginate(
             continue
         }
 
-        // A BOX WOULD RATHER MOVE THAN BE CUT. Prose splits happily — a
-        // paragraph carried across a break still reads as one paragraph — but
-        // a bordered block is a unit, with a border, a name and a mascot, and
-        // on a one-page-at-a-time reader the continuation has to reintroduce
-        // itself ("TRY THIS (continued)") because you never see the spread.
-        // That is a real cost to the reader, and it is only worth paying when
-        // there is no alternative. There is one whenever the box would fit on
-        // a page of its own.
+        // A BLOCK WOULD RATHER MOVE THAN BE CUT — and since 2026-10-06 this
+        // matters far less than it did. Exercise and recap have no frame to
+        // leave open and no name to reintroduce, so a cut costs only what a
+        // cut paragraph costs. What still cannot be cut well is the working
+        // room, which has to stay with the task, and a figure, which is a
+        // picture. So the preference stands, weaker: if the thing fits on a
+        // page of its own, give it one.
         //
         // This is the other half of removing the `!atTop` guard below. That
         // guard was wrong as written — it refused to split at the TOP of a
@@ -538,13 +537,36 @@ private fun sentenceCutAtOrBefore(text: String, limit: Int, budgetChars: Int): I
     val floor = (limit - budgetChars).coerceAtLeast(0)
     var i = limit - 1
     while (i > floor) {
-        val c = text[i]
-        if ((c == '.' || c == '!' || c == '?') && i + 1 < text.length && text[i + 1].isWhitespace()) {
-            return i + 1
-        }
+        if (text.endsSentenceAt(i)) return sentenceEndAfter(text, i)
         i--
     }
     return limit
+}
+
+/** Closers that may stand between a full stop and the space after it. */
+private const val SENTENCE_CLOSERS = "\"'\u201d\u2019)]\u00bb"
+
+/**
+ * Whether [i] is the terminator of a sentence — allowing for what may follow
+ * it before the space.
+ *
+ * It used to require whitespace IMMEDIATELY after the stop, which misses
+ * every sentence that ends inside quotation marks. Found on the Boox in a
+ * chapter about drawing a mug, 2026-10-06: `connects to the cylinder." Now,
+ * trace…` offered a clean break and the splitter could not see it, so the
+ * page was cut four words into the next sentence instead.
+ */
+private fun String.endsSentenceAt(i: Int): Boolean {
+    if (this[i] != '.' && this[i] != '!' && this[i] != '?') return false
+    var j = i + 1
+    while (j < length && this[j] in SENTENCE_CLOSERS) j++
+    return j < length && this[j].isWhitespace()
+}
+
+private fun sentenceEndAfter(text: String, i: Int): Int {
+    var j = i + 1
+    while (j < text.length && text[j] in SENTENCE_CLOSERS) j++
+    return j
 }
 
 /** A bordered block cut across a page boundary. */
@@ -680,7 +702,9 @@ private fun splitFence(
     val text = question.trim()
     if (text.isBlank()) return null
 
-    val innerWidth = (widthPx - 24.dp.toPx().toInt()).coerceAtLeast(1)
+    // Full width: a flow block has no frame to sit inside. Must match the
+    // estimate and the renderer, or the line count drifts between them.
+    val innerWidth = widthPx.coerceAtLeast(1)
     val style = TextStyle(
         fontSize = 17.sp * fontScale,
         lineHeight = 28.sp * fontScale * lineSpacing,
@@ -698,8 +722,11 @@ private fun splitFence(
     val badgeKind = badgeKindFor(block.kind)
     val badgeHeight =
         if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
-    val chrome = maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() +
-        8.dp.toPx().toInt() + 16.dp.toPx().toInt() + 24.dp.toPx().toInt()
+    // What this piece spends before a word is drawn. A piece that is itself
+    // a continuation opens with nothing, so it spends nothing.
+    val opensBlock = block.params[FENCE_CONT_FROM] == null
+    val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() else 0) +
+        8.dp.toPx().toInt() + 16.dp.toPx().toInt()
 
     val room = availablePx - chrome
     if (room <= 0) return null
@@ -737,12 +764,18 @@ private fun splitFence(
             .coerceIn(0, naturalRows)
             .let { if (it < MIN_WORKING_ROWS) 0 else it }
         val tailRows = (naturalRows - headRows).let { if (it < MIN_WORKING_ROWS) 0 else it }
-        // Worth doing only if the tail actually carries something. Rows
-        // below MIN_WORKING_ROWS are not drawn at all, so a box of task +
-        // room whose remainder rounds to nothing would otherwise produce an
-        // empty continuation: a bordered "TRY THIS (continued)" holding
-        // neither words, nor room, nor an answer.
-        if (hasAnswer || tailRows > 0) {
+        // THE ROOM TO WRITE BELONGS WITH THE TASK, and what moves over the
+        // leaf is the ANSWER. Seen on a 320px page: the task ran to two
+        // pages, so this path put every word on the second and left the
+        // eight-row grid alone on a third — a page that opens with nothing
+        // but dots, and a reader writing their answer two pages away from
+        // the question they are answering.
+        //
+        // So the part split earns its place only when it keeps room WITH the
+        // task and has an answer to send on. Anything else falls through to
+        // the text cut below, which leaves the last words of the task on the
+        // same page as the room, where they belong.
+        if (hasAnswer && naturalRows > 0 && headRows >= MIN_WORKING_ROWS) {
             return SplitFence(
                 head = block.copy(
                     body = text,
@@ -795,7 +828,16 @@ private fun splitFence(
     // page that matters most — the tail is the one carrying the writing space,
     // so it is the one being read WHILE the reader works, and a whole
     // instruction there is worth more than three lines of head.
-    val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = 3 * 42)
+    // HOW FAR BACK, MEASURED RATHER THAN GUESSED. This was `3 * 42` — three
+    // lines' worth, at an assumed 42 characters a line. On a 320px page at
+    // font 1.3 a line holds about 22, so "three lines" was really six, and
+    // the head gave up a third of its page to find a full stop. Ask the
+    // layout instead: back up no further than the start of the second line
+    // from the cut, and never past MIN_SPLIT_LINES lines, which is what
+    // stranded a one-line piece under a mascot at the foot of page 9.
+    val backstopLine = (fitting - 2).coerceAtLeast(MIN_SPLIT_LINES - 1)
+    val backstop = layout.getLineStart(backstopLine.coerceAtMost(fitting - 1))
+    val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = (lineCut - backstop).coerceAtLeast(0))
 
     val tailBody = buildString {
         append(text.substring(cut).trimStart())
@@ -1083,7 +1125,11 @@ private fun estimateHeight(
                 return@with imageHeight + 32.dp.toPx().toInt()
             }
 
-            val innerWidth = widthPx - 24.dp.toPx().toInt()
+            // A FLOW BLOCK HAS NO FRAME, so it has no inset either: the task
+            // runs the full width of the page like the prose around it. Code
+            // and undrawn-figure fallbacks keep their box and their inset.
+            val flows = block.kind == "exercise" || block.kind == "recap"
+            val innerWidth = if (flows) widthPx else widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
                 else -> block.body.trim()
@@ -1114,7 +1160,12 @@ private fun estimateHeight(
             val badgeKind = badgeKindFor(block.kind)
             val badgeHeight =
                 if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
-            val label = maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt()
+            // The mascot and the name are drawn ONCE, by the piece that opens
+            // the block. A continuation of a flow block draws nothing of its
+            // own — which is most of what made a cut expensive before.
+            val opensBlock = !flows || block.params[FENCE_CONT_FROM] == null
+            val label =
+                if (opensBlock) maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() else 0
             // The reveal button, plus room for the answer badge that appears
             // beside the answer text once it is shown. Reserved whether or
             // not the reader has revealed it — revealing must not reflow the
@@ -1208,9 +1259,14 @@ private fun estimateHeight(
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
             val outerSpacers = 8.dp.toPx().toInt()
             val wrapperVPad = 16.dp.toPx().toInt()
-            val borderInner = 24.dp.toPx().toInt()
+            val borderInner = if (flows) 0 else 24.dp.toPx().toInt()
+            // The two 8dp gaps an exercise puts around its working room. They
+            // used to hide inside the border's padding; with the frame gone
+            // they have to be counted, and counting them errs tall, which is
+            // the safe direction for a budget whose failure is clipping.
+            val contentSpacers = if (block.kind == "exercise") 16.dp.toPx().toInt() else 0
             label + body.size.height + exerciseExtra + answerSpace + figureExtra +
-                outerSpacers + wrapperVPad + borderInner
+                outerSpacers + wrapperVPad + borderInner + contentSpacers
         }
     }
 }

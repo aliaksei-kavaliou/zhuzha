@@ -3335,16 +3335,14 @@ private fun ExerciseBlock(
     // second time, which would read as a second exercise.
     val isHead = f.params[FENCE_CONT_TO] != null
     val isTail = f.params[FENCE_CONT_FROM] != null
-    BorderedBlock(
-        label = if (isTail) {
-            labels.t("{label} (continued)", "label" to labels.t("TRY THIS"))
-        } else {
-            labels.t("TRY THIS")
-        },
+    FlowBlock(
+        label = labels.t("TRY THIS"),
         fontScale = fontScale,
-        badge = if (isTail) null else loadBadge("exercise"),
-        openBottom = isHead,
-        openTop = isTail,
+        badge = loadBadge("exercise"),
+        // A continuation says nothing at all. With no frame there is no open
+        // edge to explain and no box to reintroduce: the italic simply
+        // carries on over the leaf, the way a paragraph does.
+        opener = !isTail,
     ) {
         // A part split can leave a tail with no words at all — the task fitted
         // where it was and only the room and the answer came over the leaf.
@@ -3358,6 +3356,11 @@ private fun ExerciseBlock(
                 fontFamily = FontFamily.Serif,
                 fontSize = 17.sp * fontScale,
                 lineHeight = 28.sp * fontScale * lineSpacing,
+                // ITALIC IS THE FRAME NOW. The border used to say "this is a
+                // thing you DO"; it also made the block a unit that had to
+                // land whole or reintroduce itself. Italic says the same at
+                // no cost to the page, because styled text flows.
+                fontStyle = FontStyle.Italic,
                 color = Ink,
             )
             Spacer(Modifier.height(8.dp))
@@ -3557,22 +3560,18 @@ private fun RecapBlock(
     labels: UiLabels,
 ) {
     val isTail = f.params[FENCE_CONT_FROM] != null
-    BorderedBlock(
-        label = if (isTail) {
-            labels.t("{label} (continued)", "label" to labels.t("RECAP"))
-        } else {
-            labels.t("RECAP")
-        },
+    FlowBlock(
+        label = labels.t("RECAP"),
         fontScale = fontScale,
-        badge = if (isTail) null else loadBadge("recap"),
-        openBottom = f.params[FENCE_CONT_TO] != null,
-        openTop = isTail,
+        badge = loadBadge("recap"),
+        opener = !isTail,
     ) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
             fontFamily = FontFamily.Serif,
             fontSize = 17.sp * fontScale,
             lineHeight = 28.sp * fontScale * lineSpacing,
+            fontStyle = FontStyle.Italic,
             color = Ink,
         )
     }
@@ -3702,6 +3701,71 @@ private fun UnknownFenceBlock(
             fontSize = 14.sp * fontScale,
             color = Ink,
         )
+    }
+}
+
+/**
+ * A block that FLOWS: a mascot and a name, then styled text, and no frame.
+ *
+ * The frame was the problem rather than the decoration. A bordered box is a
+ * unit — it has to land whole on one page, and when it cannot it must leave
+ * an edge open and reintroduce itself overleaf, paying its label, its mascot
+ * and two lots of padding every time it is cut. Reported from the Boox with
+ * the font turned up (2026-10-06): one task came out as three pages of four
+ * or five lines each, most of every page white, because the only thing the
+ * paginator could cut was the words while the furniture stayed whole.
+ *
+ * Aliaksei's call, and it is the right one: keep the icon and the title, set
+ * the body in italic, and drop the box. Italic marks a task as well as a
+ * border does and costs the page nothing, because styled text flows exactly
+ * like prose — which is what he expected of it in the first place.
+ *
+ * A continuation passes `opener = false` and draws nothing of its own.
+ *
+ * Code and undrawn-figure fallbacks keep [BorderedBlock]: a code listing in a
+ * box is a convention readers expect, and the figure box is a placeholder for
+ * a picture rather than something to read.
+ */
+@Composable
+private fun FlowBlock(
+    label: String,
+    fontScale: Float,
+    badge: ImageBitmap? = null,
+    /** False on a piece that began on the page before. */
+    opener: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    Spacer(Modifier.height(4.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+    ) {
+        if (opener) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 6.dp),
+            ) {
+                if (badge != null) {
+                    Image(
+                        bitmap = badge,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(end = 10.dp)
+                            .size(BADGE_SIZE * fontScale),
+                        colorFilter = badgeColorFilter(),
+                    )
+                }
+                Text(
+                    text = label,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp * fontScale,
+                    color = Muted,
+                )
+            }
+        }
+        content()
     }
 }
 

@@ -101,10 +101,10 @@ val BOOK_CHROME_STRINGS: List<String> = listOf(
     "TRY THIS",
     "RECAP",
     "FIGURE",
-    // A bordered block that ran past the foot of a page and carries on over
-    // the leaf. A placeholder rather than a bare "(continued)" so a translator
-    // can put it wherever their language wants it.
-    "{label} (continued)",
+    // No "(continued)" any more. Exercise and recap lost their frames on
+    // 2026-10-06 and flow like prose, so a piece that carries on over the
+    // leaf announces nothing — there is no box to reintroduce. Books that
+    // already have the string translated keep it on disk, unused.
     // Inside the exercise box, so it is part of the block rather than a
     // control beside it — and the EPUB prints its own form of the same thing.
     "Show answer",

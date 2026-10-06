@@ -877,6 +877,46 @@ yet" note that used to live here was two months stale.
       that at 1.5 the dot grid itself now spans a page break (5 rows then 3), which is right
       for a written answer and of little use for a drawing — if that ever grates, the fix is
       to keep the room with whichever piece holds the answer rather than filling the head.
+- [x] **A try-this block has no frame any more (2026-10-06)** — the same day's part-split fix
+      made the big screen right and the small one only better: at 320x640 and font 1.3, the mug
+      task still came out as a one-line piece under a mascot, then four lines, then eight ending
+      mid-sentence. Aliaksei's call, and it goes past the paginator entirely: **"we leave icon,
+      title, then put text as Italic. So no frame should be no problem."**
+      He is right, and the frame was the whole problem rather than the decoration. A bordered
+      box is a UNIT — it must land whole, leave an edge open when it cannot, and reintroduce
+      itself overleaf, paying its label, its mascot and two lots of padding on every piece
+      (~150px a time on that screen, charged three times). Italic marks a task as well as a
+      border does and costs the page nothing, because styled text flows. `FlowBlock` replaces
+      `BorderedBlock` for exercise and recap: mascot and name drawn ONCE by the opening piece,
+      body in italic, full page width, and a continuation says nothing at all. Code listings and
+      undrawn-figure placeholders keep their box — a boxed listing is a convention, and the
+      figure box is a placeholder rather than something to read.
+      **Three real bugs surfaced in `sentenceCutAtOrBefore` while chasing this**, all visible on
+      that one page. It required whitespace IMMEDIATELY after the full stop, so a sentence ending
+      inside quotes — `connects to the cylinder." Now, trace…`, which this book does constantly —
+      was invisible to it and the page broke four words into the next sentence. Its backup budget
+      was `3 * 42` CHARACTERS, "three lines' worth" at an assumed 42 per line; at 22 chars a line
+      that is six lines, and the head gave up a third of its page hunting for a stop. And it had
+      no floor, so it stranded a ONE-LINE piece under a 94px mascot at the foot of page 9. The
+      budget is now measured off the layout (back up no further than two lines, never below
+      `MIN_SPLIT_LINES`), and closers `"'’”)]»` may stand between the stop and the space.
+      **The part split needed a rule it did not have: the room to write belongs WITH the task.**
+      First cut of it put every word of a two-page task on the second page and left the eight-row
+      grid alone on a third — a page opening with nothing but dots, and the reader writing two
+      pages away from the question. It now runs only when the head keeps usable room AND there is
+      an answer to send over the leaf; everything else falls through to the text cut, which keeps
+      the last words of the task on the same page as the grid.
+      Device-verified on the emulator at 320x640 / font 1.3, the exact case reported: pages 9-11
+      were "one line + white", "four lines + white", "eight lines, cut mid-sentence"; they are now
+      opener + first lines, a full page of italic, and the last two lines sitting above their dot
+      grid. **Chapter 2 went 31 pages to 28.**
+      **A grey background was raised and dropped, with the better reason coming from Aliaksei:
+      "we won't be able to draw on it."** The working room is written on with the stylus, and ink
+      on a dithered grey is both a poor writing surface and poor contrast — on top of the standing
+      rule that e-ink has no grey. The frameless block is also why it is not needed: a fill has
+      edges, so it would have reinstated exactly the land-whole-or-look-broken problem the frame
+      had.
+      The EPUB keeps its boxes deliberately: it is reflowable, so it never had this problem.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
