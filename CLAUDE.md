@@ -1040,6 +1040,36 @@ yet" note that used to live here was two months stale.
       Worth noting the shape of the day: the frame came off at noon, and three of the
       afternoon's fixes were rules that had been written to pay for it. A rule argued from a
       cost should be re-read when the cost goes.
+- [x] **The foot of the text block stands still (2026-10-06)** — Aliaksei: "why is this
+      bottom gap so inconsistent... one page shorter than another, usually readers have stable
+      page view especially with prose at the top and in the bottom." Right, and that is what a
+      printed text block does: prose splits freely, so every page should end on the same line.
+      **Measured rather than tuned.** Instrumented the estimate against the DRAWN height of
+      every block in a chapter (`coords.size.height` from the renderer's own
+      `onGloballyPositioned`, logged beside `estimateHeight`). The result overturned the
+      comment that had justified the budget for a year: **every paragraph, figure and fence
+      matches its estimate to within 3px.** "TextMeasurer under-counts by roughly a half-line
+      per block" was stale. So the 10% haircut — a line and a half withheld from every page —
+      was paying for nothing, and because it is a FRACTION it moved the foot of the block
+      around with the page's content. Now 2%, which is what covers the asymmetry: a page that
+      over-fills clips its last line, one that under-fills by a few pixels is invisible.
+      **Three kinds really did under-count, and the margin had been hiding them.** A heading
+      draws one line more than it measures (the chapter title measured 3 lines and drew 4) and
+      so does the byline; both get an explicit one-line allowance, erring tall. The third was
+      a REAL BUG and a real clip: **a list item is a hanging indent, not a paragraph that
+      starts with a bullet.** The renderer puts the marker in its own column of a `Row` and
+      gives the body what is left, so every line after the first is narrower by the marker —
+      but the estimate measured `"• " + text` as one run at full width. A three-item list drew
+      528px into 520px of page: a clipped last line, invisible while the 10% was absorbing it.
+      Measured at the marker's real width now, plus a line of allowance for a residual the
+      cause of which is still unexplained.
+      **Result at font 0.85:** prose pages end within ~16px of each other where the spread had
+      been 50-120px; the chapter went 15 pages to 14; the ten-circles exercise gained two rows
+      of working room, since the room is sized by what fits. The gaps that remain are
+      structural and also true of print — a figure and a list item cannot be split, so a page
+      that ends before one is genuinely short.
+      **Verified by eye on the tightest pages**, because the per-page harness becomes
+      unreliable once blocks split (one block index, two drawn heights, two pages).
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

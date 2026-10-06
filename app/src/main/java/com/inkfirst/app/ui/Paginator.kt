@@ -94,12 +94,25 @@ fun paginate(
         return listOf(blocks.mapIndexed { i, b -> PageItem(b, i) })
     }
 
-    // Safety margin: TextMeasurer under-counts by roughly a half-line per
-    // block (font metric slop + sub-pixel rounding). 5% wasn't enough — still
-    // saw single-line clipping. 10% covers observed cases.
-    // The reader reserves INK_TOP_MARGIN above the first block so the first
-    // line can be stroked from above; the pack has to fit in what is left.
-    val budget = ((contentHeightPx - inkTopMarginPx) * 0.90f).toInt()
+    // THE BOTTOM OF THE PAGE SHOULD BE THE BOTTOM OF THE PAGE. This was 10%,
+    // and the comment justifying it — "TextMeasurer under-counts by roughly a
+    // half-line per block" — was stale. Measured block by block against the
+    // drawn height on 2026-10-06: paragraphs, figures and fences match their
+    // estimate EXACTLY (0-3px across a whole chapter). Only headings and the
+    // byline were short, by a line each, and those are allowed for where they
+    // are measured rather than here.
+    //
+    // 10% is a line and a half held back from every page, which is what made
+    // the foot of the text block wander: a page of prose ended wherever the
+    // haircut happened to land. Aliaksei, reading: "why is this bottom gap so
+    // inconsistent... usually readers have stable page view, especially with
+    // prose at the top and in the bottom." Quite right, and that is what a
+    // printed text block does.
+    //
+    // 2% is left because the failure mode is asymmetric: a page that
+    // over-fills clips its last line, and a page that under-fills by a few
+    // pixels is invisible.
+    val budget = ((contentHeightPx - inkTopMarginPx) * 0.98f).toInt()
 
     val lineHeightPx = with(density) { (30.sp * fontScale * lineSpacing).toPx().toInt() }
 
@@ -1125,8 +1138,17 @@ private fun estimateHeight(
                     (widthPx * PLATE_WIDTH_FRACTION / FIGURE_ASPECT).toInt() + 16.dp.toPx().toInt()
                 }
                 ?: 0
+            // ONE LINE OF ALLOWANCE. Measured on the emulator against the
+            // drawn height: every paragraph, figure and fence matches its
+            // estimate to within 3px, and a heading is one line short — the
+            // chapter title measured 3 lines and drew 4. The cause is in
+            // Compose's text layout rather than in these numbers (same size,
+            // same weight, same family, same width), so it is allowed for
+            // rather than explained away. Erring tall is the safe direction:
+            // the failure mode of erring short is a clipped last line.
+            val headingSlack = (fontSize.toPx() * 1.2f).toInt()
             (if (atPageTop) 0 else topPad.toPx().toInt()) + result.size.height +
-                botPad.toPx().toInt() + cover
+                botPad.toPx().toInt() + cover + headingSlack
         }
         is Block.Paragraph -> {
             val result = measurer.measure(
@@ -1180,7 +1202,11 @@ private fun estimateHeight(
                 } else {
                     0
                 }
-                return@with result.size.height + 8.dp.toPx().toInt() + standInTitle + cover
+                // Same one-line allowance as a heading, and measured the
+                // same way: estimate 21px against 32px drawn.
+                val metaSlack = (13.sp.toPx() * fontScale * 1.2f).toInt()
+                return@with result.size.height + 8.dp.toPx().toInt() + standInTitle + cover +
+                    metaSlack
             }
             // The closing picture: a fixed-ratio image with air above it.
             if (block.kind == "tail") {
@@ -1389,16 +1415,35 @@ private fun measureListItem(
     fontScale: Float,
     lineSpacing: Float,
 ): Int = with(density) {
-    val result = measurer.measure(
-        text = AnnotatedString(prefix + inlines.plainText()),
-        style = TextStyle(
-            fontSize = 18.sp * fontScale,
-            lineHeight = 30.sp * fontScale * lineSpacing,
-            fontFamily = FontFamily.Serif,
-        ),
-        constraints = Constraints(maxWidth = widthPx - 18.dp.toPx().toInt()),
+    val style = TextStyle(
+        fontSize = 18.sp * fontScale,
+        lineHeight = 30.sp * fontScale * lineSpacing,
+        fontFamily = FontFamily.Serif,
     )
-    result.size.height + 10.dp.toPx().toInt()
+    // A LIST ITEM IS A HANGING INDENT, not a paragraph that starts with a
+    // bullet. The renderer puts the marker in its own column of a Row and
+    // gives the body what is left, so EVERY line of the body is narrower by
+    // the marker's width — not just the first. Measuring "• " + text as one
+    // run let every line after the first use the full measure, so a
+    // three-item list measured a line short per item: page 9 of the demo
+    // chapter drew 528px into 520px of page, which is a clipped last line.
+    // Invisible until the 10% budget haircut came off.
+    val markerPx = measurer.measure(AnnotatedString(prefix), style).size.width
+    val bodyWidth = (widthPx - 18.dp.toPx().toInt() - markerPx).coerceAtLeast(1)
+    val result = measurer.measure(
+        text = AnnotatedString(inlines.plainText()),
+        style = style,
+        constraints = Constraints(maxWidth = bodyWidth),
+    )
+    // Plus one line of allowance, the same as a heading gets and for the
+    // same unexplained reason: measured against the drawn height, a list
+    // item still comes out short of what Compose lays out even once the
+    // hanging indent is accounted for. Erring tall is the safe direction —
+    // a page that under-fills by a few pixels is invisible, a page that
+    // over-fills loses a line off the bottom.
+    val itemSlack = (30.sp * fontScale * lineSpacing).toPx().toInt()
+    maxOf(result.size.height, measurer.measure(AnnotatedString(prefix), style).size.height) +
+        10.dp.toPx().toInt() + itemSlack
 }
 
 private fun List<Inline>.plainText(): String = joinToString("") { i ->
