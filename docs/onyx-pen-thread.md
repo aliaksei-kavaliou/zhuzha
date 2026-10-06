@@ -909,3 +909,49 @@ faithfully and was TRUE — the app asked for the hole to be removed. What no lo
 that the ask was dropped one layer further down. When a fix is a request to another process,
 logging that we asked is not evidence that it happened.
 
+### What shipped instead, the same day: pause the RENDER (candidate 2)
+
+Aliaksei, reading the two candidates: *"I was also thinking about pause until chip is up. It's
+sounds so natural."* It is, and reading two more methods out of the aar made it the safer of
+the two rather than merely the nicer-sounding one.
+
+```
+TouchHelper.setRawDrawingEnabled(boolean) =
+      setRawDrawingRenderEnabled(x)      // field b → EpdPenManager pause/resume
+    + setRawInputReaderEnable(x)         // field c → gates onTouchEvent
+    + resetPenDefaultRawDrawing()
+AppTouchRender.onTouchEvent  gates on the INPUT flag only; the render flag never touches it.
+AppTouchRender.setDrawingRenderEnabled(false) also calls EpdController.enablePost(view, 1).
+```
+
+Three things follow, and all three matter:
+
+1. **Input survives the pause.** The render flag gates the driver's ink; the input reader is a
+   separate flag, and `onTouchEvent` reads only that one. So a stroke drawn while the chip is
+   up is still captured, still saved, and renders a beat late from the Compose copy. Nothing
+   is lost — which is what makes a pause acceptable where a stand-down would not be.
+2. **Every hand-back silently un-pauses.** `setRawDrawingEnabled(true)` turns rendering on as
+   part of its job, and this file calls it from four places — the drawing-enabled effect, the
+   unlock cycle, `applyLimitRect`, and `surfaceCreated`. The chip's OWN unlock fires a few
+   frames after it opens, so a naive pause would be undone almost immediately. Hence
+   `handPenToPage`: one funnel every hand-back goes through, which re-applies the rule.
+   The rule is "the driver renders only while nothing tappable floats over the page".
+3. **The resume path is already exercised thousands of times.** `setRawDrawingEnabled(false)`
+   then `(true)` is exactly a pause/resume pair, and the unlock cycle performs it on every
+   repaint. That is the opposite of the exclude rect, whose release path had never run before
+   we shipped it. A stuck pause would have been showing up for a year.
+
+It is also the only case that needs handling: `penEnabled` in ReaderScreen already stands the
+pen down for the format menu and every dialog. The chip deliberately leaves the pen live
+because you may want to keep drawing — which is precisely why it, alone, needs a pause rather
+than a stand-down.
+
+Resume is immediate on close rather than left to the unlock, deliberately: an unlock can be
+cancelled by the next one (§T9's latent mechanism), and the resume must not depend on a message
+that might not arrive.
+
+**UNVERIFIED on the glass.** Compiles, and the emulator cannot test it — without the Onyx SDK
+the raw overlay is never composed. What to look for: `render paused (chip)` / `render resumed
+(chip)` in logcat, no mark left on the pill after tapping Delete or Cancel with the stylus,
+and — the thing the last fix got wrong — **draw in the bottom band with no chip up and confirm
+the ink appears live, not on the next page turn.**

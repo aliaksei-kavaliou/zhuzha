@@ -188,6 +188,7 @@ internal fun OnyxInkOverlay(
     val resolveSwipeRef = rememberUpdatedState(resolveSwipe)
     val drawEnabledRef = rememberUpdatedState(drawingEnabled)
     val chipRectRef = rememberUpdatedState(chipRect)
+    val chipOpenRef = rememberUpdatedState(chipOpen)
     val tapActionRef = rememberUpdatedState(onTapAction)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
@@ -198,6 +199,33 @@ internal fun OnyxInkOverlay(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val touchHelperRef = remember { mutableStateOf<TouchHelper?>(null) }
     val startTouchRef = remember { mutableStateOf<TouchPoint?>(null) }
+
+    /**
+     * Hand the pen back to the page, under the ONE rule that governs the
+     * driver's ink: it renders only while nothing the reader can tap is
+     * floating over the page.
+     *
+     * `setRawDrawingEnabled(true)` is three things in the SDK — render on,
+     * input reader on, pen defaults reset — so every site that hands the pen
+     * back also silently turns RENDERING back on. That is why the rule has to
+     * live in one function every one of them calls: the chip's own unlock
+     * fires a few frames after it opens, and would otherwise undo the pause
+     * immediately.
+     *
+     * Input stays ON while the chip is up, deliberately. A stroke drawn there
+     * is still captured and still saved; it renders a beat late, from the
+     * Compose copy, instead of live. Losing the mark would be worse than
+     * drawing it slowly.
+     */
+    fun handPenToPage(helper: TouchHelper?) {
+        helper ?: return
+        try {
+            helper.setRawDrawingEnabled(true)
+            if (chipOpenRef.value) helper.setRawDrawingRenderEnabled(false)
+        } catch (t: Throwable) {
+            Log.w(TAG, "handPenToPage failed", t)
+        }
+    }
     // Screen position of the drawing surface, refreshed at each stroke start.
     val originRef = remember { mutableStateOf(0f to 0f) }
     /** Guards against the list and move callbacks both emitting one stroke. */
@@ -310,11 +338,7 @@ internal fun OnyxInkOverlay(
     // Hand the pen to the page, or take it away when something opens over it.
     LaunchedEffect(drawingEnabled) {
         if (drawingEnabled) {
-            try {
-                touchHelperRef.value?.setRawDrawingEnabled(true)
-            } catch (t: Throwable) {
-                Log.w(TAG, "re-enable drawing failed", t)
-            }
+            handPenToPage(touchHelperRef.value)
         } else {
             // Standing the driver down is not enough on its own: ink already
             // on the glass sits above whatever Compose renders next, so an
@@ -454,6 +478,32 @@ internal fun OnyxInkOverlay(
                         h,
                     ),
                 )
+            }
+            // THE PEN STOPS INKING WHILE THE PILL IS UP. Raw drawing is a
+            // hardware path: the driver marks wherever the nib lands inside
+            // the limit rect, below Android's framebuffer and regardless of
+            // what Compose drew on top — so tapping Delete or Cancel with the
+            // stylus left a real mark ON the chip, and the driver's own copy
+            // outlived it.
+            //
+            // Cutting the pill's rectangle out of the drawable region was the
+            // first cure and is REVERTED — the region never came back; see
+            // docs/onyx-pen-thread.md §T10. This pauses the RENDER instead,
+            // which is a state the firmware is told in both directions rather
+            // than one it has to infer from an absence. It is also the same
+            // pair of calls the unlock cycle already makes on every repaint,
+            // so the resume path is exercised constantly rather than once.
+            //
+            // The chip is the only case: `penEnabled` already stands the pen
+            // down for the menu and every dialog. The chip deliberately
+            // leaves it live, because you may want to keep drawing — hence a
+            // pause rather than a stand-down.
+            try {
+                touchHelperRef.value
+                    ?.setRawDrawingRenderEnabled(!chipOpen && drawEnabledRef.value)
+                Log.d(TAG, "render ${if (chipOpen) "paused" else "resumed"} (chip)")
+            } catch (t: Throwable) {
+                Log.w(TAG, "chip render toggle failed", t)
             }
             unlockRequestRef.value?.invoke(if (chipOpen) "chipShow" else "chipClose")
         }
@@ -980,7 +1030,7 @@ internal fun OnyxInkOverlay(
                                     // Not unconditional: an unlock that
                                     // fires while a dialog is open must not
                                     // hand the pen back to the page beneath it.
-                                    if (drawEnabledRef.value) it.setRawDrawingEnabled(true)
+                                    if (drawEnabledRef.value) handPenToPage(it)
                                 }
                                 Log.d(TAG, "unlock($reason)")
                                 // Releasing the panel is not repainting it.
@@ -1347,12 +1397,13 @@ internal fun OnyxInkOverlay(
                                 // firmware as a zero-length int[], and that
                                 // does not clear what was set.
                                 // Read docs/onyx-pen-thread.md §T10 before
-                                // putting anything in this list again: the
-                                // decompiled call chain and the two candidate
-                                // replacements are written up there.
+                                // putting anything in this list again. What
+                                // replaced it is [handPenToPage]: the driver's
+                                // RENDER is paused while the chip is up, which
+                                // is told in both directions.
                                 helper?.setLimitRect(bounds, emptyList())
                                 Log.d(TAG, "  (view origin on screen = ${loc[0]},${loc[1]})")
-                                if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
+                                if (drawEnabledRef.value) handPenToPage(helper)
                                 Log.d(TAG, "limitRect($reason) viewLocal=$bounds")
                             } catch (t: Throwable) {
                                 Log.w(TAG, "limitRect($reason) failed", t)
@@ -1365,7 +1416,7 @@ internal fun OnyxInkOverlay(
                             try {
                                 helper?.setStrokeWidth(3f)?.openRawDrawing()
                                 helper?.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
-                                if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
+                                if (drawEnabledRef.value) handPenToPage(helper)
                                 Log.d(TAG, "TouchHelper opened ${width}x$height")
                                 applyLimitRect("created")
                             } catch (t: Throwable) {

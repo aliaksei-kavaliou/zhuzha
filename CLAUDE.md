@@ -857,14 +857,28 @@ yet" note that used to live here was two months stale.
       **The lesson generalises past this bug: logging that we ASKED is not evidence it
       happened.** `limitRect(chipClose) holes=[]` printed faithfully every time and was true;
       the request was dropped a layer below anything we can log.
-      Two candidates for the next attempt, in order, written up with the call chain in
-      `docs/onyx-pen-thread.md` §T10: (1) never send an empty array — hand back one degenerate
-      `Rect(0,0,1,1)` so the firmware always gets a list that REPLACES the last; (2) pause the
-      driver's rendering while the chip is up (`setRawDrawingRenderEnabled` → `PEN_PAUSE` /
-      `PEN_DRAWING`), a symmetric pair that is told a state in both directions. Neither is
-      visible to `screencap`; neither ships without eyes on the glass, and not in the same
-      build as the other. **(2) is built, on the branch `pen-chip-render-pause`, waiting for
-      the device.**
+      **The second attempt is built and NOT YET SEEN ON THE GLASS: pause the driver's
+      RENDER while the chip is up** (`setRawDrawingRenderEnabled` → `PEN_PAUSE` /
+      `PEN_DRAWING`). Aliaksei's preference — "it sounds so natural" — and two more methods
+      read out of the aar made it the safer candidate rather than just the nicer-sounding one.
+      Input is a SEPARATE flag that `onTouchEvent` alone gates, so a stroke drawn while the
+      chip is up is still captured and still saved; it renders a beat late from the Compose
+      copy instead of live. And `setRawDrawingEnabled(true)` is three calls in one — render on,
+      input on, defaults reset — so the unlock cycle has been performing this exact pause/resume
+      pair on every repaint for a year. The resume path is exercised constantly, where the
+      exclude rect's release had never run at all before it shipped.
+      That same fact is the trap: every hand-back silently un-pauses, and the chip's own unlock
+      fires a few frames after it opens. So the rule lives in ONE funnel, `handPenToPage`, which
+      all four hand-back sites call — the drawing-enabled effect, the unlock cycle,
+      `applyLimitRect` and `surfaceCreated`. Resume is also immediate on close rather than left
+      to the unlock, since an unlock can be cancelled by the next one.
+      The chip is the only case that needs it: `penEnabled` already stands the pen down for the
+      menu and every dialog. The chip deliberately keeps it live so you can carry on drawing.
+      **What to check on the Boox:** no mark on the pill after Delete/Cancel with the stylus,
+      `render paused/resumed (chip)` in logcat, and — the thing the last fix got wrong — ink
+      appearing LIVE in the bottom band with no chip up, not on the next page turn.
+      The other candidate, if this one disappoints: never send an empty exclude array, hand back
+      one degenerate `Rect(0,0,1,1)` so the firmware always gets a list that REPLACES the last.
       **Still latent from §T9:** every `scheduleUnlock` cancels the last, so a pen event inside
       the 200ms leaves a repaint armed but unperformed. Real, not this symptom.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
