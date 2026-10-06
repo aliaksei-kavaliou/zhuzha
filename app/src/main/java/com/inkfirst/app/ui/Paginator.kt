@@ -117,6 +117,27 @@ fun paginate(
 
     val lineHeightPx = with(density) { (30.sp * fontScale * lineSpacing).toPx().toInt() }
 
+    // THE MODEL SIZES THE ROOM; THIS TURNS IT INTO ROWS. `room="60%"` means
+    // sixty percent of a page, which is the only unit that means the same
+    // thing on the Boox, on a phone and at every font size — see
+    // [roomRowsFor]. Converted once here so the renderer, the splitter and
+    // the ladder all keep working in [FENCE_SPACE_ROWS] and none of them has
+    // to learn a second unit.
+    val roomRowPx = with(density) { (ANSWER_RULE_SPACING * fontScale).toPx() }
+    val blocks = blocks.map { b ->
+        val pct = (b as? Block.CustomFence)
+            ?.takeIf { it.kind == "exercise" && it.params[FENCE_SPACE_ROWS] == null }
+            ?.params?.get(FENCE_ROOM)?.trim()?.removeSuffix("%")?.trim()?.toIntOrNull()
+        if (pct == null) {
+            b
+        } else {
+            (b as Block.CustomFence).copy(
+                params = b.params +
+                    (FENCE_SPACE_ROWS to roomRowsFor(pct, budget, roomRowPx).toString()),
+            )
+        }
+    }
+
     val pages = mutableListOf<MutableList<PageItem>>()
     pages.add(mutableListOf())
     var height = 0
@@ -710,6 +731,13 @@ private fun withShrunkWritingSpace(
     if (block.kind != "exercise") return null
     val spaceKind = block.params["space"]
     if (spaceKind == "none") return null
+    // A room the MODEL asked for is not a courtesy this rung may spend. It
+    // sized the room to what the task produces — a mug wants most of a page —
+    // so shrinking it to make the box fit defeats the request. The split
+    // below gives it a page of its own instead. The last-resort rung
+    // (floor = 0) may still take it, because the alternative there is a
+    // clipped page.
+    if (floor > 0 && block.params[FENCE_ROOM] != null) return null
     // An explicit count is the starting point rather than a refusal: a piece
     // of a split box already carries one, and may still need to give more.
     // Termination is safe because the result must be strictly smaller.
@@ -851,7 +879,15 @@ private fun splitFence(
         // task and has an answer to send on. Anything else falls through to
         // the text cut below, which leaves the last words of the task on the
         // same page as the room, where they belong.
-        if (hasAnswer && naturalRows > 0 && headRows >= MIN_WORKING_ROWS) {
+        // The second arm is for a room the model ASKED for: a full-page
+        // drawing area is meant to be a page, so the task ends where it ends
+        // and the room follows it over the leaf. Without an explicit request
+        // the old rule stands — room travels with the task, and a tail of
+        // nothing but dots is a page that explains nothing.
+        val requested = block.params[FENCE_ROOM] != null
+        if ((hasAnswer && naturalRows > 0 && headRows >= MIN_WORKING_ROWS) ||
+            (requested && tailRows >= MIN_WORKING_ROWS)
+        ) {
             return SplitFence(
                 head = block.copy(
                     body = text,
@@ -990,6 +1026,33 @@ private fun sliceInlines(inlines: List<Inline>, from: Int, to: Int): List<Inline
 
 /** Fewest lines worth leaving on a page, or carrying to the next one. */
 private const val MIN_SPLIT_LINES = 2
+
+/**
+ * Rows of working room the model asked for, expressed as a PERCENTAGE OF A
+ * PAGE and converted here.
+ *
+ * Aliaksei's idea, and the unit is the point: "if it's about drawing the mug
+ * the whole page can be a room, but if it's just an answer yes/no, one line is
+ * enough." A row is a font size — it means a different amount of page at every
+ * scale and on every device — where a percentage of the page is what the
+ * reader actually sees, and it survives the Boox, the phone and every font
+ * setting unchanged.
+ *
+ * The model writes it because the model wrote the task: sizing the room by the
+ * ANSWER's length, which is what the fallback does, cannot tell a mug from a
+ * yes. Pagination owns the conversion so the renderer keeps its one unit,
+ * [FENCE_SPACE_ROWS], and needs no new path.
+ */
+internal fun roomRowsFor(pct: Int, budgetPx: Int, rowPx: Float): Int {
+    if (pct <= 0 || rowPx <= 0f) return 0
+    // A page is the ceiling: more than that is given its own page by the
+    // splitter rather than silently shrunk here.
+    val wanted = budgetPx * pct.coerceAtMost(100) / 100f
+    return (wanted / rowPx).toInt().coerceAtLeast(1)
+}
+
+/** Percentage of a page the task needs to work in. Written by the model. */
+internal const val FENCE_ROOM = "room"
 
 /**
  * The step from a flow block's marginal rule to its text, in dp.

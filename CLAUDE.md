@@ -1137,6 +1137,33 @@ yet" note that used to live here was two months stale.
       task fits above it.
       Verified on the reported pages: 6 ends with the task, 7 carries its last lines, then the
       grid, then the prose.
+- [x] **The model sizes the working room, as a percentage of a page (2026-10-06)** —
+      Aliaksei's idea and his unit: "if it's about drawing the mug the whole page can be a
+      room, but if it's just an answer yes/no, one line is enough." Both halves are right, and
+      the old sizing could express neither: a making-task got a flat eight rows and a written
+      one got a count derived from **the length of the stored answer**, which says nothing
+      about the room the reader needs — the defect he already caught once in October.
+      **A percentage of a page is the only honest unit.** A row is a font size: it means a
+      different amount of page on the Boox than on a phone, and a different amount again at
+      each font setting. A percentage is what the reader actually sees, unchanged across all
+      of them. `room="100%"` is a drawing page, `room="5%"` is one line for a yes.
+      Pagination converts it once (`roomRowsFor`) into `FENCE_SPACE_ROWS`, so the renderer,
+      the splitter and the ladder all keep their single unit and none of them learns a second.
+      Two rules keep a request from being quietly overruled. The polite shrink rung REFUSES to
+      touch a room the model asked for — it sized it to what the task produces, so trimming it
+      to win a tidy page defeats the point — though the last-resort rung may still take it,
+      because the alternative there is a clipped page. And the part split gained an arm for
+      exactly this case: a requested room that will not fit beside its task is given the next
+      page WHOLE rather than shrunk, which is how a full-page drawing area is supposed to
+      behave. Without an explicit request the old rule stands, because a tail of nothing but
+      dots explains nothing.
+      Unit-tested (the conversion, the one-line floor, the page cap), and **proved end to end
+      on the emulator by hand-editing a fence to `room="100%"` rather than paying for a
+      generation**: the task ended page 13 and page 14 was a full page of grid with Show
+      answer beneath it. The demo chapter was restored afterwards.
+      **Not yet seen from the model** — no chapter has been generated since the prompt learned
+      the param, so what it actually asks for on a real task is unverified. Existing books are
+      unaffected: no `room`, no change.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
