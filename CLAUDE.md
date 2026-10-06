@@ -975,6 +975,34 @@ yet" note that used to live here was two months stale.
       wash may land on a real one. In theory. **The emulator renders it perfectly either way,
       so the emulator cannot answer this**; it needs the panel. If it dithers into noise the
       fallback is the dashed marginal rule it replaced, which is one line and known to work.
+- [x] **Nothing is reserved for a closed answer any more (2026-10-06)** — Aliaksei: "why do
+      we need to reserve space? In case block fits the page with a text, on answer open text
+      just flows lower, I assume it can change pagination." It can, and it does now.
+      A two-state block was measured in its TALLER state always, so the page carried the whole
+      revealed answer as white from the moment it was laid out — on a 320px screen at font 1.3
+      that is a page holding one "Show answer" button and nothing else, which is what he saw
+      and asked about. `paginate` takes `isRevealed(blockIndex)`: closed measures to the
+      button, open measures to the answer, and opening one REPAGINATES from there.
+      **The rule it replaces was written to protect handwriting, and re-reading it, it never
+      did.** The argument was that revealing must not reflow the page under the reader's thumb
+      — but the working room sits ABOVE the answer and does not move either way, so what
+      reflows is the text after it. That is what "flows lower" means, and it is what the
+      reader asked for. What the reservation genuinely bought was that nothing could be pushed
+      off a page with no scrollbar; repaginating buys the same thing without the white.
+      The subtle half is the Compose one: the reveal map is read during composition as a
+      sorted KEY rather than passed as a lambda over the map. A lambda would close over the
+      right values and never re-run, because `remember` cannot subscribe to a snapshot it only
+      reads inside its own calculation.
+- [x] **The foot is gone, the mascot is multiplied (2026-10-06)** — two more from the same
+      reading. The marginal rule's L-foot carried a real bit (no foot = carries on over the
+      leaf) and Aliaksei read it as clutter: "I don't like |_ at the bottom." His call — the
+      vertical line marks the span, and where a block ends is already obvious from the text
+      stopping.
+      And the recap's mascot sat on **an opaque white card** punched through the new wash. The
+      badges are black line art on white, which is invisible on a white page and was never
+      noticed. Drawn with `BlendMode.Multiply` now — white × anything is that thing, so the
+      field disappears and the lines stay black — which costs nothing and needs no change to
+      the PNGs every existing book has already paid an API call for.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

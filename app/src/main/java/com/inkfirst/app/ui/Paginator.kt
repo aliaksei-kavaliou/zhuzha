@@ -71,6 +71,24 @@ fun paginate(
     inkTopMarginPx: Int = 0,
     /** The book's own word for "Answer:", measured as the renderer draws it. */
     answerPrefix: String = "Answer:",
+    /**
+     * Whether the answer of the exercise at this block index is open.
+     *
+     * NOTHING IS RESERVED FOR A CLOSED ANSWER ANY MORE. A two-state block
+     * used to be measured in its TALLER state always, so the page carried
+     * the whole revealed answer as white space from the moment it was laid
+     * out — on a small screen that is a page holding one "Show answer"
+     * button and nothing else, which is what Aliaksei saw and asked about:
+     * "why do we need to reserve space? on answer open text just flows
+     * lower, I assume it can change pagination."
+     *
+     * It can, and this is it: the closed block measures to its button, the
+     * open one to its answer, and opening one repaginates from there. The
+     * reader's own handwriting is safe because the working room sits ABOVE
+     * the answer and does not move; what moves is the text after it, which
+     * is exactly what "flows lower" means.
+     */
+    isRevealed: (Int) -> Boolean = { false },
 ): List<List<PageItem>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) {
         return listOf(blocks.mapIndexed { i, b -> PageItem(b, i) })
@@ -112,6 +130,7 @@ fun paginate(
         val h = estimateHeight(
             block, contentWidthPx, density, measurer, fontScale, lineSpacing,
             hasFigureImage, hasBadge, atPageTop = atTop, answerPrefix = answerPrefix,
+            revealed = isRevealed(i),
         )
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
@@ -133,6 +152,7 @@ fun paginate(
                     estimateHeight(
                         next, contentWidthPx, density, measurer, fontScale, lineSpacing,
                         hasFigureImage, hasBadge, answerPrefix = answerPrefix,
+                        revealed = isRevealed(i + 1),
                     ),
                     lineHeightPx * MIN_SPLIT_LINES,
                 )
@@ -140,6 +160,7 @@ fun paginate(
                 estimateHeight(
                     next, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, answerPrefix = answerPrefix,
+                    revealed = isRevealed(i + 1),
                 )
             }
             if (h + nextH <= budget) h + nextH else h
@@ -270,6 +291,7 @@ fun paginate(
                 bestH = estimateHeight(
                     room, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
+                    revealed = isRevealed(i),
                 )
             }
             if (bestH > budget && best.params[FENCE_PLAIN_ANSWER] == null) {
@@ -277,6 +299,7 @@ fun paginate(
                 val plainH = estimateHeight(
                     plain, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
+                    revealed = isRevealed(i),
                 )
                 if (plainH < bestH) {
                     best = plain
@@ -366,6 +389,7 @@ fun paginate(
                 relaxedH = estimateHeight(
                     bare, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
+                    revealed = isRevealed(i),
                 )
             }
             if (relaxed != null && relaxedH <= budget) {
@@ -1038,6 +1062,8 @@ private fun estimateHeight(
     hasBadge: (String) -> Boolean = { false },
     atPageTop: Boolean = false,
     answerPrefix: String = "Answer:",
+    /** Whether this exercise's answer is open. See [paginate]'s `isRevealed`. */
+    revealed: Boolean = false,
 ): Int = with(density) {
     when (block) {
         is Block.Heading -> {
@@ -1236,7 +1262,7 @@ private fun estimateHeight(
             // from under the answer they wrote it to compare against. Measure
             // the answer exactly as the renderer draws it: same "Answer: "
             // prefix, same 16sp, and in the column the badge leaves behind.
-            val revealedHeight = if (hasAnswer && showsReveal) {
+            val revealedHeight = if (hasAnswer && showsReveal && revealed) {
                 val gap = if (answerBadge > 0) answerBadge + 10.dp.toPx().toInt() else 0
                 val measured = measurer.measure(
                     text = AnnotatedString(parseInlines("$answerPrefix $answerText").plainText()),
@@ -1252,8 +1278,15 @@ private fun estimateHeight(
             } else {
                 0
             }
-            val exerciseExtra =
-                if (hasAnswer && showsReveal) maxOf(48.dp.toPx().toInt(), revealedHeight) else 0
+            // The button, OR the answer that replaced it — never both, and
+            // never the taller of the two on a page showing the shorter. The
+            // renderer swaps one for the other on a tap, and the tap
+            // repaginates, so each state is measured as what it draws.
+            val exerciseExtra = when {
+                !hasAnswer || !showsReveal -> 0
+                revealed -> revealedHeight
+                else -> 48.dp.toPx().toInt()
+            }
             // The ruled lines the reader writes their own answer on. Measured
             // with the SAME function the renderer draws from, deliberately:
             // an estimate that computes independently of its renderer is the

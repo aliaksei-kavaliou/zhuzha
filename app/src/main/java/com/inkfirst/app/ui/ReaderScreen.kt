@@ -67,6 +67,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -1679,9 +1681,18 @@ private fun PagedContent(
             // revealed answer, so it needs the same one. In the remember key
             // because a book whose labels arrive late must repaginate.
             val answerPrefix = labels.t("Answer:")
+            // Declared here rather than beside the renderer because
+            // PAGINATION reads it now: a block with its answer open measures
+            // to the answer, one with it closed measures to the button.
+            val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
+            // Opening an answer REPAGINATES. Read as a sorted key rather than
+            // passed as a map, so this composition actually subscribes to the
+            // snapshot and the key changes with it — a lambda closing over
+            // the map would read the right values and never re-run.
+            val revealedKey = revealed.filterValues { it }.keys.sorted().joinToString(",")
             val pages = remember(
                 blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion,
-                answerPrefix,
+                answerPrefix, revealedKey,
             ) {
                 paginate(
                     blocks = blocks,
@@ -1695,6 +1706,7 @@ private fun PagedContent(
                     hasBadge = hasBadge,
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                     answerPrefix = answerPrefix,
+                    isRevealed = { idx -> revealed[idx] == true },
                 )
             }
             // Page index is view state; the block anchor is for persistence
@@ -1732,8 +1744,6 @@ private fun PagedContent(
                 }
                 lastCountedPage = pageIndex
             }
-            val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
-
             // Block bounds tracked for the ink overlay: each rendered block's
             // top edge in root-layout coords, minus the overlay's own top,
             // gives us the block's top in overlay-local coords (which is what
@@ -3808,7 +3818,6 @@ private fun FlowBlock(
     // passage-marking gesture), and a printed rule out there invites the
     // reader to trace it.
     val strokePx = with(LocalDensity.current) { FLOW_RULE_WIDTH.toPx() }
-    val footPx = with(LocalDensity.current) { FLOW_RULE_INDENT.toPx() }
     val dashes = if (dashed) {
         PathEffect.dashPathEffect(
             floatArrayOf(with(LocalDensity.current) { 10.dp.toPx() }, with(LocalDensity.current) { 6.dp.toPx() }),
@@ -3856,14 +3865,12 @@ private fun FlowBlock(
                     strokeWidth = strokePx,
                     pathEffect = dashes,
                 )
-                if (closer) {
-                    drawLine(
-                        color = Ink,
-                        start = Offset(0f, size.height - strokePx / 2f),
-                        end = Offset(footPx, size.height - strokePx / 2f),
-                        strokeWidth = strokePx,
-                    )
-                }
+                // No foot. It was the end-bracket of marginal annotation and
+                // it carried a real bit — "no foot means this carries on over
+                // the leaf" — but Aliaksei read the L as clutter rather than
+                // as information, and he is the one reading. The vertical
+                // line alone marks the span; where the block ends is already
+                // obvious from the text stopping.
             }
             .padding(
                 start = if (wash) WASH_PAD else FLOW_RULE_INDENT,
@@ -3878,14 +3885,28 @@ private fun FlowBlock(
                 modifier = Modifier.padding(bottom = 6.dp),
             ) {
                 if (badge != null) {
-                    Image(
-                        bitmap = badge,
-                        contentDescription = null,
+                    // MULTIPLIED, not drawn. The mascots are black line art
+                    // on an OPAQUE WHITE field, which is invisible on a white
+                    // page and a white card punched through the recap's wash
+                    // — reported the moment the wash landed. Multiply makes
+                    // white transparent by arithmetic (white × anything is
+                    // that thing) while black stays black, which is the
+                    // standard trick for line art and needs no change to the
+                    // PNGs every book has already generated and paid for.
+                    val filter = badgeColorFilter()
+                    Canvas(
                         modifier = Modifier
                             .padding(end = 10.dp)
                             .size(BADGE_SIZE * fontScale),
-                        colorFilter = badgeColorFilter(),
-                    )
+                    ) {
+                        drawImage(
+                            image = badge,
+                            srcSize = IntSize(badge.width, badge.height),
+                            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                            colorFilter = filter,
+                            blendMode = BlendMode.Multiply,
+                        )
+                    }
                 }
                 Text(
                     text = label,
