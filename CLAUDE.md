@@ -835,6 +835,48 @@ yet" note that used to live here was two months stale.
       Also learned: on Onyx a top-edge swipe does NOT peek at the status bar — it opens the
       whole Control Center (wifi, Bluetooth, Front Light sliders). So before this change the
       only way to check the time mid-chapter was to summon a settings panel over the page.
+- [x] **A box flows part by part, not word by word (2026-10-06)** — Aliaksei, reading on the
+      Boox with the font turned up because he had no glasses: a `try this` box "was splitted
+      into 3 ugly 5 lines each pages", and the question behind it — "why does our text flow
+      naturally from page to page but this block can't? I thought a block is just an extra
+      style for the text same as on html" — is the right one, and names the gap exactly.
+      **The text was never what overflowed.** Measured at his geometry (1264x1680 @300dpi,
+      font 1.3) rather than reasoned about: the task is six lines, all six FIT, and what does
+      not is the furniture — an eight-row dot grid (~580px at that size) plus the reserved
+      answer. But cutting text was the only tool `splitFence` had, and the rule that it must
+      leave two lines for the tail turned a 1207px page into a 467px one. Three times over.
+      **The rule that would have helped was unreachable.** The 2026-10-01 ladder — the room to
+      write yields first, then the mascot, never the task or the answer — sat BELOW the split
+      in the loop, and the split's own `continue` meant it only ever ran on whatever the
+      scissors had left. A box overflowing by one row of dots was cut in half rather than
+      giving up the row.
+      Two changes, and they only work together. The ladder is **hoisted above** the move/split
+      decision, so the courtesy yields before anything is cut — but only down to
+      `MIN_WORKING_ROWS`, because a box that fits a page ONLY by losing every row of room is
+      better served by the second change. That second change is that `splitFence` now **cuts
+      between the PARTS before cutting the words**: if the task fits where it stands, the task
+      is not what moves — the head keeps every word plus as many rows of room as the page will
+      take, and the tail carries the rest of the room and the answer. The renderer learned to
+      draw working room on a HEAD (it never draws a reveal button there) and to skip its text
+      when a piece has none. A piece's explicit row count now outranks `showsReveal` in BOTH
+      the estimate and the renderer, which is this file's standing rule.
+      **Measured before and after, same chapter, same geometry, at three font sizes.** At 1.3:
+      page 12 went from 462/1207 — four lines and 62% white — to 1137, and the first exercise
+      is not split at all (it keeps 7 rows of room where the old code left it 3). At 1.5 the
+      page count is unchanged at 20, both pages of the split box are ~95% full, and the room
+      survives as 5 rows + 3 where the old code deleted it entirely (`spaceRows=0`). At 1.0
+      the chapter gains ONE page, because the second exercise is now placed whole instead of
+      cut — and the page that used to hold its tail was 1228/1207, over budget. A chapter of
+      the neural-networks book splits nothing at all now; both its exercises land whole.
+      Verified on the glass as well as in the numbers: the head draws task + 7 rows with its
+      foot open, the tail reads `TRY THIS (continued)` + Show answer, and revealing prints the
+      answer complete with the following paragraph still on the page.
+      **The cost, visible and accepted:** a box that moves whole leaves the page before it
+      short — 252/1207 in one case. That is the same trade 2026-09-30 took for the recap, and
+      the alternative is the cut this item exists to remove. The other thing worth knowing is
+      that at 1.5 the dot grid itself now spans a page break (5 rows then 3), which is right
+      for a written answer and of little use for a drawing — if that ever grates, the fix is
+      to keep the room with whichever piece holds the answer rather than filling the head.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

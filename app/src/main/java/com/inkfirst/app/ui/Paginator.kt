@@ -244,6 +244,65 @@ fun paginate(
         // there by the fit branch above. `!atTop` is what makes that true:
         // newPage() appends unconditionally, so moving a box off a page that
         // is already empty would spin.
+
+        // SHRINK THE FURNITURE BEFORE REACHING FOR THE SCISSORS.
+        //
+        // This rung existed from 2026-10-01 and sat BELOW the split, where
+        // the split's own `continue` made it unreachable: by the time it ran,
+        // the box was already in pieces and it could only tidy the last one.
+        // So a box that overflowed by one row of dots was cut across two
+        // pages rather than giving up the row — and at a larger font, cut
+        // again and again.
+        //
+        // The room to write in is a courtesy and the words are content, so
+        // the courtesy yields first. It yields only down to MIN_WORKING_ROWS
+        // here: a box that can fit a page ONLY by losing every row of room is
+        // better served by the part split below, which keeps the room whole
+        // on a page of its own rather than deleting it to win a tidy page.
+        var relaxedFence: Block.CustomFence? = null
+        var relaxedFenceH = 0
+        if (block is Block.CustomFence && h > budget) {
+            var best: Block.CustomFence = block
+            var bestH = h
+            withShrunkWritingSpace(best, bestH - budget, density, fontScale)?.let { room ->
+                best = room
+                bestH = estimateHeight(
+                    room, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                    hasFigureImage, hasBadge, atPageTop = true,
+                )
+            }
+            if (bestH > budget && best.params[FENCE_PLAIN_ANSWER] == null) {
+                val plain = best.copy(params = best.params + (FENCE_PLAIN_ANSWER to "1"))
+                val plainH = estimateHeight(
+                    plain, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                    hasFigureImage, hasBadge, atPageTop = true,
+                )
+                if (plainH < bestH) {
+                    best = plain
+                    bestH = plainH
+                }
+            }
+            if (best !== block) {
+                relaxedFence = best
+                relaxedFenceH = bestH
+            }
+            // It fits a page now. Place it whole if this page is empty;
+            // otherwise give it the fresh page it has earned — a box that
+            // fits somewhere whole must never be cut.
+            if (bestH <= budget) {
+                if (!atTop) {
+                    newPage()
+                    continue
+                }
+                pages.last().add(PageItem(best, i, carriedPx))
+                height += bestH
+                carry = null
+                carriedPx = 0
+                i++
+                continue
+            }
+        }
+
         if (block is Block.CustomFence && !atTop && h <= budget) {
             newPage()
             continue
@@ -266,7 +325,13 @@ fun paginate(
             // a small screen that lost the end of an exercise and its "Show
             // answer" button entirely, with no way to reach either.
             is Block.CustomFence ->
-                splitFence(block, remaining, contentWidthPx, measurer, fontScale, lineSpacing, density, hasBadge)
+                // The RELAXED form if the rung above made one: having already
+                // decided those rows are not affordable, splitting the
+                // original would hand them to a piece and then drop them.
+                splitFence(
+                    relaxedFence ?: block, remaining, contentWidthPx, measurer,
+                    fontScale, lineSpacing, density, hasBadge,
+                )
                     ?.let { Triple(it.head, it.tail, it.headPx) }
             else -> null
         }
@@ -276,6 +341,8 @@ fun paginate(
         // one that clips; splitting is strictly better, and it terminates
         // because every tail is shorter than what it came from.
         if (split != null) {
+            if (block is Block.CustomFence) {
+            }
             pages.last().add(PageItem(split.first, i, carriedPx))
             carry = split.second
             carriedPx += split.third
@@ -283,68 +350,30 @@ fun paginate(
             continue
         }
 
-        // What the ladder below settled on, when even that could not be made
-        // to fit: the oversize branch places THIS rather than the original.
-        var relaxed: Block.CustomFence? = null
-        var relaxedH = 0
-
-        // Nothing left to cut, and it still overflows a whole page. Before
-        // placing it and letting the page clip it, give up the working room:
-        // the task and the answer are content, the room to write is a
-        // courtesy. Only at the top of a page, because anywhere else the
-        // newPage() below gets the box a full page first and we arrive back
-        // here with the real question — does it fit a page of its own.
+        // NOTHING LEFT TO CUT AND IT STILL OVERFLOWS A WHOLE PAGE. The page
+        // is about to clip it, so now the room goes all the way — a box with
+        // no room to write still asks its question and still shows its
+        // answer, where a clipped one does neither. This is the rung the
+        // polite one above deliberately refuses to take.
+        var relaxed: Block.CustomFence? = relaxedFence
+        var relaxedH = relaxedFenceH
         if (atTop && block is Block.CustomFence && h > budget) {
-            // A LADDER OF COURTESIES, given up in the order of how much the
-            // reader loses by it. The room to work in goes first; it is the
-            // only thing here a reader can do without and still answer the
-            // question. The answer's mascot goes second, because on a narrow
-            // page it costs the text beside it nearly a quarter of its width
-            // — decoration charged to content. What is never given up is the
-            // task or the answer, which is the whole point: a clipped box
-            // loses words with no way to reach them.
-            // Explicit type: assigning the smart-cast value to a var loses it.
-            var best: Block.CustomFence = block
-            var bestH = h
-            withShrunkWritingSpace(best, bestH - budget, density, fontScale)?.let { room ->
-                best = room
-                bestH = estimateHeight(
-                    room, contentWidthPx, density, measurer, fontScale, lineSpacing,
+            val from = relaxed ?: block
+            val fromH = if (relaxed != null) relaxedH else h
+            withShrunkWritingSpace(from, fromH - budget, density, fontScale, floor = 0)?.let { bare ->
+                relaxed = bare
+                relaxedH = estimateHeight(
+                    bare, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true,
                 )
             }
-            if (bestH > budget && best.params[FENCE_PLAIN_ANSWER] == null) {
-                val plain = best.copy(params = best.params + (FENCE_PLAIN_ANSWER to "1"))
-                val plainH = estimateHeight(
-                    plain, contentWidthPx, density, measurer, fontScale, lineSpacing,
-                    hasFigureImage, hasBadge, atPageTop = true,
-                )
-                if (plainH < bestH) {
-                    best = plain
-                    bestH = plainH
-                }
-            }
-            if (best !== block) {
-                if (bestH <= budget) {
-                    pages.last().add(PageItem(best, i, carriedPx))
-                    height += bestH
-                    carry = null
-                    carriedPx = 0
-                    i++
-                    continue
-                }
-                // It STILL does not fit, and the oversize branch below is now
-                // the only option — but it must place the relaxed box rather
-                // than the original. Giving up the room and the mascot and
-                // then clipping the full-sized box is the worst of both: the
-                // reader loses the same words AND keeps the decoration that
-                // cost them. Least-clipped beats most-clipped.
-                //
-                // It often renders whole even here, because `budget` carries
-                // a 10% safety margin for measurement slop — a box a little
-                // over budget is usually still inside the page.
-                relaxed = best
-                relaxedH = bestH
+            if (relaxed != null && relaxedH <= budget) {
+                pages.last().add(PageItem(relaxed!!, i, carriedPx))
+                height += relaxedH
+                carry = null
+                carriedPx = 0
+                i++
+                continue
             }
         }
 
@@ -590,18 +619,26 @@ private fun withShrunkWritingSpace(
     overflowPx: Int,
     density: Density,
     fontScale: Float,
+    floor: Int = MIN_WORKING_ROWS,
 ): Block.CustomFence? = with(density) {
     if (block.kind != "exercise") return null
-    if (block.params[FENCE_SPACE_ROWS] != null) return null
     val spaceKind = block.params["space"]
     if (spaceKind == "none") return null
-    val natural = answerSpaceLineCount(splitExerciseBody(block.body).second, spaceKind == "lines")
+    // An explicit count is the starting point rather than a refusal: a piece
+    // of a split box already carries one, and may still need to give more.
+    // Termination is safe because the result must be strictly smaller.
+    val natural = block.params[FENCE_SPACE_ROWS]?.toIntOrNull()
+        ?: answerSpaceLineCount(splitExerciseBody(block.body).second, spaceKind == "lines")
     if (natural <= 0) return null
     val rowPx = (ANSWER_RULE_SPACING * fontScale).toPx()
     if (rowPx <= 0f) return null
     val drop = kotlin.math.ceil(overflowPx / rowPx).toInt().coerceAtLeast(1)
-    val kept = (natural - drop).let { if (it < MIN_WORKING_ROWS) 0 else it }
+    val kept = (natural - drop).let { if (it < floor) (if (floor == 0) 0 else 0) else it }
     if (kept >= natural) return null
+    // With a floor, taking the room to nothing is NOT this rung's business —
+    // a box that can only fit by losing all of it is better served by the
+    // part split, which keeps the room whole on a page of its own.
+    if (floor > 0 && kept == 0) return null
     return block.copy(params = block.params + (FENCE_SPACE_ROWS to kept.toString()))
 }
 
@@ -654,8 +691,6 @@ private fun splitFence(
         style = style,
         constraints = Constraints(maxWidth = innerWidth),
     )
-    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
-
     // What the head spends before a word of body is drawn. The answer button
     // is NOT in it — the head never shows one — but the label row is, because
     // the head keeps the block's name and its mascot.
@@ -668,6 +703,70 @@ private fun splitFence(
 
     val room = availablePx - chrome
     if (room <= 0) return null
+
+    // CUT BETWEEN THE PARTS BEFORE CUTTING THE WORDS.
+    //
+    // A box is not a paragraph. It is a task, then room to work in, then an
+    // answer — and when it will not fit, the overflow is very often none of
+    // the words. Reported from the Boox at a larger font, 2026-10-06: a
+    // six-line task whose eight-row grid and reserved answer came to half a
+    // page again. Every one of those six lines FIT. The splitter cut them
+    // anyway, because text was the only thing it knew how to cut, and the
+    // rule that it must leave two lines for the tail turned a full page into
+    // a four-line one. Three times over, which is what the reader saw: "3
+    // ugly 5 lines each pages".
+    //
+    // So: if the task fits where it stands, the task is not what moves. The
+    // head keeps every word of it plus as many rows of working room as the
+    // page will take; the tail carries the rest of the room and the answer.
+    // No sentence is broken, and both pages are full.
+    val questionH = layout.size.height
+    val rowPx = (ANSWER_RULE_SPACING * fontScale).toPx()
+    val spaceKind = block.params["space"]
+    val naturalRows = if (block.kind != "exercise" || spaceKind == "none") {
+        0
+    } else {
+        block.params[FENCE_SPACE_ROWS]?.toIntOrNull()
+            ?: answerSpaceLineCount(answer, spaceKind == "lines")
+    }
+    val hasAnswer = block.kind == "exercise" && answer.isNotBlank()
+    if (questionH <= room && (naturalRows > 0 || hasAnswer) && rowPx > 0f) {
+        val spacePad = 14.dp.toPx().toInt()
+        val spare = room - questionH - spacePad
+        val headRows = ((spare / rowPx).toInt())
+            .coerceIn(0, naturalRows)
+            .let { if (it < MIN_WORKING_ROWS) 0 else it }
+        val tailRows = (naturalRows - headRows).let { if (it < MIN_WORKING_ROWS) 0 else it }
+        // Worth doing only if the tail actually carries something. Rows
+        // below MIN_WORKING_ROWS are not drawn at all, so a box of task +
+        // room whose remainder rounds to nothing would otherwise produce an
+        // empty continuation: a bordered "TRY THIS (continued)" holding
+        // neither words, nor room, nor an answer.
+        if (hasAnswer || tailRows > 0) {
+            return SplitFence(
+                head = block.copy(
+                    body = text,
+                    params = block.params +
+                        (FENCE_CONT_TO to "1") +
+                        (FENCE_SPACE_ROWS to headRows.toString()),
+                ),
+                tail = block.copy(
+                    // No words left to carry — the tail is the room and the
+                    // answer. An empty body is why the renderer skips its
+                    // text when there is none.
+                    body = if (hasAnswer) "answer: ${answer.trim()}" else "",
+                    params = block.params +
+                        (FENCE_CONT_FROM to "1") +
+                        (FENCE_SPACE_ROWS to tailRows.toString()),
+                ),
+                headPx = chrome + questionH +
+                    (if (headRows > 0) headRows * rowPx.toInt() + spacePad else 0),
+            )
+        }
+    }
+
+    // The task itself does not fit. Now the words are what has to give.
+    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
 
     var fitting = 0
     while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= room) fitting++
@@ -1075,20 +1174,27 @@ private fun estimateHeight(
             // with the SAME function the renderer draws from, deliberately:
             // an estimate that computes independently of its renderer is the
             // bug this file has produced twice in one day.
-            val answerSpace = if (block.kind == "exercise" && showsReveal) {
+            val answerSpace = if (block.kind == "exercise") {
                 val spaceKind = block.params["space"]
                 // A count written by pagination outranks the natural one —
                 // the same precedence the renderer uses, which is the point:
                 // an estimate that computes independently of its renderer is
                 // the bug this file has produced more than once.
-                val lines = if (spaceKind == "none") {
-                    0
-                } else {
-                    block.params[FENCE_SPACE_ROWS]?.toIntOrNull()
-                        ?: answerSpaceLineCount(
-                            splitExerciseBody(block.body).second,
-                            spaceKind == "lines",
-                        )
+                //
+                // It outranks `showsReveal` too, since the part split: a HEAD
+                // carries working room when pagination gave it some, even
+                // though it never carries the answer. Only a head with no
+                // count of its own has no room — the natural count belongs to
+                // the piece that holds the answer.
+                val explicit = block.params[FENCE_SPACE_ROWS]?.toIntOrNull()
+                val lines = when {
+                    spaceKind == "none" -> 0
+                    explicit != null -> explicit
+                    showsReveal -> answerSpaceLineCount(
+                        splitExerciseBody(block.body).second,
+                        spaceKind == "lines",
+                    )
+                    else -> 0
                 }
                 if (lines == 0) {
                     0

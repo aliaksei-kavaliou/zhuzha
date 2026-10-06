@@ -3346,20 +3346,38 @@ private fun ExerciseBlock(
         openBottom = isHead,
         openTop = isTail,
     ) {
-        Text(
-            // Parsed, not raw: an exercise says "call `torch.tensor()`" as
-            // often as a paragraph does, and rendering the body as a plain
-            // string dropped every inline style inside a bordered block.
-            text = renderInlines(parseInlines(question)),
-            fontFamily = FontFamily.Serif,
-            fontSize = 17.sp * fontScale,
-            lineHeight = 28.sp * fontScale * lineSpacing,
-            color = Ink,
-        )
-        Spacer(Modifier.height(8.dp))
+        // A part split can leave a tail with no words at all — the task fitted
+        // where it was and only the room and the answer came over the leaf.
+        // An empty Text still draws a blank line, which reads as a gap.
+        if (question.isNotBlank()) {
+            Text(
+                // Parsed, not raw: an exercise says "call `torch.tensor()`" as
+                // often as a paragraph does, and rendering the body as a plain
+                // string dropped every inline style inside a bordered block.
+                text = renderInlines(parseInlines(question)),
+                fontFamily = FontFamily.Serif,
+                fontSize = 17.sp * fontScale,
+                lineHeight = 28.sp * fontScale * lineSpacing,
+                color = Ink,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         if (isHead) {
-            // Nothing here: the task carries on over the leaf, and the answer
-            // belongs at the end of it — and so does the room to write one.
+            // A head carries no answer and no reveal button — but it CAN
+            // carry working room, since the part split. When a box will not
+            // fit, what moves over the leaf is the room and the answer, not
+            // the words: the head keeps the whole task plus as many rows as
+            // its page will take, which is what stops a full page being
+            // spent on four lines. Only the count pagination wrote is drawn
+            // here; a head that was given none shows none.
+            val headRows = f.params[FENCE_SPACE_ROWS]?.toIntOrNull() ?: 0
+            if (headRows > 0 && f.params["space"] != "none") {
+                AnswerSpace(
+                    lines = headRows,
+                    fontScale = fontScale,
+                    ruled = f.params["space"] == "lines",
+                )
+            }
         } else {
         // Room to write, ABOVE the answer rather than where the answer will
         // go. Revealing must not land printed text on top of the reader's own
