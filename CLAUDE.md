@@ -1164,6 +1164,26 @@ yet" note that used to live here was two months stale.
       **Not yet seen from the model** — no chapter has been generated since the prompt learned
       the param, so what it actually asks for on a real task is unverified. Existing books are
       unaffected: no `room`, no change.
+- [x] **A list item is prose with a marker, and it splits like prose (2026-10-07)** —
+      Aliaksei: "p11 half empty, list item can start on 1 page and go to another, no need to
+      jump to another page." Correct: nothing about a bullet makes it indivisible, and
+      `splitParagraph` only ever accepted `Block.Paragraph`, so an item that would not fit
+      jumped whole and left the room it had behind.
+      The marker belongs to the FIRST piece only — a repeated "•" reads as a second bullet and
+      a repeated "3." as a second item three — but the continuation keeps the hanging indent,
+      which is what print does. `cont` on `BulletItem`/`OrderedItem` carries that, defaulted
+      false and never set by the parser (a file on disk has no page breaks in it), and the
+      renderer draws the marker in `Color.Transparent` rather than skipping it: the surest way
+      to reserve exactly the marker's width is the marker itself.
+      Measured at the body's own width, the same hanging indent `measureListItem` accounts for.
+- [x] **The stray vertical lines were INK (2026-10-07)** — Aliaksei: "some vertical lines left,
+      probably you put them for testing... ch1 p8-9." They were: five strokes in the demo
+      book's ink file, dated 2026-10-02 09:30, left behind by the injected-stylus runs that
+      verified the working-room gesture. Not a rendering artefact — real saved handwriting,
+      which is why they sat across the grid AND the prose. Removed from the emulator (backed
+      up first). **Worth a check before the demo ships**: any emulator session that injects
+      stylus events writes into the book it is reading, and `ink/<chapter>.ink.json` is where
+      it lands.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

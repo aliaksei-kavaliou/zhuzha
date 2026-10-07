@@ -416,6 +416,19 @@ fun paginate(
                     fontScale, lineSpacing, density, hasBadge,
                 )
                     ?.let { Triple(it.head, it.tail, it.headPx) }
+            // Prose with a marker on it, and it splits like prose. The
+            // pieces are BulletItems carrying a blank marker, so only the
+            // first shows a bullet or a number — see [splitListItem].
+            is Block.BulletItem ->
+                splitListItem(
+                    block.inlines, "• ", remaining, contentWidthPx, measurer,
+                    fontScale, lineSpacing, density,
+                ) { parts, cont -> Block.BulletItem(parts, cont) }
+            is Block.OrderedItem ->
+                splitListItem(
+                    block.inlines, "${block.n}. ", remaining, contentWidthPx, measurer,
+                    fontScale, lineSpacing, density,
+                ) { parts, cont -> Block.OrderedItem(block.n, parts, cont) }
             else -> null
         }
 
@@ -984,6 +997,65 @@ private fun splitFence(
             params = block.params + (FENCE_CONT_FROM to "1"),
         ),
         headPx = layout.getLineBottom(fitting - 1).toInt() + chrome,
+    )
+}
+
+/**
+ * Splits a list item so its first lines fill [availablePx].
+ *
+ * A LIST ITEM IS PROSE WITH A MARKER. It could not be split until now, so one
+ * that would not fit jumped whole to the next page and left whatever room it
+ * had behind — reported as "p11 half empty, a list item can start on one page
+ * and go to another, no need to jump to another page", which is exactly
+ * right: nothing about a bullet makes it indivisible.
+ *
+ * The marker belongs to the FIRST piece only. A continuation that repeated
+ * "3." would read as a second item three, and one that repeated "•" would
+ * read as a new bullet; the tail keeps the hanging indent and drops the mark,
+ * which is what print does.
+ *
+ * Measured at the body's own width — the marker's column is gone from it —
+ * the same hanging indent [measureListItem] accounts for.
+ */
+private fun splitListItem(
+    inlines: List<Inline>,
+    prefix: String,
+    availablePx: Int,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    fontScale: Float,
+    lineSpacing: Float,
+    density: Density,
+    rebuild: (List<Inline>, Boolean) -> Block,
+): Triple<Block, Block, Int>? = with(density) {
+    val text = inlines.plainText()
+    if (text.isBlank()) return null
+    val style = TextStyle(
+        fontSize = 18.sp * fontScale,
+        lineHeight = 30.sp * fontScale * lineSpacing,
+        fontFamily = FontFamily.Serif,
+    )
+    val markerPx = measurer.measure(AnnotatedString(prefix), style).size.width
+    val bodyWidth = (widthPx - 18.dp.toPx().toInt() - markerPx).coerceAtLeast(1)
+    val layout = measurer.measure(
+        text = AnnotatedString(text),
+        style = style,
+        constraints = Constraints(maxWidth = bodyWidth),
+    )
+    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
+
+    var fitting = 0
+    while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= availablePx) fitting++
+    if (fitting < MIN_SPLIT_LINES) return null
+    if (layout.lineCount - fitting < MIN_SPLIT_LINES) fitting = layout.lineCount - MIN_SPLIT_LINES
+    if (fitting < MIN_SPLIT_LINES) return null
+
+    val cut = layout.getLineEnd(fitting - 1, visibleEnd = true)
+    if (cut <= 0 || cut >= text.length) return null
+    return Triple(
+        rebuild(sliceInlines(inlines, 0, cut), false),
+        rebuild(sliceInlines(inlines, cut, text.length), true),
+        layout.getLineBottom(fitting - 1).toInt(),
     )
 }
 

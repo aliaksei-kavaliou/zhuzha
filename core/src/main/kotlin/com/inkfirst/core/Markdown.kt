@@ -21,8 +21,19 @@ sealed interface Block {
         val coverSrc: String? = null,
     ) : Block
     data class Paragraph(val inlines: List<Inline>) : Block
-    data class BulletItem(val inlines: List<Inline>) : Block
-    data class OrderedItem(val n: Int, val inlines: List<Inline>) : Block
+    /**
+     * [cont] marks a piece carried over a page break by the paginator. The
+     * marker column is kept — the text stays in its hanging indent — but the
+     * bullet itself is not drawn again, because a repeated "•" reads as a
+     * second bullet and a repeated "3." as a second item three. Never set by
+     * the parser; a file on disk has no page breaks in it.
+     */
+    data class BulletItem(val inlines: List<Inline>, val cont: Boolean = false) : Block
+    data class OrderedItem(
+        val n: Int,
+        val inlines: List<Inline>,
+        val cont: Boolean = false,
+    ) : Block
     /**
      * A thematic break — a line of `---`, `***` or `___`. The chapter model
      * emits these as section separators several times per chapter; before

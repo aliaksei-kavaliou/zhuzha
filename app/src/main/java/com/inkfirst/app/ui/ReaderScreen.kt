@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -3120,8 +3121,10 @@ private fun RenderBlock(
             block.inlines, fontScale, lineSpacing, textAlign,
             annotations, onOpenAnnotation, onMarkerBounds,
         )
-        is Block.BulletItem -> ListItemBlock("• ", block.inlines, fontScale, lineSpacing)
-        is Block.OrderedItem -> ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing)
+        is Block.BulletItem ->
+            ListItemBlock("• ", block.inlines, fontScale, lineSpacing, block.cont)
+        is Block.OrderedItem ->
+            ListItemBlock("${block.n}. ", block.inlines, fontScale, lineSpacing, block.cont)
         is Block.Rule -> RuleBlock()
         is Block.CustomFence -> when (block.kind) {
             "exercise" ->
@@ -3371,7 +3374,14 @@ private fun ParagraphBlock(
 }
 
 @Composable
-private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Float, lineSpacing: Float) {
+private fun ListItemBlock(
+    prefix: String,
+    inlines: List<Inline>,
+    fontScale: Float,
+    lineSpacing: Float,
+    /** A piece carried over a page break: keep the column, drop the mark. */
+    cont: Boolean = false,
+) {
     // 8dp is less than one character width — the bullets shared a left edge
     // with the body and the list didn't read as subordinate. One em at the
     // body size is ~18dp. Items stay tighter to each other than paragraphs
@@ -3381,7 +3391,11 @@ private fun ListItemBlock(prefix: String, inlines: List<Inline>, fontScale: Floa
         Text(
             text = prefix,
             style = listItemStyle(fontScale, lineSpacing),
-            color = Ink,
+            // Drawn in nothing rather than skipped: the continuation's text
+            // has to stay in the same hanging indent as the lines above it,
+            // and the surest way to reserve exactly the marker's width is
+            // the marker itself.
+            color = if (cont) Color.Transparent else Ink,
         )
         Text(
             text = renderInlines(inlines),
