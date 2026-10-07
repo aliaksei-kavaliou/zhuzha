@@ -1236,6 +1236,29 @@ yet" note that used to live here was two months stale.
       Also from that fence: the model wrote `space="dotgrid"`, which is not a value the app
       knows. It falls through to the default grid — right by luck. The accepted values are
       `lines` and `none`.
+- [x] **The arithmetic a chapter states about itself is checked (2026-10-07)** — Aliaksei,
+      after the apple answer was patched by hand: "regarding the apple bug we need to fix how
+      the model made it, not a result." Quite right, and the instance was the cheap half.
+      The chapter said "the gap between the guess (400) and the truth (150) — which is 255
+      grams". It is 250, and it was inside an ANSWER, which is the worst place for it: the
+      reader does the sum, gets a different figure, and has no way to tell which of them is
+      wrong. Nothing downstream looks at a number.
+      Fixed twice, the pattern this file keeps arriving at. **The prompt asks for the
+      operation to be WRITTEN OUT** — "400 − 150 = 250", never a bare result — because an
+      explicit sum is both the form a model is less likely to get wrong and the only form that
+      can be checked without understanding the sentence around it. **`ArithmeticCheck` then
+      checks every one**, free and local: all four operators, every dash and times sign a
+      model writes, thousands separators, and a rounding tolerance of half the last digit
+      shown so "1 / 3 = 0.333" is right rather than wrong. Code fences are skipped — a listing
+      is a program, not a claim — while exercise and recap fences are prose and are read.
+      **It only ever REPORTS, and that is deliberate**: correcting the text would be trivial
+      for the operands given and wrong, because a study book prints arithmetic that is wrong
+      ON PURPOSE — "the network guessed 2 + 2 = 5, and the loss function measures how badly".
+      No rule here can tell that from a slip, so the author decides.
+      Unit-tested against the real sentence that prompted it. **Wired into the compile path as
+      a log line only** — the surface for "the book may be wrong here" does not exist yet. The
+      obvious shape is a line on the compile result, beside where a refusal already shows its
+      reason.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

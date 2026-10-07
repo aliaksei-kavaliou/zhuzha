@@ -71,6 +71,7 @@ internal fun buildChapterPrompt(
     appendLine("FORMAT RULES")
     appendLine("- Return Markdown. Do NOT wrap the whole output in a code fence.")
     appendLine("- Open with the chapter title as a level-1 heading — a single \"#\". Do not put \"Chapter ${chapter.n}\" in it; the app prints the number itself. Use \"##\" and below for sections within the chapter.")
+    appendLine("- WHEN YOU STATE A CALCULATION, WRITE THE OPERATION OUT and check it: \"400 − 150 = 250 grams\", not \"the gap — which is 255 grams\". A bare result cannot be verified by the reader without redoing your work, and it is the form you are most likely to get wrong; the written-out sum is checked automatically after you finish. This matters most inside an \"answer: \", where a wrong figure is read as the correct one.")
     appendLine("- ${measurementRule(course.units)}")
     appendLine("- Write the entire chapter in ${course.language}. All headings, prose, exercise text, recap text, and figure alt-text must be in ${course.language}. Technical terms may stay in English if that's how the field uses them.")
     appendLine("- Aim for content that fills ~${chapter.estMinutes} minutes of slow, e-ink reading. Redundancy is welcome if it's pedagogical.")

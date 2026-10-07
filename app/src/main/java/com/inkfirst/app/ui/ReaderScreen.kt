@@ -125,6 +125,7 @@ import com.inkfirst.app.data.ReaderPrefs
 import com.inkfirst.app.data.TextAlignPref
 import com.inkfirst.app.data.geminiErrorLabel
 import com.inkfirst.app.data.rememberCourseStore
+import com.inkfirst.core.ArithmeticCheck
 import com.inkfirst.core.Block
 import com.inkfirst.core.BADGE_KINDS
 import com.inkfirst.core.badgeKindFor
@@ -5694,6 +5695,17 @@ private fun compileChapter(
                         rewriteFeedback = rewriteFeedback,
                     )
                 val chapter = course.chapters.first { it.n == chapterN }
+
+                // ARITHMETIC THE CHAPTER STATES ABOUT ITSELF. Free, local,
+                // and it only reports: a study book prints wrong sums ON
+                // PURPOSE often enough that correcting them automatically
+                // would be worse than the slip. Logged rather than shown
+                // because the surface for "the book may be wrong here" does
+                // not exist yet — see the CLAUDE.md item for the shape of
+                // one.
+                ArithmeticCheck.check(markdown).forEach {
+                    android.util.Log.w("InkFirst", "chapter ${chapter.n} arithmetic: $it")
+                }
 
                 // THE LAST GATE. The request and the outline were both
                 // screened before this chapter existed, so this is the only
