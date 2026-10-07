@@ -302,6 +302,41 @@ fun paginate(
         // newPage() appends unconditionally, so moving a box off a page that
         // is already empty would spin.
 
+        // FIT THE PAGE YOU ARE ON BEFORE CUTTING ANYTHING.
+        //
+        // The rung below asks "can this box be made to fit a WHOLE page", and
+        // when the answer is no it cuts the task. But a short task cannot
+        // fill a page by being cut: the splitter must leave two lines for the
+        // tail, so a five-line task yields a three-line head, and the rest of
+        // the page is white. Seen on the Boox, chapter 4 page 14 — three
+        // lines of task above a hand's depth of nothing.
+        //
+        // The room is the slack, and the space LEFT ON THIS PAGE is the
+        // target. Shrinking it to fit here keeps the task whole, keeps the
+        // room with it, and fills the page — all three of the things cutting
+        // the text fails to do. A room the model ASKED for is exempt, as
+        // everywhere else: [withShrunkWritingSpace] refuses those.
+        if (block is Block.CustomFence && !atTop && h > budget - height) {
+            val gap = h - (budget - height)
+            withShrunkWritingSpace(block, gap, density, fontScale)?.let { tighter ->
+                val tighterH = estimateHeight(
+                    tighter, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                    hasFigureImage, hasBadge, answerPrefix = answerPrefix,
+                    revealed = isRevealed(i),
+                )
+                if (tighterH <= budget - height) {
+                    pages.last().add(PageItem(tighter, i, carriedPx))
+                    height += tighterH
+                    carry = null
+                    carriedPx = 0
+                    forceNext = false
+                    i++
+                    return@let
+                }
+            }
+            if (carry == null && pages.last().lastOrNull()?.index == i) continue
+        }
+
         // SHRINK THE FURNITURE BEFORE REACHING FOR THE SCISSORS.
         //
         // This rung existed from 2026-10-01 and sat BELOW the split, where
@@ -807,8 +842,11 @@ private fun splitFence(
     val text = question.trim()
     if (text.isBlank()) return null
 
-    // Stepped in from the marginal rule, exactly as the renderer does it.
-    val innerWidth = (widthPx - FLOW_INDENT_DP.dp.toPx().toInt()).coerceAtLeast(1)
+    // Exactly as the renderer insets it: a framed-header block runs the full
+    // measure, a ruled one is stepped in from its rule.
+    val innerWidth = (
+        if (FLOW_HEADER_FRAME) widthPx else widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
+        ).coerceAtLeast(1)
     val style = TextStyle(
         fontSize = 17.sp * fontScale,
         lineHeight = 28.sp * fontScale * lineSpacing,
@@ -832,7 +870,10 @@ private fun splitFence(
     // What this piece spends before a word is drawn. A piece that is itself
     // a continuation opens with nothing, so it spends nothing.
     val opensBlock = block.params[FENCE_CONT_FROM] == null
-    val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() else 0) +
+    val headerPad =
+        if (FLOW_HEADER_FRAME) (FRAME_HEADER_PAD_DP + FRAME_HEADER_GAP_DP).dp.toPx().toInt()
+        else 6.dp.toPx().toInt()
+    val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + headerPad else 0) +
         8.dp.toPx().toInt() + 16.dp.toPx().toInt()
 
     val room = availablePx - chrome
@@ -1135,6 +1176,23 @@ internal const val FLOW_INDENT_DP = 14
 internal const val FLOW_LABEL_SP = 13
 
 /**
+ * TRIAL: box the header, italicise the body, rule the foot — in place of the
+ * marginal rule. Flip and rebuild to compare the two on the panel; the
+ * measurements below follow it so neither treatment can drift from what is
+ * drawn.
+ */
+internal const val FLOW_HEADER_FRAME = true
+
+/** Border and padding a boxed header adds around the label row. */
+internal const val FRAME_HEADER_PAD_DP = 10
+
+/** Air under a boxed header. */
+internal const val FRAME_HEADER_GAP_DP = 10
+
+/** Air above the rule that closes a framed block, and the rule itself. */
+internal const val FRAME_FOOT_GAP_DP = 12
+
+/**
  * Returns the page index that contains the block at [blockIndex]. Purely
  * arithmetic: sum block counts across pages until we find the range that
  * contains the index. Works whether pages was rebuilt with fresh block
@@ -1376,9 +1434,11 @@ private fun estimateHeight(
             // A flow block has no frame, but it IS stepped in from its
             // marginal rule, and the step narrows the measure. Must match
             // FLOW_RULE_INDENT in the renderer or the line count drifts.
-            val innerWidth =
-                if (flows) widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
-                else widthPx - 24.dp.toPx().toInt()
+            val innerWidth = when {
+                flows && FLOW_HEADER_FRAME -> widthPx
+                flows -> widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
+                else -> widthPx - 24.dp.toPx().toInt()
+            }
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
                 // THE ANSWER IS NOT PART OF THE BODY. The renderer splits the
@@ -1436,8 +1496,22 @@ private fun estimateHeight(
             // the block. A continuation of a flow block draws nothing of its
             // own — which is most of what made a cut expensive before.
             val opensBlock = !flows || block.params[FENCE_CONT_FROM] == null
-            val label =
-                if (opensBlock) maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() else 0
+            val label = if (!opensBlock) {
+                0
+            } else if (flows && FLOW_HEADER_FRAME) {
+                // The box's border and padding, then the air under it.
+                maxOf(labelTextHeight, badgeHeight) +
+                    (FRAME_HEADER_PAD_DP + FRAME_HEADER_GAP_DP).dp.toPx().toInt()
+            } else {
+                maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt()
+            }
+            // The rule that closes a framed block, drawn on the last piece.
+            val footRule =
+                if (flows && FLOW_HEADER_FRAME && block.params[FENCE_CONT_TO] == null) {
+                    (FRAME_FOOT_GAP_DP + 1).dp.toPx().toInt()
+                } else {
+                    0
+                }
             // The reveal button, plus room for the answer badge that appears
             // beside the answer text once it is shown. Reserved whether or
             // not the reader has revealed it — revealing must not reflow the
@@ -1546,7 +1620,7 @@ private fun estimateHeight(
             // the safe direction for a budget whose failure is clipping.
             val contentSpacers = if (block.kind == "exercise") 16.dp.toPx().toInt() else 0
             label + body.size.height + exerciseExtra + answerSpace + figureExtra +
-                outerSpacers + wrapperVPad + borderInner + contentSpacers
+                outerSpacers + wrapperVPad + borderInner + contentSpacers + footRule
         }
     }
 }

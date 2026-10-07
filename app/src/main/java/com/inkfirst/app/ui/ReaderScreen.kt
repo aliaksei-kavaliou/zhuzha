@@ -3866,6 +3866,81 @@ private fun UnknownFenceBlock(
  * a picture rather than something to read.
  */
 /**
+ * TRIAL TREATMENT: the header is boxed, the body is italic, and a rule closes
+ * the block.
+ *
+ * Aliaksei's third idea after the grey wash came out — "what if we put a frame
+ * around the block header only, then italic and a line at the bottom". The
+ * appeal is that a box around two words costs nothing in page height and
+ * reads as a label rather than as a container, so there is no edge to leave
+ * open when the block is cut.
+ *
+ * The known weakness is the one the marginal rule was chosen for: a MIDDLE
+ * page carries neither the header nor the foot, so a block spanning three
+ * pages marks only its first and last. Whether that matters is a reading
+ * question, not an argument — hence the switch.
+ */
+@Composable
+private fun FramedHeaderBlock(
+    label: String,
+    fontScale: Float,
+    badge: ImageBitmap?,
+    opener: Boolean,
+    closer: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Spacer(Modifier.height(4.dp))
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        if (opener) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .border(1.dp, Ink, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                if (badge != null) {
+                    val filter = badgeColorFilter()
+                    Canvas(
+                        modifier = Modifier
+                            .padding(end = 10.dp)
+                            .size(BADGE_SIZE * fontScale),
+                    ) {
+                        drawImage(
+                            image = badge,
+                            srcSize = IntSize(badge.width, badge.height),
+                            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                            colorFilter = filter,
+                            blendMode = BlendMode.Multiply,
+                        )
+                    }
+                }
+                Text(
+                    text = label,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = FLOW_LABEL_SP.sp * fontScale,
+                    letterSpacing = 1.5.sp,
+                    color = Ink,
+                )
+            }
+            Spacer(Modifier.height(FRAME_HEADER_GAP))
+        }
+        content()
+        if (closer) {
+            Spacer(Modifier.height(FRAME_FOOT_GAP))
+            Canvas(modifier = Modifier.fillMaxWidth().height(1.dp)) {
+                drawLine(
+                    color = Ink,
+                    start = Offset(0f, size.height / 2f),
+                    end = Offset(size.width, size.height / 2f),
+                    strokeWidth = size.height,
+                )
+            }
+        }
+    }
+}
+
+/**
  * The body style of a flow block — exercise and recap — built WHOLE.
  *
  * Passing fontSize and fontFamily to `Text` as separate parameters merges them
@@ -3910,6 +3985,10 @@ private fun FlowBlock(
     dashed: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    if (FLOW_HEADER_FRAME) {
+        FramedHeaderBlock(label, fontScale, badge, opener, closer, content)
+        return
+    }
     // THE RULE IS THE HEADER AND THE FOOTER AT ONCE, which is why it is a
     // rule and not the two devices it replaces. A title band appears once at
     // the start and a footer once at the end — so the MIDDLE page of a block
@@ -4015,6 +4094,10 @@ private val FLOW_RULE_WIDTH = 2.dp
 
 /** How far the block's content steps in from its rule. */
 private val FLOW_RULE_INDENT = 14.dp
+
+/** Air under a boxed header, and above the rule that closes the block. */
+private val FRAME_HEADER_GAP = FRAME_HEADER_GAP_DP.dp
+private val FRAME_FOOT_GAP = FRAME_FOOT_GAP_DP.dp
 
 @Composable
 private fun BorderedBlock(
