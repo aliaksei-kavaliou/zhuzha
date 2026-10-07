@@ -844,11 +844,8 @@ private fun splitFence(
     val text = question.trim()
     if (text.isBlank()) return null
 
-    // Exactly as the renderer insets it: a framed-header block runs the full
-    // measure, a ruled one is stepped in from its rule.
-    val innerWidth = (
-        if (FLOW_HEADER_FRAME) widthPx else widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
-        ).coerceAtLeast(1)
+    // The full measure, exactly as the renderer sets it.
+    val innerWidth = widthPx.coerceAtLeast(1)
     val style = TextStyle(
         fontSize = 17.sp * fontScale,
         lineHeight = 28.sp * fontScale * lineSpacing,
@@ -872,9 +869,7 @@ private fun splitFence(
     // What this piece spends before a word is drawn. A piece that is itself
     // a continuation opens with nothing, so it spends nothing.
     val opensBlock = block.params[FENCE_CONT_FROM] == null
-    val headerPad =
-        if (FLOW_HEADER_FRAME) (FRAME_HEADER_PAD_DP + FRAME_HEADER_GAP_DP).dp.toPx().toInt()
-        else 6.dp.toPx().toInt()
+    val headerPad = (FRAME_HEADER_PAD_DP + FRAME_HEADER_GAP_DP).dp.toPx().toInt()
     val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + headerPad else 0) +
         8.dp.toPx().toInt() + 16.dp.toPx().toInt()
 
@@ -1198,30 +1193,12 @@ internal fun roomRowsFor(pct: Int, budgetPx: Int, rowPx: Float): Int {
 internal const val FENCE_ROOM = "room"
 
 /**
- * The step from a flow block's marginal rule to its text, in dp.
- *
- * Duplicated from `FLOW_RULE_INDENT` in ReaderScreen rather than shared,
- * because that one is private to the renderer — but they MUST agree: the
- * estimate measures the task at this width and the renderer draws it at that
- * one, and a disagreement shows up as a clipped last line.
- */
-internal const val FLOW_INDENT_DP = 14
-
-/**
  * A block label's type size, in sp. Mirrors `FLOW_LABEL_SP`.
  *
  * Was 11 while the label sat inside a box that did the signalling. It is half
  * the signal now, so it is bigger — Aliaksei, reading the ruled version.
  */
 internal const val FLOW_LABEL_SP = 13
-
-/**
- * TRIAL: box the header, italicise the body, rule the foot — in place of the
- * marginal rule. Flip and rebuild to compare the two on the panel; the
- * measurements below follow it so neither treatment can drift from what is
- * drawn.
- */
-internal const val FLOW_HEADER_FRAME = true
 
 /** Border and padding a boxed header adds around the label row. */
 internal const val FRAME_HEADER_PAD_DP = 10
@@ -1477,11 +1454,10 @@ private fun estimateHeight(
             // A flow block has no frame, but it IS stepped in from its
             // marginal rule, and the step narrows the measure. Must match
             // FLOW_RULE_INDENT in the renderer or the line count drifts.
-            val innerWidth = when {
-                flows && FLOW_HEADER_FRAME -> widthPx
-                flows -> widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
-                else -> widthPx - 24.dp.toPx().toInt()
-            }
+            // A flow block runs the full measure: its header is a band
+            // across the page and its foot a rule at the same width, so
+            // there is nothing to step the body in from.
+            val innerWidth = if (flows) widthPx else widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
                 // THE ANSWER IS NOT PART OF THE BODY. The renderer splits the
@@ -1539,22 +1515,20 @@ private fun estimateHeight(
             // the block. A continuation of a flow block draws nothing of its
             // own — which is most of what made a cut expensive before.
             val opensBlock = !flows || block.params[FENCE_CONT_FROM] == null
-            val label = if (!opensBlock) {
-                0
-            } else if (flows && FLOW_HEADER_FRAME) {
-                // The box's border and padding, then the air under it.
-                maxOf(labelTextHeight, badgeHeight) +
+            val label = when {
+                !opensBlock -> 0
+                // The band's border and padding, then the air under it.
+                flows -> maxOf(labelTextHeight, badgeHeight) +
                     (FRAME_HEADER_PAD_DP + FRAME_HEADER_GAP_DP).dp.toPx().toInt()
-            } else {
-                maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt()
+                else -> maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt()
             }
-            // The rule that closes a framed block, drawn on the last piece.
-            val footRule =
-                if (flows && FLOW_HEADER_FRAME && block.params[FENCE_CONT_TO] == null) {
-                    (FRAME_FOOT_GAP_DP + 1 + FRAME_FOOT_AIR_DP).dp.toPx().toInt()
-                } else {
-                    0
-                }
+            // The rule that closes the block, drawn on its last piece, and
+            // the air under it.
+            val footRule = if (flows && block.params[FENCE_CONT_TO] == null) {
+                (FRAME_FOOT_GAP_DP + 1 + FRAME_FOOT_AIR_DP).dp.toPx().toInt()
+            } else {
+                0
+            }
             // The reveal button, plus room for the answer badge that appears
             // beside the answer text once it is shown. Reserved whether or
             // not the reader has revealed it — revealing must not reflow the

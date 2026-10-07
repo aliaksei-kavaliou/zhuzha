@@ -1301,6 +1301,23 @@ yet" note that used to live here was two months stale.
       **A heading keeps the stricter floor** (`MIN_LINES_UNDER_HEADING = 2`): a heading alone
       above a single line is not a short page, it is a heading detached from what it
       introduces, which is a different defect and the reason keep-with-next exists.
+- [x] **The block is a header band, an italic body and a closing rule (2026-10-07)** — the
+      third try, and Aliaksei's design: "what if we put a frame around the block header only,
+      then italic and a line at the bottom", then "frame should be page wide", then, on the
+      panel, **"block in frame looks really nice"**. Settled, and the trial switch is gone
+      along with the marginal-rule path it was there to compare against — one treatment, one
+      set of measurements, which is the whole lesson of the day's clipping bugs.
+      A band around two words costs no page height and reads as a LABEL rather than as a
+      container, so there is no edge to leave open when the block is divided; running it to
+      the full measure makes it line up with the closing rule, so the two bracket the body
+      instead of being unrelated marks.
+      The weakness is accepted and written down: a MIDDLE page carries neither the band nor
+      the rule, so a block spanning three pages marks only its first and last — the italic is
+      what says "still inside". The marginal rule is the alternative if that ever grates,
+      being the only device that marks every page a block touches.
+      His verdict on the wash, worth keeping beside it: **"recap with background was nice, but
+      blinking is too high a price for that."** That is the trade exactly — it was the
+      best-looking of the four and it cost a full-panel refresh on every page turn.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

@@ -3444,7 +3444,7 @@ private fun ExerciseBlock(
     // second time, which would read as a second exercise.
     val isHead = f.params[FENCE_CONT_TO] != null
     val isTail = f.params[FENCE_CONT_FROM] != null
-    FlowBlock(
+    FramedHeaderBlock(
         label = labels.t("TRY THIS"),
         fontScale = fontScale,
         badge = loadBadge("exercise"),
@@ -3698,27 +3698,12 @@ private fun RecapBlock(
     labels: UiLabels,
 ) {
     val isTail = f.params[FENCE_CONT_FROM] != null
-    FlowBlock(
+    FramedHeaderBlock(
         label = labels.t("RECAP"),
         fontScale = fontScale,
         badge = loadBadge("recap"),
         opener = !isTail,
         closer = f.params[FENCE_CONT_TO] == null,
-        // DASHED, not washed. The grey fill lasted one evening on the panel:
-        // "recap now is blinking on page change". E-INK'S FAST UPDATE MODES
-        // ARE 1-BIT — a page turn is drawn with a black/white waveform, and
-        // grey cannot be expressed in one, so the controller escalates the
-        // whole page to a full greyscale refresh and the reader gets a flash
-        // every time they turn onto a recap. That is a far heavier cost than
-        // the rule this replaced, and it is a SECOND reason behind the app's
-        // no-grey rule: not only does grey dither badly, it changes how the
-        // panel refreshes around it.
-        //
-        // So the two blocks differ by stroke again. Same instrument, lighter
-        // claim: a recap is the book summarising itself, where TRY THIS asks
-        // the reader for something. Dashed rather than dotted because dots
-        // already mean "write here" in this app.
-        dashed = true,
     ) {
         Text(
             text = renderInlines(parseInlines(f.body.trim())),
@@ -3887,27 +3872,33 @@ private fun UnknownFenceBlock(
  * a picture rather than something to read.
  */
 /**
- * TRIAL TREATMENT: the header is boxed, the body is italic, and a rule closes
- * the block.
+ * How a TRY THIS or a RECAP is set: a header band, an italic body, and a rule
+ * that closes it.
  *
- * Aliaksei's third idea after the grey wash came out — "what if we put a frame
- * around the block header only, then italic and a line at the bottom". The
- * appeal is that a box around two words costs nothing in page height and
- * reads as a label rather than as a container, so there is no edge to leave
- * open when the block is cut.
+ * Aliaksei's design, and the third try. A full border made the block a unit
+ * that had to land whole or be cut, which cost pages; a grey wash made the
+ * panel flash on every turn; a marginal rule worked but read as thin. A box
+ * around two words costs no page height and reads as a LABEL rather than as a
+ * container, so there is no edge to leave open when the block is divided —
+ * and the band and the closing rule share the measure, so they bracket the
+ * body rather than being two unrelated marks. His verdict on seeing it on the
+ * panel: "block in frame looks really nice."
  *
- * The known weakness is the one the marginal rule was chosen for: a MIDDLE
- * page carries neither the header nor the foot, so a block spanning three
- * pages marks only its first and last. Whether that matters is a reading
- * question, not an argument — hence the switch.
+ * The weakness, accepted: a MIDDLE page carries neither the band nor the
+ * rule, so a block spanning three pages marks only its first and last. The
+ * italic is what says "still inside". A marginal rule is the alternative if
+ * that ever grates — it is the only device that marks every page a block
+ * touches, and the reason is in the git history of this file.
  */
 @Composable
 private fun FramedHeaderBlock(
     label: String,
     fontScale: Float,
-    badge: ImageBitmap?,
-    opener: Boolean,
-    closer: Boolean,
+    badge: ImageBitmap? = null,
+    /** False on a piece that began on the page before: no header. */
+    opener: Boolean = true,
+    /** True on the piece the block ENDS on: it gets the closing rule. */
+    closer: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     Spacer(Modifier.height(4.dp))
@@ -4003,129 +3994,6 @@ private fun listItemStyle(fontScale: Float, lineSpacing: Float) = TextStyle(
     lineHeight = 30.sp * fontScale * lineSpacing,
     fontFamily = FontFamily.Serif,
 )
-
-@Composable
-private fun FlowBlock(
-    label: String,
-    fontScale: Float,
-    badge: ImageBitmap? = null,
-    /** False on a piece that began on the page before. */
-    opener: Boolean = true,
-    /** True on the piece the block ENDS on: the rule turns its foot. */
-    closer: Boolean = true,
-    /** A lighter claim on the reader — see [RecapBlock]. */
-    dashed: Boolean = false,
-    content: @Composable () -> Unit,
-) {
-    if (FLOW_HEADER_FRAME) {
-        FramedHeaderBlock(label, fontScale, badge, opener, closer, content)
-        return
-    }
-    // THE RULE IS THE HEADER AND THE FOOTER AT ONCE, which is why it is a
-    // rule and not the two devices it replaces. A title band appears once at
-    // the start and a footer once at the end — so the MIDDLE page of a block
-    // that runs over three pages would get neither, and the middle page is
-    // exactly the one that reads as orphaned. A marginal rule is continuous
-    // along the block, so every page it touches is marked, and because it
-    // sits BESIDE the text it costs no vertical space on any of them — the
-    // resource this whole redesign was fighting for.
-    //
-    // The convention is the change bar of technical setting, plus the
-    // set-off extract: a passage stepped in from the measure needs neither a
-    // box nor quotation marks. The foot is the end-bracket of marginal
-    // annotation: it turns right only on the piece where the block ends, so
-    // "no foot" means "carries on over the leaf" — one bit of information,
-    // carried by geometry, costing no words and no height.
-    //
-    // Inside the text column rather than out in the page margin, deliberately:
-    // the outer margin is where a pen mark MEANS something in this app (a
-    // passage-marking gesture), and a printed rule out there invites the
-    // reader to trace it.
-    val strokePx = with(LocalDensity.current) { FLOW_RULE_WIDTH.toPx() }
-    val dashes = if (dashed) {
-        PathEffect.dashPathEffect(
-            floatArrayOf(with(LocalDensity.current) { 10.dp.toPx() }, with(LocalDensity.current) { 6.dp.toPx() }),
-            0f,
-        )
-    } else {
-        null
-    }
-    Spacer(Modifier.height(4.dp))
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .drawBehind {
-                val x = strokePx / 2f
-                drawLine(
-                    color = Ink,
-                    start = Offset(x, 0f),
-                    end = Offset(x, size.height),
-                    strokeWidth = strokePx,
-                    pathEffect = dashes,
-                )
-                // No foot. It was the end-bracket of marginal annotation and
-                // it carried a real bit — "no foot means this carries on over
-                // the leaf" — but Aliaksei read the L as clutter rather than
-                // as information, and he is the one reading. The vertical
-                // line alone marks the span; where the block ends is already
-                // obvious from the text stopping.
-            }
-            .padding(start = FLOW_RULE_INDENT),
-    ) {
-        if (opener) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 6.dp),
-            ) {
-                if (badge != null) {
-                    // MULTIPLIED, not drawn. The mascots are black line art
-                    // on an OPAQUE WHITE field, which is invisible on a white
-                    // page and a white card punched through the recap's wash
-                    // — reported the moment the wash landed. Multiply makes
-                    // white transparent by arithmetic (white × anything is
-                    // that thing) while black stays black, which is the
-                    // standard trick for line art and needs no change to the
-                    // PNGs every book has already generated and paid for.
-                    val filter = badgeColorFilter()
-                    Canvas(
-                        modifier = Modifier
-                            .padding(end = 10.dp)
-                            .size(BADGE_SIZE * fontScale),
-                    ) {
-                        drawImage(
-                            image = badge,
-                            srcSize = IntSize(badge.width, badge.height),
-                            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
-                            colorFilter = filter,
-                            blendMode = BlendMode.Multiply,
-                        )
-                    }
-                }
-                Text(
-                    text = label,
-                    fontFamily = FontFamily.SansSerif,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = FLOW_LABEL_SP.sp * fontScale,
-                    letterSpacing = 1.5.sp,
-                    // Black. The frame used to carry the block and the label
-                    // could afford to be quiet; now the label is half the
-                    // signal, and grey is the one thing this panel cannot
-                    // render — it thresholds and dithers, so Muted at 11sp
-                    // is noise rather than softness.
-                    color = Ink,
-                )
-            }
-        }
-        content()
-    }
-}
-
-/** The marginal rule's weight. Never below one physical pixel on the panel. */
-private val FLOW_RULE_WIDTH = 2.dp
-
-/** How far the block's content steps in from its rule. */
-private val FLOW_RULE_INDENT = 14.dp
 
 /** Air under a boxed header, and above the rule that closes the block. */
 private val FRAME_HEADER_GAP = FRAME_HEADER_GAP_DP.dp
