@@ -321,6 +321,52 @@ fun paginate(
         // newPage() appends unconditionally, so moving a box off a page that
         // is already empty would spin.
 
+        // A REQUESTED ROOM MAY SHARE A NEARLY EMPTY PAGE.
+        //
+        // `room="100%"` means "this needs a lot of room", not "put it on a
+        // page by itself whatever that costs". Taken literally it cannot ever
+        // fit beside its own task — the task uses some of the page — so the
+        // room always went over the leaf and left the task alone on a sheet
+        // that was mostly white. Aliaksei, watching a rewritten chapter: "page
+        // 5 is empty, guess room is 100%... if we see some content less than
+        // 1/3 we can use the same page."
+        //
+        // Exactly so, and the reader is better off twice over: two thirds of
+        // a page is a generous place to draw, and the TASK IS STILL VISIBLE
+        // while they draw it, which it is not from the page before.
+        //
+        // The threshold is on what sits ABOVE the room — the page so far plus
+        // this block without its room. Under a third of the page, the room
+        // takes what is left and nothing moves. Over it, the room is worth a
+        // page of its own and the split below gives it one.
+        if (block is Block.CustomFence && block.params[FENCE_ROOM] != null &&
+            h > budget - height
+        ) {
+            val bare = block.copy(params = block.params + (FENCE_SPACE_ROWS to "0"))
+            val bareH = estimateHeight(
+                bare, contentWidthPx, density, measurer, fontScale, lineSpacing,
+                hasFigureImage, hasBadge, atPageTop = atTop,
+                answerPrefix = answerPrefix, revealed = isRevealed(i),
+            )
+            val spare = budget - height - bareH
+            val kept = if (roomRowPx > 0f) (spare / roomRowPx).toInt() else 0
+            if (height + bareH <= budget / 3 && kept >= MIN_WORKING_ROWS) {
+                pages.last().add(
+                    PageItem(
+                        block.copy(params = block.params + (FENCE_SPACE_ROWS to kept.toString())),
+                        i,
+                        carriedPx,
+                    ),
+                )
+                height += bareH + (kept * roomRowPx).toInt()
+                carry = null
+                carriedPx = 0
+                forceNext = false
+                i++
+                continue
+            }
+        }
+
         // FIT THE PAGE YOU ARE ON BEFORE CUTTING ANYTHING.
         //
         // The rung below asks "can this box be made to fit a WHOLE page", and

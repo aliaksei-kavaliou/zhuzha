@@ -1355,6 +1355,33 @@ yet" note that used to live here was two months stale.
       prompt gained the sharper form of the rule too: if your own answer is that short, 5% is
       the answer whatever the question's wording suggested.
       Verified on the generated chapter: page 23 now draws one line and the reveal under it.
+- [x] **NOTHING A READER DOES MAY REPAGINATE (2026-10-07)** — the worst regression of the
+      day, mine, and it lasted about an hour. Aliaksei, drawing on the Boox: "I tried to draw
+      a mug but it changes the page in the middle and draws on the prev one. Now it's a mess."
+      When he asked whether a revealed answer could overlap ink, I made an inked block reserve
+      its revealed height — and wired it to the LIVE stroke list. So the moment the first
+      stroke saved, the block grew, the page re-flowed, and the page changed under the nib
+      mid-stroke. The ink file showed it exactly: a 938-point stroke and a 189-point stroke on
+      block 10, another on block 11, three of them carrying `annotated_text` because once the
+      page moved the gesture test read them as marking a passage.
+      The inked set is read ONCE, when the chapter opens. A block inked today reserves from
+      the next open, which is soon enough — the risk it guards is a reveal moving handwriting
+      that is minutes old and still on the screen.
+      **The rule is bigger than this bug and belongs at the top of the paginator's contract:
+      pagination may depend on the chapter, the font, the page size and the reveal state, and
+      on NOTHING THE READER IS DOING RIGHT NOW.** A reader drawing, selecting or marking must
+      never be able to move the page under their own hand.
+- [x] **A requested room may share a nearly empty page (2026-10-07)** — Aliaksei: "page 5 is
+      empty, guess room is 100%... if we see some content less than 1/3 we can use the same
+      page." `room="100%"` means "this needs a lot of room", not "a page to itself whatever
+      that costs" — and taken literally it can never fit beside its own task, so the task was
+      left alone on a sheet that was mostly white.
+      The threshold is on what sits ABOVE the room: the page so far plus the block without its
+      room. Under a third of the page, the room takes everything left and nothing moves. The
+      reader gains twice — two thirds of a page is a generous place to draw, and the TASK IS
+      STILL VISIBLE while they draw, which it is not from the page before.
+      Verified on the rewritten demo book: the task that had a bare page 5 and a grid on 6 now
+      carries both on page 5, and the chapter went 12 pages to 11.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

@@ -336,6 +336,25 @@ fun ReaderScreen(
     // Chapter-scoped freehand strokes. Load in the same effect that pulls
     // the chapter markdown so both are ready by the time PagedContent runs.
     var strokes by remember(chapterSlug) { mutableStateOf<List<InkStroke>>(emptyList()) }
+    /**
+     * Which blocks carried ink WHEN THE CHAPTER OPENED, so an exercise the
+     * reader has written on is measured in its revealed state and opening
+     * its answer cannot move the page under their hand.
+     *
+     * Frozen deliberately. The live version of this — recomputed from
+     * `strokes` as they were drawn — repaginated THE MOMENT THE FIRST STROKE
+     * WAS SAVED: the block grew to its revealed height, the page re-flowed,
+     * and the reader was drawing a mug when the page changed under the nib
+     * and the rest of the line landed on the page before. Reported from the
+     * Boox within the hour, and far worse than the problem it was added for.
+     *
+     * Nothing a reader does during a session may change pagination. A block
+     * inked today reserves from the next time the chapter is opened, which
+     * is soon enough: the risk it guards against is a reveal moving a room
+     * that already has handwriting in it, and handwriting that is minutes
+     * old is still on the screen in front of them.
+     */
+    var inkedAtOpen by remember(chapterSlug) { mutableStateOf<List<Int>>(emptyList()) }
     // Dev toggle read once per session; the Settings screen writes it and it
     // takes effect on next chapter open (no live rebinding — a chapter's
     // gestures are re-keyed on chapter change so this is fine).
@@ -484,6 +503,8 @@ fun ReaderScreen(
         course = store.load(courseSlug)
         markdown = store.readChapter(courseSlug, chapterSlug)
         strokes = store.readStrokes(courseSlug, chapterSlug)
+        // FROZEN AT OPEN, and that is the whole point — see [inkedAtOpen].
+        inkedAtOpen = strokes.map { it.blockIndex }.distinct().sorted()
         // Record where we are so a cold start of the app resumes here.
         store.writeLastRead(courseSlug, chapterSlug)
     }
@@ -958,6 +979,7 @@ fun ReaderScreen(
                     },
                     chipOpen = viewingStroke != null || pendingGestureStroke != null,
                     chipBoundsInRoot = lastChipBounds,
+                    inkedAtOpen = inkedAtOpen,
                     selectionEpoch = selectionEpoch,
                     selectionActive = askToolbar.selectionRect != null,
                     onClearSelection = clearSelection,
@@ -1586,6 +1608,8 @@ private fun PagedContent(
      * than a quarter of the screen. Null until one has been laid out.
      */
     chipBoundsInRoot: Rect?,
+    /** Blocks that already carried ink when the chapter opened. */
+    inkedAtOpen: List<Int>,
     /** Rebuilds the SelectionContainer when it changes, dropping any selection. */
     selectionEpoch: Int,
     /** Whether a text selection and its chip are showing. */
@@ -1718,8 +1742,7 @@ private fun PagedContent(
             // is applied now: an inked block is measured in its revealed
             // state from the start, so revealing it changes nothing, and
             // every other block stays dense.
-            val inkedBlocks = strokes.map { it.blockIndex }.distinct().sorted()
-            val inkedKey = inkedBlocks.joinToString(",")
+            val inkedKey = inkedAtOpen.joinToString(",")
             val pages = remember(
                 blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion,
                 answerPrefix, revealedKey, inkedKey,
@@ -1736,7 +1759,7 @@ private fun PagedContent(
                     hasBadge = hasBadge,
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                     answerPrefix = answerPrefix,
-                    isRevealed = { idx -> revealed[idx] == true || idx in inkedBlocks },
+                    isRevealed = { idx -> revealed[idx] == true || idx in inkedAtOpen },
                 )
             }
             // Page index is view state; the block anchor is for persistence
