@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkfirst.core.Block
+import com.inkfirst.core.isCodeFence
 import com.inkfirst.core.FIGURE_ASPECT
 import com.inkfirst.core.badgeKindFor
 import com.inkfirst.core.splitExerciseBody
@@ -839,6 +840,13 @@ private fun splitFence(
     density: Density,
     hasBadge: (String) -> Boolean,
 ): SplitFence? = with(density) {
+    // A LISTING SPLITS AT A LINE END. Code is the one body that must never
+    // be re-wrapped to fit — a line broken in the middle is a different
+    // program to read — so it gets its own path rather than the sentence
+    // machinery below, which exists for prose.
+    if (isCodeFence(block.kind)) {
+        return splitCode(block, availablePx, widthPx, measurer, fontScale, lineSpacing, density, hasBadge)
+    }
     if (block.kind != "exercise" && block.kind != "recap") return null
     val (question, answer) = splitExerciseBody(block.body)
     val text = question.trim()
@@ -1095,6 +1103,72 @@ private fun splitListItem(
         rebuild(sliceInlines(inlines, 0, cut), false),
         rebuild(sliceInlines(inlines, cut, text.length), true),
         layout.getLineBottom(fitting - 1).toInt(),
+    )
+}
+
+/**
+ * Splits a code listing between two of its lines.
+ *
+ * Everything else in this file cuts text by WRAPPED line, because prose has
+ * no other structure. A listing does: its newlines are meaningful, and a cut
+ * inside one makes two lines that are each wrong. So this measures the body
+ * line by line and takes whole source lines until the page is full.
+ *
+ * A listing shorter than four lines is left alone — a two-line fragment of a
+ * program is not worth a page break, and below that the pieces say nothing.
+ */
+private fun splitCode(
+    block: Block.CustomFence,
+    availablePx: Int,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    fontScale: Float,
+    lineSpacing: Float,
+    density: Density,
+    hasBadge: (String) -> Boolean,
+): SplitFence? = with(density) {
+    val lines = block.body.trimEnd().lines()
+    if (lines.size < 4) return null
+
+    val style = TextStyle(
+        fontSize = 14.sp * fontScale,
+        lineHeight = 20.sp * fontScale * lineSpacing,
+        fontFamily = FontFamily.Monospace,
+    )
+    val opensBlock = block.params[FENCE_CONT_FROM] == null
+    val labelTextHeight = (FLOW_LABEL_SP.sp.toPx() * fontScale).toInt()
+    val badgeKind = badgeKindFor(block.kind)
+    val badgeHeight =
+        if (badgeKind != null && hasBadge(badgeKind)) (BADGE_SIZE * fontScale).toPx().toInt() else 0
+    val headerPad = (FRAME_HEADER_PAD_DP + FRAME_HEADER_GAP_DP).dp.toPx().toInt()
+    val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + headerPad else 0) +
+        8.dp.toPx().toInt() + 16.dp.toPx().toInt()
+    val room = availablePx - chrome
+    if (room <= 0) return null
+
+    // How tall the first n source lines are, WRAPPED as the renderer wraps
+    // them: a long line occupies two rows and has to be counted as two.
+    fun heightOf(count: Int): Int = measurer.measure(
+        text = AnnotatedString(lines.take(count).joinToString("\n")),
+        style = style,
+        constraints = Constraints(maxWidth = widthPx.coerceAtLeast(1)),
+    ).size.height
+
+    var fitting = 0
+    while (fitting < lines.size - 1 && heightOf(fitting + 1) <= room) fitting++
+    // One line of a program on either side of a break is not worth having.
+    if (fitting < 2 || lines.size - fitting < 2) return null
+
+    return SplitFence(
+        head = block.copy(
+            body = lines.take(fitting).joinToString("\n"),
+            params = block.params + (FENCE_CONT_TO to "1"),
+        ),
+        tail = block.copy(
+            body = lines.drop(fitting).joinToString("\n"),
+            params = block.params + (FENCE_CONT_FROM to "1"),
+        ),
+        headPx = heightOf(fitting) + chrome,
     )
 }
 
@@ -1450,7 +1524,8 @@ private fun estimateHeight(
             // A FLOW BLOCK HAS NO FRAME, so it has no inset either: the task
             // runs the full width of the page like the prose around it. Code
             // and undrawn-figure fallbacks keep their box and their inset.
-            val flows = block.kind == "exercise" || block.kind == "recap"
+            val flows = block.kind == "exercise" || block.kind == "recap" ||
+                isCodeFence(block.kind)
             // A flow block has no frame, but it IS stepped in from its
             // marginal rule, and the step narrows the measure. Must match
             // FLOW_RULE_INDENT in the renderer or the line count drifts.
@@ -1477,11 +1552,20 @@ private fun estimateHeight(
                 "exercise" -> splitExerciseBody(block.body).first.trim()
                 else -> block.body.trim()
             }
-            val bodyStyle = when (block.kind) {
-                "figure" -> TextStyle(
+            val bodyStyle = when {
+                block.kind == "figure" -> TextStyle(
                     fontSize = 16.sp * fontScale,
                     lineHeight = 26.sp * fontScale * lineSpacing,
                     fontFamily = FontFamily.Serif,
+                )
+                // A LISTING IS MONOSPACE AND SMALLER, and was being measured
+                // as 17sp serif prose while being drawn as 14sp mono — a
+                // mismatch in both directions at once, which is why code
+                // blocks paginated oddly long before they could be split.
+                isCodeFence(block.kind) -> TextStyle(
+                    fontSize = 14.sp * fontScale,
+                    lineHeight = 20.sp * fontScale * lineSpacing,
+                    fontFamily = FontFamily.Monospace,
                 )
                 else -> TextStyle(
                     fontSize = 17.sp * fontScale,

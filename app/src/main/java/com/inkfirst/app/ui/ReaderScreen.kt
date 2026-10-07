@@ -3157,7 +3157,7 @@ private fun RenderBlock(
             "figure" -> FigureBlock(block, fontScale, lineSpacing, loadFigure, labels)
             "meta" -> MetaBlock(block, fontScale, loadFigure)
             "tail" -> TailBlock(block, loadFigure)
-            else -> UnknownFenceBlock(block, fontScale, loadBadge)
+            else -> UnknownFenceBlock(block, fontScale, lineSpacing, loadBadge)
         }
     }
 }
@@ -3830,20 +3830,30 @@ private fun MetaBlock(
 private fun UnknownFenceBlock(
     f: Block.CustomFence,
     fontScale: Float,
+    lineSpacing: Float,
     loadBadge: (String) -> ImageBitmap?,
 ) {
     // A code fence carries its language as the kind (```python), so the badge
     // is looked up by the normalised kind — every language shares one "code"
     // mascot rather than each earning its own.
-    BorderedBlock(
+    // The same band, body and closing rule as TRY THIS and RECAP. A listing
+    // was the last block still in a box, and a box is a unit: it had to land
+    // whole on one page or be clipped, because splitFence refuses every kind
+    // but exercise and recap. Aliaksei found it on the emulator — "we need
+    // the same fix for the code block" — and a long listing losing its last
+    // lines is the worst version of that, since code is the one content
+    // where the missing part cannot be guessed.
+    FramedHeaderBlock(
         label = f.kind.uppercase().ifBlank { "CODE" },
         fontScale = fontScale,
         badge = badgeKindFor(f.kind)?.let(loadBadge),
+        opener = f.params[FENCE_CONT_FROM] == null,
+        closer = f.params[FENCE_CONT_TO] == null,
     ) {
         Text(
             text = f.body,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp * fontScale,
+            // Whole style, like everything the paginator measures.
+            style = codeBodyStyle(fontScale, lineSpacing),
             color = Ink,
         )
     }
@@ -3986,6 +3996,16 @@ private fun answerBodyStyle(fontScale: Float, lineSpacing: Float) = TextStyle(
     lineHeight = 26.sp * fontScale * lineSpacing,
     fontFamily = FontFamily.Serif,
     fontStyle = FontStyle.Italic,
+)
+
+/**
+ * A code listing's style. NOT italic — a listing is read as characters, and
+ * slanting them is both harder to read and wrong about what it is.
+ */
+private fun codeBodyStyle(fontScale: Float, lineSpacing: Float) = TextStyle(
+    fontSize = 14.sp * fontScale,
+    lineHeight = 20.sp * fontScale * lineSpacing,
+    fontFamily = FontFamily.Monospace,
 )
 
 /** A list item's style, marker and body alike. Same rule as [flowBodyStyle]. */

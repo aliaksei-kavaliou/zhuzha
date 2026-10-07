@@ -128,7 +128,7 @@ fun splitExerciseBody(body: String): Pair<String, String> {
 }
 
 /** Fence kinds that are code rather than a block with a voice — see [badgeKindFor]. */
-private fun isCodeFence(kind: String): Boolean =
+fun isCodeFence(kind: String): Boolean =
     badgeKindFor(kind) == "code" || kind.isBlank()
 
 /**

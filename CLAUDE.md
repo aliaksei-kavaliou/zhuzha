@@ -1318,6 +1318,25 @@ yet" note that used to live here was two months stale.
       His verdict on the wash, worth keeping beside it: **"recap with background was nice, but
       blinking is too high a price for that."** That is the trade exactly — it was the
       best-looking of the four and it cost a full-panel refresh on every page turn.
+- [x] **A listing gets the band too, and splits at a line end (2026-10-07)** — Aliaksei,
+      checking the emulator: "we need the same fix for the code block. Title block + bottom
+      line. No other option." A code fence was the last block still in a box, and a box is a
+      unit — `splitFence` refused every kind but exercise and recap, so **a listing taller
+      than a page went to the oversize branch and was CLIPPED**. Code is the worst content to
+      lose the end of, because the missing part cannot be guessed from the rest.
+      Two things were wrong and the second had been wrong for much longer. The box is now the
+      same header band, body and closing rule as the other blocks. And **the estimate had
+      been measuring a listing as 17sp SERIF prose while the renderer drew it at 14sp
+      MONOSPACE** — a mismatch in both directions at once, which is why code blocks
+      paginated oddly long before any of them could be split.
+      `splitCode` cuts between SOURCE LINES, never inside one: everything else in the
+      paginator divides by wrapped line, because prose has no other structure, but a listing
+      does, and a line broken in the middle is a different program to read. It measures the
+      first n lines AS WRAPPED — a long line occupies two rows and must count as two — and
+      refuses a listing under four lines or a piece under two.
+      Verified on the emulator with a 28-line listing spliced into a real chapter: band and
+      lines 1-5 on one page, 6-13 continuing on the next with no band and no rule, nothing
+      clipped. The chapter was restored afterwards.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
