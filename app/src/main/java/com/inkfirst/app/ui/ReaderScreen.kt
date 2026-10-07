@@ -3895,6 +3895,13 @@ private fun FramedHeaderBlock(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
+                    // PAGE WIDE. Hugging the label made the frame read as a
+                    // button — a tall rounded rectangle with a mascot in it,
+                    // sitting in the middle of a column of prose. Run to the
+                    // full measure and it reads as a header band instead,
+                    // which is what it is, and it lines up with the rule that
+                    // closes the block at the same width.
+                    .fillMaxWidth()
                     .border(1.dp, Ink, RoundedCornerShape(4.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
