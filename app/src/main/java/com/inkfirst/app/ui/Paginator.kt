@@ -129,12 +129,30 @@ fun paginate(
         val pct = (b as? Block.CustomFence)
             ?.takeIf { it.kind == "exercise" && it.params[FENCE_SPACE_ROWS] == null }
             ?.params?.get(FENCE_ROOM)?.trim()?.removeSuffix("%")?.trim()?.toIntOrNull()
+        // A WRITTEN ANSWER IS SIZED BY THE ANSWER, whatever the model asks
+        // for. It knows what a DRAWING needs — that is the whole reason the
+        // percentage exists, and nothing in the code can tell a mug from a
+        // yes. But for ruled lines the code holds the better evidence: it
+        // has the answer itself, and a reader writing "6.0" needs one line
+        // however generous the brief felt. Seen on a freshly generated
+        // chapter, where a one-digit answer was asked 20% of a page.
+        //
+        // So: a request may SHRINK the room for a written answer, never
+        // inflate it. For a grid it stands as written.
+        val natural = (b as? Block.CustomFence)?.let {
+            if (it.params["space"] == "lines") {
+                answerSpaceLineCount(splitExerciseBody(it.body).second, ruled = true)
+            } else {
+                null
+            }
+        }
         if (pct == null) {
             b
         } else {
+            val asked = roomRowsFor(pct, budget, roomRowPx)
+            val rows = if (natural != null) minOf(asked, natural) else asked
             (b as Block.CustomFence).copy(
-                params = b.params +
-                    (FENCE_SPACE_ROWS to roomRowsFor(pct, budget, roomRowPx).toString()),
+                params = b.params + (FENCE_SPACE_ROWS to rows.toString()),
             )
         }
     }

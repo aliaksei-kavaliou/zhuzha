@@ -1337,6 +1337,24 @@ yet" note that used to live here was two months stale.
       Verified on the emulator with a 28-line listing spliced into a real chapter: band and
       lines 1-5 on one page, 6-13 continuing on the next with no band and no rule, nothing
       clipped. The chapter was restored afterwards.
+- [x] **A written answer is sized by the answer, whatever the model asks (2026-10-07)** —
+      Aliaksei, on a chapter generated with the new param: "I see 2 lines for 1 digit answer."
+      **The plumbing was working** — that chapter carries `room="20%"` and `room="30%"`, the
+      first real output to use it — so this is the model's judgement, not dead wiring. It
+      asked 20% of a page for an exercise whose own answer is `6.0`, against its own
+      instruction that a number is 5%.
+      Fixed on both sides, and the division of labour is the interesting part. **For a GRID
+      the model's request stands**: nothing in the code can tell a mug from a yes, which is
+      the whole reason the percentage exists. **For RULED LINES the code holds the better
+      evidence** — it has the answer itself, and a reader writing "6.0" needs one line however
+      generous the brief felt. So a request may SHRINK a written answer's room and never
+      inflate it.
+      The floor also came down from two lines to one. It was two from when this was the only
+      sizing there was and a lone rule looked like a mistake on an empty page; with a header
+      band above and a closing rule below, one ruled line reads as exactly what it is. The
+      prompt gained the sharper form of the rule too: if your own answer is that short, 5% is
+      the answer whatever the question's wording suggested.
+      Verified on the generated chapter: page 23 now draws one line and the reveal under it.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

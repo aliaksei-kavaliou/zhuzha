@@ -278,7 +278,12 @@ internal const val GRID_ROWS = 8
 internal fun answerSpaceLineCount(answer: String, ruled: Boolean = false): Int {
     if (!ruled) return GRID_ROWS
     val text = answer.trim()
-    if (text.isNotEmpty()) return (text.length / 42 + 1).coerceIn(2, 6)
+    // ONE LINE IS A LEGITIMATE AMOUNT OF ROOM. The floor was two, from when
+    // this was the only sizing there was and a lone rule looked like a
+    // mistake. With a header band above and a rule below, one ruled line
+    // reads as exactly what it is — Aliaksei, on a generated chapter: "I see
+    // 2 lines for 1 digit answer". The answer there was "6.0".
+    if (text.isNotEmpty()) return (text.length / 42 + 1).coerceIn(1, 6)
     // Writing lines with nothing to write toward are noise, so they get none.
     return 0
 }

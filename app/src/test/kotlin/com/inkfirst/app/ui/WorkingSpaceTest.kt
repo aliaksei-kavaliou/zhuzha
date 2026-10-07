@@ -35,9 +35,17 @@ class WorkingSpaceTest {
         val short = answerSpaceLineCount("Yes.", ruled = true)
         val long = answerSpaceLineCount("x".repeat(400), ruled = true)
         assertTrue(long > short, "a longer written answer earns more lines")
-        // Clamped at both ends: under two is not somewhere to write, past six
-        // the exercise has become a form.
-        assertEquals(2, short)
+        // ONE LINE at the short end, from 2026-10-07. The floor was two,
+        // set when this was the only sizing there was and a single rule
+        // looked like a mistake on an otherwise empty page. It no longer is:
+        // the block has a header band above it and a closing rule below, so
+        // one ruled line reads as exactly what it is — the place to write
+        // "6.0". Aliaksei, on a generated chapter: "I see 2 lines for 1
+        // digit answer."
+        //
+        // Six still caps the other end: past that an exercise has become a
+        // form.
+        assertEquals(1, short)
         assertEquals(6, long)
     }
 
