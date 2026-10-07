@@ -1382,8 +1382,7 @@ yet" note that used to live here was two months stale.
       STILL VISIBLE while they draw, which it is not from the page before.
       Verified on the rewritten demo book: the task that had a bare page 5 and a grid on 6 now
       carries both on page 5, and the chapter went 12 pages to 11.
-- [x] **Two mugs: one stroke belongs to one piece, and the room is never divided
-      (2026-10-07)** — Aliaksei: "I drew the mug, pressed show answer, page rearranged. Now I
+- [x] **Two mugs — the first attempt was not enough, see the item below (2026-10-07)** — Aliaksei: "I drew the mug, pressed show answer, page rearranged. Now I
       have 2 mugs on p5 and 6." Two faults, and they had to meet to produce that.
       **The overlay only tested one end.** `belongsToThisPage` keeps a stroke off a
       CONTINUATION whose lines it was not drawn on, and nothing kept it off the HEAD when it
@@ -1400,6 +1399,27 @@ yet" note that used to live here was two months stale.
       grid is worth nothing to anybody.
       Note what the two faults say together: the reveal repaginating is SAFE only while every
       other rule holds. It was the trigger here, not the cause.
+- [x] **Ink makes a block ATOMIC, and a slice ends where its box ends (2026-10-07)** — "you
+      didn't fix an issue... same 2 mugs, same empty page 5." Both were still there, and both
+      first attempts had been aimed one step short of the cause.
+      **The ownership test used the wrong bottom.** I had given it "the next block's top, or
+      the page's" — but a head whose block continues overleaf is usually the LAST item on its
+      page, so the fallback was the foot of the page and every stroke passed. The renderer
+      knows the real answer and was not being asked: a slice ends where its own box ends.
+      `blockVisibleBottom` reports it from the same `onGloballyPositioned` that already
+      reports the top, and the hit test uses it too, so ink that is not drawn on a page cannot
+      be tapped or erased there either.
+      **And reserving the revealed height for an inked block did the opposite of its job.** It
+      made the block taller, so it no longer fitted, so it split — and the room the reader had
+      drawn in moved to the next page without them. That is what emptied page 5 twice. What
+      ink actually needs is for the block NOT TO BE DIVIDED: `hasInk` now refuses the split
+      outright, and the block moves whole or gives up room, which the rungs above already know
+      how to do.
+      **The lesson is about the shape of the fix, not the bug.** Both first attempts added
+      something (height, a bound) where the right move was to take a decision AWAY — do not
+      split this, ask the thing that knows. Verified on the Boox: page 5 now carries the band,
+      the whole task, the grid, Show answer, the closing rule and ONE mug, drawn where he drew
+      it; page 6 carries prose and no ink at all.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

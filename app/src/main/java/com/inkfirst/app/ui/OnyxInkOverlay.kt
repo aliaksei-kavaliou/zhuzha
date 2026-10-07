@@ -110,6 +110,8 @@ internal fun OnyxInkOverlay(
      * lives on the previous page, and belongs to that page alone.
      */
     blockVisibleTop: (globalIdx: Int) -> Float? = { null },
+    /** Where this block's slice on THIS page stops — see [belongsToThisPage]. */
+    blockVisibleBottom: (globalIdx: Int) -> Float? = { null },
     pageBlockRange: IntRange,
     /**
      * Distance from this overlay's left edge to the left edge of the TEXT.
@@ -192,6 +194,7 @@ internal fun OnyxInkOverlay(
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
     val blockVisibleTopRef = rememberUpdatedState(blockVisibleTop)
+    val blockVisibleBottomRef = rememberUpdatedState(blockVisibleBottom)
     val rangeRef = rememberUpdatedState(pageBlockRange)
     val insetRef = rememberUpdatedState(textInsetPx)
 
@@ -538,6 +541,7 @@ internal fun OnyxInkOverlay(
                                 hitTestForErase(
                                     strokesRef.value, x - insetRef.value, y, getTop,
                                     blockVisibleTop = blockVisibleTopRef.value,
+                                    blockVisibleBottom = blockVisibleBottomRef.value,
                                 )?.let(doomed::add)
                             }
                             Log.d(TAG, "erase trail pts=${eraseTrail.size} removed=${doomed.size}")
@@ -636,6 +640,7 @@ internal fun OnyxInkOverlay(
                                 blockTopYRef.value,
                                 TAP_SLOP_PX,
                                 blockVisibleTopRef.value,
+                                blockVisibleBottomRef.value,
                             )
                             Log.d(
                                 TAG,
@@ -1404,7 +1409,11 @@ internal fun OnyxInkOverlay(
             pageStrokes.forEach { s ->
                 val top = blockTopY(s.blockIndex) ?: return@forEach
                 if (s.points.size < 2) return@forEach
-                val bottom = blockVisibleTop(s.blockIndex + 1) ?: size.height
+                // The slice's OWN bottom, not the page's. A head whose block
+                // continues overleaf ends where its box ends, and the ink
+                // below that belongs to the next piece — which is how one
+                // drawing came to be rendered on two pages.
+                val bottom = blockVisibleBottom(s.blockIndex) ?: size.height
                 if (!belongsToThisPage(s, top, blockVisibleTop, bottom)) return@forEach
                 val path = Path().apply {
                     val first = s.points.first()
@@ -1665,13 +1674,14 @@ private fun hitTestForErase(
     blockTopY: (Int) -> Float?,
     slop: Float = ERASE_SLOP_PX,
     blockVisibleTop: (Int) -> Float? = { null },
+    blockVisibleBottom: (Int) -> Float? = { null },
 ): Stroke? {
     val slopSq = slop * slop
     return strokes.firstOrNull { s ->
         val top = blockTopY(s.blockIndex) ?: return@firstOrNull false
         // Same bounds as the renderer: ink that is not DRAWN on this page
         // cannot be tapped or erased from it either.
-        val bottom = blockVisibleTop(s.blockIndex + 1) ?: Float.MAX_VALUE
+        val bottom = blockVisibleBottom(s.blockIndex) ?: Float.MAX_VALUE
         if (!belongsToThisPage(s, top, blockVisibleTop, bottom)) return@firstOrNull false
         val pts = s.points
         if (pts.isEmpty()) return@firstOrNull false

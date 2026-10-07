@@ -65,6 +65,8 @@ fun InkOverlay(
      * lives on the previous page, and belongs to that page alone.
      */
     blockVisibleTop: (globalIdx: Int) -> Float? = { null },
+    /** Where this block's slice on THIS page stops. Mirrors the Onyx path. */
+    blockVisibleBottom: (globalIdx: Int) -> Float? = { null },
     pageBlockRange: IntRange,
     /** See the note on OnyxInkOverlay: strokes are stored relative to the TEXT. */
     textInsetPx: Float = 0f,

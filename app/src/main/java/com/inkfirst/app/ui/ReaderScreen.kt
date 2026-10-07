@@ -1759,7 +1759,15 @@ private fun PagedContent(
                     hasBadge = hasBadge,
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                     answerPrefix = answerPrefix,
-                    isRevealed = { idx -> revealed[idx] == true || idx in inkedAtOpen },
+                    isRevealed = { idx -> revealed[idx] == true },
+                    // INK MAKES A BLOCK ATOMIC — it does not make it taller.
+                    // Reserving the revealed height was the first attempt and
+                    // it did the opposite of its job: the block grew, no
+                    // longer fitted, split, and the room the reader had drawn
+                    // in moved to the next page without them. What the ink
+                    // actually needs is for the block NOT TO BE DIVIDED, so
+                    // the drawing stays whole and stays where it was made.
+                    hasInk = { idx -> idx in inkedAtOpen },
                 )
             }
             // Page index is view state; the block anchor is for persistence
@@ -1857,6 +1865,8 @@ private fun PagedContent(
              * split paragraph, and that difference is what says whether a
              * stroke was drawn on a line this page is actually showing.
              */
+            val blockVisibleBottomsInRoot =
+                remember(pages, pageIndex) { mutableStateMapOf<Int, Float>() }
             val blockVisibleTopsInRoot =
                 remember(chapterSlug) { mutableStateMapOf<Int, Float>() }
             var overlayTopInRoot by remember(chapterSlug) { mutableStateOf(0f) }
@@ -2146,6 +2156,15 @@ private fun PagedContent(
                                             // previous page.
                                             blockVisibleTopsInRoot[globalIdx] =
                                                 coords.positionInRoot().y
+                                            // ...and where the slice STOPS.
+                                            // The page's foot is not the
+                                            // answer: a head whose block
+                                            // continues overleaf ends where
+                                            // its own box ends, and a stroke
+                                            // below that belongs to the piece
+                                            // after it, not here.
+                                            blockVisibleBottomsInRoot[globalIdx] =
+                                                coords.positionInRoot().y + coords.size.height
                                         },
                                 ) {
                                     RenderBlock(
@@ -2276,6 +2295,9 @@ private fun PagedContent(
                             blockVisibleTop = { idx ->
                                 blockVisibleTopsInRoot[idx]?.minus(overlayTopInRoot)
                             },
+                            blockVisibleBottom = { idx ->
+                                blockVisibleBottomsInRoot[idx]?.minus(overlayTopInRoot)
+                            },
                             pageBlockRange = pageBlockRange,
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
@@ -2336,6 +2358,9 @@ private fun PagedContent(
                             blockTopY = { idx -> blockTopsInRoot[idx]?.minus(overlayTopInRoot) },
                             blockVisibleTop = { idx ->
                                 blockVisibleTopsInRoot[idx]?.minus(overlayTopInRoot)
+                            },
+                            blockVisibleBottom = { idx ->
+                                blockVisibleBottomsInRoot[idx]?.minus(overlayTopInRoot)
                             },
                             pageBlockRange = pageBlockRange,
                             allowFingerDraw = fingerDraws,

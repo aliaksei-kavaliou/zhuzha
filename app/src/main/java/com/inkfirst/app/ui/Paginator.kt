@@ -91,6 +91,15 @@ fun paginate(
      * is exactly what "flows lower" means.
      */
     isRevealed: (Int) -> Boolean = { false },
+    /**
+     * Whether the reader has ink on this block.
+     *
+     * An inked block is NEVER DIVIDED. A drawing cannot be cut across a page
+     * break and a reader cannot be expected to find half of it overleaf, so
+     * the block moves whole or gives up room — the two things the rungs above
+     * already know how to do.
+     */
+    hasInk: (Int) -> Boolean = { false },
 ): List<List<PageItem>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) {
         return listOf(blocks.mapIndexed { i, b -> PageItem(b, i) })
@@ -507,7 +516,10 @@ fun paginate(
             // branch below, which places it and lets the page clip it — and on
             // a small screen that lost the end of an exercise and its "Show
             // answer" button entirely, with no way to reach either.
-            is Block.CustomFence ->
+            // An inked block is not divided at all: see `hasInk`.
+            is Block.CustomFence -> if (hasInk(i)) {
+                null
+            } else {
                 // The RELAXED form if the rung above made one: having already
                 // decided those rows are not affordable, splitting the
                 // original would hand them to a piece and then drop them.
@@ -516,6 +528,7 @@ fun paginate(
                     fontScale, lineSpacing, density, hasBadge,
                 )
                     ?.let { Triple(it.head, it.tail, it.headPx) }
+            }
             // Prose with a marker on it, and it splits like prose. The
             // pieces are BulletItems carrying a blank marker, so only the
             // first shows a bullet or a number — see [splitListItem].
