@@ -1472,6 +1472,35 @@ yet" note that used to live here was two months stale.
       a few page turns. `revealed` is `remember(blocks)` and `blocks` is keyed on the `course`
       object, which progress-writing reloads — so the page count flips 12 → 11 mid-chapter.
 
+- [x] **The reveal survived the page; it did not survive the PROGRESS WRITE (2026-10-07)** —
+      two defects found within the hour by Aliaksei reading the build above, and they share
+      nothing except that both were invisible until the answer became its own piece.
+      **"check page 11 :( it happen after show answer press."** He pressed Show answer on the
+      last exercise and landed on the closing picture, with the answer nowhere and the chapter
+      back to 11 pages. `blocks` is `remember(markdown, chapter, course)` — and the COURSE IS
+      REWRITTEN WHILE YOU READ: reaching the last block flips the chapter to DONE, which saves
+      `course.json`, which replaces the `course` object, which rebuilds `blocks`, because the
+      byline prints the chapter's status. That reset `revealed` AND `revealTarget`, so the
+      answer's page stopped existing between the tap and the correction meant to follow it.
+      I had seen the same thing in my own session an hour earlier — a page count flicking 12
+      → 11 — and filed it as cosmetic. It was the whole bug. The reveal map is indexed by the
+      PARSE, so it keys on the markdown now (threaded in as `parseKey`, since `markdown` is
+      not in scope where the map lives). A byline that says "read" instead of "reading" is not
+      a reason to forget which answers are open.
+      **"go back and force. mug stays on the answer page."** His mug, drawn in a full-page
+      grid, rendered on the ANSWER page as well. Mine, from the same morning.
+      `pageBlockRange` was `firstBlockIndex until firstBlockIndex + itemCount` — true only
+      while one item means one index, which the answer piece broke the day it was introduced,
+      since it carries its exercise's index. A page opening with an answer piece therefore
+      claimed one index too many, the exercise's own, and handed its strokes to the overlay on
+      a page where the exercise is not drawn — against whatever top the bounds map was holding
+      from the page before, because an answer piece deliberately reports none. The range is
+      taken from the page's own items now, with answer pieces excluded outright.
+      **Device-verified on the Boox with his actual mug**: reveal from page 10 lands on page
+      11 showing the answer, the count holds at 11 across the DONE transition, page 10 keeps
+      the mug exactly where he drew it, and the answer page stays clean through repeated
+      back-and-forth.
+
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

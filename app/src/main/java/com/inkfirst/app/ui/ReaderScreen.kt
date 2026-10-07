@@ -922,6 +922,7 @@ fun ReaderScreen(
                     textAlign = textAlign,
                     horizontalPadding = horizontalPadding,
                     blocks = blocks,
+                    parseKey = markdown,
                     annotations = chapterAnnotations,
                     course = course,
                     chapterSlug = chapterSlug,
@@ -1548,6 +1549,15 @@ private fun PagedContent(
      */
     horizontalPadding: Float,
     blocks: List<Block>,
+    /**
+     * Identity of the PARSE these blocks came from — the chapter markdown.
+     *
+     * `blocks` itself is rebuilt whenever the `course` object is replaced,
+     * because the byline prints the chapter's status and progress-writing
+     * replaces the course as you read. Anything indexed by block number and
+     * meant to outlive that (the reveal map) keys on this instead.
+     */
+    parseKey: String?,
     annotations: List<Annotation>,
     course: Course?,
     chapterSlug: String,
@@ -1692,9 +1702,28 @@ private fun PagedContent(
             // Declared here rather than beside the renderer because
             // PAGINATION reads it now: a block with its answer open measures
             // to the answer, one with it closed measures to the button.
-            val revealed = remember(blocks) { mutableStateMapOf<Int, Boolean>() }
+            //
+            // KEYED ON THE MARKDOWN, NOT ON `blocks`. `blocks` is remembered
+            // against the whole `course` object, and the course is REWRITTEN
+            // while you read: reaching the last block flips the chapter to
+            // DONE, which saves course.json, which replaces `course`, which
+            // rebuilds `blocks` — because the byline prints the status.
+            //
+            // That reset the reveal map, so an answer closed itself a page
+            // or two after it was opened and the chapter's page count
+            // flicked 12 → 11 under the reader. Worse, it took `revealTarget`
+            // with it: Aliaksei pressed Show answer on the last exercise and
+            // landed on the closing picture with no answer anywhere, because
+            // the answer's page stopped existing between the tap and the
+            // correction that was supposed to follow it.
+            //
+            // What the reveal map is actually indexed by is the PARSE — same
+            // markdown, same blocks, same indices. A byline that now says
+            // "read" instead of "reading" is not a reason to forget which
+            // answers are open.
+            val revealed = remember(parseKey) { mutableStateMapOf<Int, Boolean>() }
             /** Block whose answer was just opened; the page follows it. */
-            var revealTarget by remember(blocks) { mutableIntStateOf(-1) }
+            var revealTarget by remember(parseKey) { mutableIntStateOf(-1) }
             // Opening an answer REPAGINATES. Read as a sorted key rather than
             // passed as a map, so this composition actually subscribes to the
             // snapshot and the key changes with it — a lambda closing over
@@ -1881,11 +1910,29 @@ private fun PagedContent(
             }
             LaunchedEffect(pageBookmark) { onPageBookmarkChange(pageBookmark) }
 
-            // What the ink overlay is allowed to touch on this page: the
-            // global block-index range and the subset of persisted strokes
-            // whose anchor block falls in it.
-            val pageBlockCount = pages.getOrNull(pageIndex)?.size ?: 0
-            val pageBlockRange = firstBlockIndex until (firstBlockIndex + pageBlockCount)
+            // What the ink overlay is allowed to touch on this page.
+            //
+            // TAKEN FROM THE ITEMS, NOT COUNTED FROM THE FIRST. This was
+            // `firstBlockIndex until firstBlockIndex + itemCount`, which is
+            // only true while one item means one index — and the revealed
+            // answer broke that the same day it was introduced, because an
+            // answer piece carries its exercise's index. A page opening with
+            // an answer piece therefore claimed one index too many, the
+            // exercise's own, so its strokes were handed to the overlay on a
+            // page where the exercise is not drawn. Reported from the Boox:
+            // "go back and force. mug stays on the answer page."
+            //
+            // An answer piece is excluded outright. It is the one item that
+            // reports no bounds (see [isAnswerPiece]), so a stroke matched to
+            // it would be drawn against whatever top the map happened to be
+            // holding from the page before.
+            val pageItems = pages.getOrNull(pageIndex).orEmpty()
+            val inkableIndices = pageItems.filterNot { isAnswerPiece(it.block) }.map { it.index }
+            val pageBlockRange = if (inkableIndices.isEmpty()) {
+                IntRange.EMPTY
+            } else {
+                inkableIndices.min()..inkableIndices.max()
+            }
             val pageStrokes = strokes.filter { it.blockIndex in pageBlockRange }
 
             // The side buttons, claimed at the Activity's door rather than
