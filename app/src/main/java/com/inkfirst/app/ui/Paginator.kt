@@ -807,17 +807,8 @@ private fun splitFence(
     val text = question.trim()
     if (text.isBlank()) return null
 
-    // Inset exactly as the renderer insets it — and the two flow kinds are
-    // not inset the same way. An exercise is STEPPED IN from its marginal
-    // rule; a recap is PADDED on both sides by its wash. Measuring a recap
-    // at the exercise's inset made its lines 6dp too long AND skipped the
-    // wash's own 20dp of vertical padding, so the head took more lines than
-    // the page could hold and the last one came off the bottom edge.
-    // Reported from chapter 2, page 14.
-    val washed = block.kind == "recap"
-    val sideInset =
-        if (washed) 2 * WASH_PAD_DP.dp.toPx().toInt() else FLOW_INDENT_DP.dp.toPx().toInt()
-    val innerWidth = (widthPx - sideInset).coerceAtLeast(1)
+    // Stepped in from the marginal rule, exactly as the renderer does it.
+    val innerWidth = (widthPx - FLOW_INDENT_DP.dp.toPx().toInt()).coerceAtLeast(1)
     val style = TextStyle(
         fontSize = 17.sp * fontScale,
         lineHeight = 28.sp * fontScale * lineSpacing,
@@ -842,8 +833,7 @@ private fun splitFence(
     // a continuation opens with nothing, so it spends nothing.
     val opensBlock = block.params[FENCE_CONT_FROM] == null
     val chrome = (if (opensBlock) maxOf(labelTextHeight, badgeHeight) + 6.dp.toPx().toInt() else 0) +
-        8.dp.toPx().toInt() + 16.dp.toPx().toInt() +
-        (if (washed) 2 * WASH_PAD_DP.dp.toPx().toInt() else 0)
+        8.dp.toPx().toInt() + 16.dp.toPx().toInt()
 
     val room = availablePx - chrome
     if (room <= 0) return null
@@ -1137,11 +1127,6 @@ internal const val FENCE_ROOM = "room"
 internal const val FLOW_INDENT_DP = 14
 
 /**
- * Air between a washed block's edge and its text, in dp. Mirrors `WASH_PAD`.
- */
-internal const val WASH_PAD_DP = 10
-
-/**
  * A block label's type size, in sp. Mirrors `FLOW_LABEL_SP`.
  *
  * Was 11 while the label sat inside a box that did the signalling. It is half
@@ -1391,12 +1376,9 @@ private fun estimateHeight(
             // A flow block has no frame, but it IS stepped in from its
             // marginal rule, and the step narrows the measure. Must match
             // FLOW_RULE_INDENT in the renderer or the line count drifts.
-            val washed = block.kind == "recap"
-            val innerWidth = when {
-                washed -> widthPx - 2 * WASH_PAD_DP.dp.toPx().toInt()
-                flows -> widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
-                else -> widthPx - 24.dp.toPx().toInt()
-            }
+            val innerWidth =
+                if (flows) widthPx - FLOW_INDENT_DP.dp.toPx().toInt()
+                else widthPx - 24.dp.toPx().toInt()
             val bodyText = when (block.kind) {
                 "figure" -> block.params["alt"] ?: block.body.trim().ifBlank { "(figure)" }
                 // THE ANSWER IS NOT PART OF THE BODY. The renderer splits the
@@ -1557,11 +1539,7 @@ private fun estimateHeight(
             val figureExtra = if (block.kind == "figure") 24.dp.toPx().toInt() else 0
             val outerSpacers = 8.dp.toPx().toInt()
             val wrapperVPad = 16.dp.toPx().toInt()
-            val borderInner = when {
-                washed -> 2 * WASH_PAD_DP.dp.toPx().toInt()
-                flows -> 0
-                else -> 24.dp.toPx().toInt()
-            }
+            val borderInner = if (flows) 0 else 24.dp.toPx().toInt()
             // The two 8dp gaps an exercise puts around its working room. They
             // used to hide inside the border's padding; with the frame gone
             // they have to be counted, and counting them errs tall, which is

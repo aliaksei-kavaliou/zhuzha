@@ -956,7 +956,7 @@ yet" note that used to live here was two months stale.
       revealed answer, so it needs the same word the renderer draws. With no frame, the bold
       label is also what marks where the answer starts: a run of italic that merely continues
       reads as more task.
-- [x] **A recap is washed, a task is ruled (2026-10-06)** — Aliaksei, looking at the ruled
+- [x] **A recap is washed, a task is ruled (2026-10-06) — THE WASH IS GONE, see below** — Aliaksei, looking at the ruled
       version: "I would do recap without a border but with light gray background. As for try
       this section just a vertical line will be enough probably, maybe the labels for the
       blocks could be bigger."
@@ -1184,6 +1184,22 @@ yet" note that used to live here was two months stale.
       up first). **Worth a check before the demo ships**: any emulator session that injects
       stylus events writes into the book it is reading, and `ink/<chapter>.ink.json` is where
       it lands.
+- [x] **The grey wash lasted one evening (2026-10-07)** — Aliaksei, the morning after, on
+      the Boox: "recap now is blinking on page change." It was, and the mechanism is a harder
+      reason than the one the app already had for avoiding grey.
+      **E-INK'S FAST UPDATE MODES ARE 1-BIT.** A page turn is drawn with a black/white
+      waveform; grey cannot be expressed in one, so the controller escalates the WHOLE PAGE to
+      a full greyscale refresh — a visible flash every time the reader turns onto a page with
+      a recap on it. The standing rule was "e-ink has no grey", meaning greys dither and may
+      vanish. The second half is that grey also changes HOW THE PANEL REFRESHES AROUND IT, and
+      that cost is paid on every turn rather than once.
+      Recap is back to the marginal rule, dashed, and `Wash` is out of the palette with the
+      reason in its place. The app has no greys again.
+      **It cost one evening and that was the cheapest possible outcome**, which is worth
+      noticing: the wash shipped with a written warning that the emulator could not judge it
+      and the panel had to, and the panel answered within a day of being asked. The
+      alternative — shipping it to testers and hearing "the screen flickers sometimes" — would
+      have cost a week and been much harder to attribute.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
