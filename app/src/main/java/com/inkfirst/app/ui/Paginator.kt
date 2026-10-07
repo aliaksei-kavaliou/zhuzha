@@ -908,10 +908,22 @@ private fun splitFence(
     if (questionH <= room && (naturalRows > 0 || hasAnswer) && rowPx > 0f) {
         val spacePad = 14.dp.toPx().toInt()
         val spare = room - questionH - spacePad
-        val headRows = ((spare / rowPx).toInt())
-            .coerceIn(0, naturalRows)
-            .let { if (it < MIN_WORKING_ROWS) 0 else it }
-        val tailRows = (naturalRows - headRows).let { if (it < MIN_WORKING_ROWS) 0 else it }
+        // A REQUESTED ROOM IS NOT DIVIDED. The model sized it to what the
+        // task produces, so half of it here and half overleaf is no use to
+        // anyone drawing a mug: either it fits beside the task or it takes
+        // the next page whole. A room nobody asked for is a courtesy and may
+        // be shared out, which is what fills the head's page.
+        val requested = block.params[FENCE_ROOM] != null
+        val fits = ((spare / rowPx).toInt()).coerceIn(0, naturalRows)
+        val headRows =
+            if (requested) {
+                if (fits >= naturalRows) naturalRows else 0
+            } else {
+                fits.let { if (it < MIN_WORKING_ROWS) 0 else it }
+            }
+        val tailRows = (naturalRows - headRows).let {
+            if (!requested && it < MIN_WORKING_ROWS) 0 else it
+        }
         // THE ROOM TO WRITE BELONGS WITH THE TASK, and what moves over the
         // leaf is the ANSWER. Seen on a 320px page: the task ran to two
         // pages, so this path put every word on the second and left the
@@ -925,10 +937,9 @@ private fun splitFence(
         // same page as the room, where they belong.
         // The second arm is for a room the model ASKED for: a full-page
         // drawing area is meant to be a page, so the task ends where it ends
-        // and the room follows it over the leaf. Without an explicit request
-        // the old rule stands — room travels with the task, and a tail of
-        // nothing but dots is a page that explains nothing.
-        val requested = block.params[FENCE_ROOM] != null
+        // and the room follows it over the leaf, WHOLE. Without an explicit
+        // request the old rule stands — room travels with the task, and a
+        // tail of nothing but dots is a page that explains nothing.
         if ((hasAnswer && naturalRows > 0 && headRows >= MIN_WORKING_ROWS) ||
             (requested && tailRows >= MIN_WORKING_ROWS)
         ) {

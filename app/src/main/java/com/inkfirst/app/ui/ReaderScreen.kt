@@ -1694,9 +1694,29 @@ private fun PagedContent(
             // snapshot and the key changes with it — a lambda closing over
             // the map would read the right values and never re-run.
             val revealedKey = revealed.filterValues { it }.keys.sorted().joinToString(",")
+            // A BLOCK THE READER HAS WRITTEN ON KEEPS ITS HEIGHT.
+            //
+            // Aliaksei: "answer shown — won't it be overlapped with ink?" The
+            // answer itself cannot land on handwriting: the renderer draws
+            // the working room first and the answer below it, always. What
+            // CAN go wrong is one step further out — opening an answer
+            // repaginates, a repagination can cut the block at a different
+            // place, and a stroke is anchored to a block index, so a room
+            // that moves to another page takes the reader's marks somewhere
+            // they do not belong.
+            //
+            // The old reservation protected against that by making every
+            // exercise as tall as its revealed state, everywhere, forever —
+            // which is what left a page holding one button. The protection
+            // is only needed where handwriting exists, so that is where it
+            // is applied now: an inked block is measured in its revealed
+            // state from the start, so revealing it changes nothing, and
+            // every other block stays dense.
+            val inkedBlocks = strokes.map { it.blockIndex }.distinct().sorted()
+            val inkedKey = inkedBlocks.joinToString(",")
             val pages = remember(
                 blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion,
-                answerPrefix, revealedKey,
+                answerPrefix, revealedKey, inkedKey,
             ) {
                 paginate(
                     blocks = blocks,
@@ -1710,7 +1730,7 @@ private fun PagedContent(
                     hasBadge = hasBadge,
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                     answerPrefix = answerPrefix,
-                    isRevealed = { idx -> revealed[idx] == true },
+                    isRevealed = { idx -> revealed[idx] == true || idx in inkedBlocks },
                 )
             }
             // Page index is view state; the block anchor is for persistence

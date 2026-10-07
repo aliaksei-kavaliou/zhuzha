@@ -1200,6 +1200,42 @@ yet" note that used to live here was two months stale.
       and the panel had to, and the panel answered within a day of being asked. The
       alternative — shipping it to testers and hearing "the screen flickers sometimes" — would
       have cost a week and been much harder to attribute.
+- [x] **A requested room is never divided; an INKED block never moves (2026-10-07)** — two
+      questions from Aliaksei while reading, both finding a gap in the morning's work.
+      "Will it move the drawing zone to the next page if the model says 100%?" Nearly: the
+      explicit room was already safe from both shrink rungs, but the part split would have
+      DIVIDED it — some rows beside the task, the rest overleaf, which is no use to anyone
+      drawing a mug. A requested room is now all-or-nothing: it fits beside the task or it
+      takes the next page whole. A room nobody asked for is still a courtesy and may be shared
+      out, which is what fills the head's page.
+      "Answer shown — won't it be overlapped with ink?" The answer itself cannot land on
+      handwriting: the renderer draws the working room first and the answer below it, always.
+      One step out, though, he is right — opening an answer repaginates, a repagination can
+      cut the block somewhere else, and a stroke is anchored to a block index, so a room that
+      moves pages takes the reader's marks somewhere they do not belong. **The old reservation
+      guarded that by making EVERY exercise as tall as its revealed state, forever, which is
+      what left a page holding one button.** The guard is only needed where handwriting
+      exists, so that is where it now applies: a block with ink is measured revealed from the
+      start, so revealing it changes nothing and the page under the reader's hand is stable.
+      Every other block stays dense.
+- [x] **A picture must not invent data (2026-10-07)** — Aliaksei: "check the image on page 6,
+      why 842, it's not synced with the context." A scoreboard reading **842** beside a
+      paragraph about a 50,000 against 500,000 euro house and a 450,000-euro gap. The number
+      appears nowhere in the chapter.
+      **The illustrator drew exactly what it was asked for** — the brief itself says "a high
+      score of 842" — so the invention happened in the CHAPTER model, which writes the prose
+      and the brief and had no rule against putting data in a picture that its own text does
+      not use. A specific number reads as information, so the reader stops and tries to
+      reconcile it. The prompt now forbids a number, label, price, date or measurement in a
+      brief unless that exact value is in the prose beside it, and asks for the SHAPE of a
+      quantity instead — a dial at its limit, a bar running off its scale.
+      Same chapter, same reading: **the apple exercise's answer had 400 − 150 = 255**. Fixed by
+      hand in the book on the device (backup beside it); it is a generation error, not a code
+      one, and worth knowing the model gets arithmetic wrong inside an answer where nothing
+      checks it.
+      Also from that fence: the model wrote `space="dotgrid"`, which is not a value the app
+      knows. It falls through to the default grid — right by luck. The accepted values are
+      `lines` and `none`.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
