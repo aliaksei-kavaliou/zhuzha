@@ -1404,7 +1404,8 @@ internal fun OnyxInkOverlay(
             pageStrokes.forEach { s ->
                 val top = blockTopY(s.blockIndex) ?: return@forEach
                 if (s.points.size < 2) return@forEach
-                if (!belongsToThisPage(s, top, blockVisibleTop)) return@forEach
+                val bottom = blockVisibleTop(s.blockIndex + 1) ?: size.height
+                if (!belongsToThisPage(s, top, blockVisibleTop, bottom)) return@forEach
                 val path = Path().apply {
                     val first = s.points.first()
                     moveTo(first.x + textInsetPx, first.y + top)
@@ -1668,9 +1669,10 @@ private fun hitTestForErase(
     val slopSq = slop * slop
     return strokes.firstOrNull { s ->
         val top = blockTopY(s.blockIndex) ?: return@firstOrNull false
-        // Agrees with the renderer: ink that is not drawn on this page cannot
-        // be tapped or erased from it either.
-        if (!belongsToThisPage(s, top, blockVisibleTop)) return@firstOrNull false
+        // Same bounds as the renderer: ink that is not DRAWN on this page
+        // cannot be tapped or erased from it either.
+        val bottom = blockVisibleTop(s.blockIndex + 1) ?: Float.MAX_VALUE
+        if (!belongsToThisPage(s, top, blockVisibleTop, bottom)) return@firstOrNull false
         val pts = s.points
         if (pts.isEmpty()) return@firstOrNull false
         if (distSq(pts[0].x, pts[0].y + top, atX, atY) <= slopSq) {
@@ -1779,7 +1781,23 @@ private fun belongsToThisPage(
     s: Stroke,
     virtualTop: Float,
     blockVisibleTop: (Int) -> Float?,
+    /** Where this piece of the block stops: the next block's top, or the page's. */
+    pieceBottom: Float,
 ): Boolean {
+    val points = s.points
+    val mid = points.let { pts ->
+        val lo = pts.minOfOrNull { it.y } ?: return true
+        val hi = pts.maxOfOrNull { it.y } ?: return true
+        (lo + hi) / 2f + virtualTop
+    }
+    // THE OTHER END OF THE SAME QUESTION, and it was missing. The test below
+    // keeps a stroke off a CONTINUATION whose line it was not drawn on; this
+    // keeps it off the HEAD when it belongs to a piece further on. Without
+    // it both pieces of a split block drew every stroke the block owned, and
+    // a reader who drew a mug and then opened the answer — which repaginates,
+    // which can split the block — saw the mug on both pages. Reported from
+    // the Boox: "now I have 2 mugs on p5 and 6."
+    if (mid >= pieceBottom) return false
     val visibleTop = blockVisibleTop(s.blockIndex) ?: return true
     if (visibleTop <= virtualTop) return true  // not a continuation
     // Judged by the stroke's MIDDLE, not its top.
@@ -1798,11 +1816,7 @@ private fun belongsToThisPage(
     // The middle is the same end anchoring already picks, and for the same
     // reason. A mark genuinely made on a line now shown on the previous page
     // has its middle up there too, so it is still excluded.
-    val points = s.points
-    val minY = points.minOfOrNull { it.y } ?: return true
-    val maxY = points.maxOfOrNull { it.y } ?: return true
-    val strokeMiddle = (minY + maxY) / 2f + virtualTop
-    return strokeMiddle >= visibleTop - PAGE_OWNERSHIP_SLOP_PX
+    return mid >= visibleTop - PAGE_OWNERSHIP_SLOP_PX
 }
 
 private fun distSq(x1: Float, y1: Float, x2: Float, y2: Float): Float {

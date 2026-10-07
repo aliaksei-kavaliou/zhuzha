@@ -977,22 +977,19 @@ private fun splitFence(
     if (questionH <= room && (naturalRows > 0 || hasAnswer) && rowPx > 0f) {
         val spacePad = 14.dp.toPx().toInt()
         val spare = room - questionH - spacePad
-        // A REQUESTED ROOM IS NOT DIVIDED. The model sized it to what the
-        // task produces, so half of it here and half overleaf is no use to
-        // anyone drawing a mug: either it fits beside the task or it takes
-        // the next page whole. A room nobody asked for is a courtesy and may
-        // be shared out, which is what fills the head's page.
-        val requested = block.params[FENCE_ROOM] != null
+        // THE ROOM IS NEVER DIVIDED. Half of it here and half overleaf is no
+        // use to anyone: you cannot draw across a page break, and a reader
+        // who HAS drawn finds their work cut in two — reported from the Boox
+        // as a mug on page 5 and another on page 6, which was this split plus
+        // a missing ownership test in the overlay.
+        //
+        // So it is all or nothing. Either the whole room fits beside the task
+        // or it goes over the leaf whole; what makes that affordable is that
+        // the room can always be SHRUNK instead, which the rungs in
+        // [paginate] do before they ever get here.
         val fits = ((spare / rowPx).toInt()).coerceIn(0, naturalRows)
-        val headRows =
-            if (requested) {
-                if (fits >= naturalRows) naturalRows else 0
-            } else {
-                fits.let { if (it < MIN_WORKING_ROWS) 0 else it }
-            }
-        val tailRows = (naturalRows - headRows).let {
-            if (!requested && it < MIN_WORKING_ROWS) 0 else it
-        }
+        val headRows = if (fits >= naturalRows) naturalRows else 0
+        val tailRows = naturalRows - headRows
         // THE ROOM TO WRITE BELONGS WITH THE TASK, and what moves over the
         // leaf is the ANSWER. Seen on a 320px page: the task ran to two
         // pages, so this path put every word on the second and left the
@@ -1004,13 +1001,10 @@ private fun splitFence(
         // task and has an answer to send on. Anything else falls through to
         // the text cut below, which leaves the last words of the task on the
         // same page as the room, where they belong.
-        // The second arm is for a room the model ASKED for: a full-page
-        // drawing area is meant to be a page, so the task ends where it ends
-        // and the room follows it over the leaf, WHOLE. Without an explicit
-        // request the old rule stands — room travels with the task, and a
-        // tail of nothing but dots is a page that explains nothing.
+        // Worth splitting here when the tail carries something the reader
+        // needs: an answer, or the whole room going over the leaf.
         if ((hasAnswer && naturalRows > 0 && headRows >= MIN_WORKING_ROWS) ||
-            (requested && tailRows >= MIN_WORKING_ROWS)
+            tailRows >= MIN_WORKING_ROWS
         ) {
             return SplitFence(
                 head = block.copy(

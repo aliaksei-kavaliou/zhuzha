@@ -1382,6 +1382,24 @@ yet" note that used to live here was two months stale.
       STILL VISIBLE while they draw, which it is not from the page before.
       Verified on the rewritten demo book: the task that had a bare page 5 and a grid on 6 now
       carries both on page 5, and the chapter went 12 pages to 11.
+- [x] **Two mugs: one stroke belongs to one piece, and the room is never divided
+      (2026-10-07)** — Aliaksei: "I drew the mug, pressed show answer, page rearranged. Now I
+      have 2 mugs on p5 and 6." Two faults, and they had to meet to produce that.
+      **The overlay only tested one end.** `belongsToThisPage` keeps a stroke off a
+      CONTINUATION whose lines it was not drawn on, and nothing kept it off the HEAD when it
+      belonged to a piece further on — so both pieces of a split block drew every stroke the
+      block owned. A stroke's middle below this piece's bottom now disqualifies it, where the
+      bottom is the next block's top or the foot of the page. The hit test uses the same
+      bounds, because ink that is not DRAWN on a page must not be tappable or erasable there
+      either.
+      **And the room was being divided.** The part split handed the head whatever rows fitted
+      and the rest to the tail, so a reader who had drawn in those rows found their drawing
+      cut in two. It is all or nothing now: the whole room fits beside the task or it goes
+      over the leaf whole. What makes that affordable is that the room can always be SHRUNK
+      instead, which the rungs above do first — you cannot draw across a page break, so half a
+      grid is worth nothing to anybody.
+      Note what the two faults say together: the reveal repaginating is SAFE only while every
+      other rule holds. It was the trigger here, not the cause.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
