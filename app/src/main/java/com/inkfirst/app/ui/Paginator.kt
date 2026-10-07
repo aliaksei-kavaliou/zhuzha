@@ -91,15 +91,6 @@ fun paginate(
      * is exactly what "flows lower" means.
      */
     isRevealed: (Int) -> Boolean = { false },
-    /**
-     * Whether the reader has ink on this block.
-     *
-     * An inked block is NEVER DIVIDED. A drawing cannot be cut across a page
-     * break and a reader cannot be expected to find half of it overleaf, so
-     * the block moves whole or gives up room — the two things the rungs above
-     * already know how to do.
-     */
-    hasInk: (Int) -> Boolean = { false },
 ): List<List<PageItem>> {
     if (blocks.isEmpty() || contentWidthPx <= 0 || contentHeightPx <= 0) {
         return listOf(blocks.mapIndexed { i, b -> PageItem(b, i) })
@@ -134,7 +125,7 @@ fun paginate(
     // the ladder all keep working in [FENCE_SPACE_ROWS] and none of them has
     // to learn a second unit.
     val roomRowPx = with(density) { (ANSWER_RULE_SPACING * fontScale).toPx() }
-    val blocks = blocks.map { b ->
+    val sized = blocks.map { b ->
         val pct = (b as? Block.CustomFence)
             ?.takeIf { it.kind == "exercise" && it.params[FENCE_SPACE_ROWS] == null }
             ?.params?.get(FENCE_ROOM)?.trim()?.removeSuffix("%")?.trim()?.toIntOrNull()
@@ -166,6 +157,77 @@ fun paginate(
         }
     }
 
+    // A REVEALED ANSWER IS A PIECE OF ITS OWN, AND FLOWS LIKE ONE.
+    //
+    // Aliaksei, after watching "Show answer" take a chapter from 11 pages to
+    // 12 and leave the page he was on holding four lines of task and nothing
+    // else: "show answer is broken feature... it looks like our block split
+    // never ending issue", then the fix itself — "it a separate element and
+    // can go next page alone", "it can even be splitted up to 1 line if
+    // needed."
+    //
+    // He is right, and the cause is structural. The answer was part of the
+    // exercise BLOCK, so revealing it changed the block's height, which
+    // changed how the block was divided, which moved the task and the
+    // working room — and the reader's handwriting with them. Every rule
+    // written to contain that (reserve the revealed height; measure an inked
+    // block revealed; never divide an inked block) was paying for the same
+    // mistake, and each one cost a page of white somewhere else.
+    //
+    // Split here, before a single placement decision is made, so the rest of
+    // the paginator never sees a two-state block:
+    //
+    //   head — band, task, working room. Measured and placed exactly as the
+    //          closed block was, so revealing cannot move it.
+    //   tail — the answer, and the rule that closes the block. An ordinary
+    //          piece: it fills the space left on the page, moves to the next
+    //          one when it does not fit, and splits like prose when it is
+    //          longer than a page.
+    //
+    // Both carry the SOURCE block's index, so bookmarks, search and the
+    // reveal's own page-follow keep working. The tail does not report its
+    // bounds to the ink overlay (see FENCE_ANSWER_PIECE), so a stroke stays
+    // anchored to the head where it was drawn.
+    val pieces = mutableListOf<Block>()
+    val srcOf = mutableListOf<Int>()
+    sized.forEachIndexed { i, b ->
+        val answer = (b as? Block.CustomFence)
+            ?.takeIf { it.kind == "exercise" && isRevealed(i) }
+            ?.let { splitExerciseBody(it.body).second.trim() }
+            ?.takeIf { it.isNotBlank() }
+        if (answer == null) {
+            pieces += b
+            srcOf += i
+            return@forEachIndexed
+        }
+        val fence = b as Block.CustomFence
+        // The head needs an EXPLICIT row count. `showsReveal` is false on a
+        // head, and without a count of its own a head draws no working room
+        // at all — which is right for a head the task runs past, and wrong
+        // here, where the head is the whole task.
+        val rows = fence.params[FENCE_SPACE_ROWS]
+            ?: if (fence.params["space"] == "none") {
+                "0"
+            } else {
+                answerSpaceLineCount(answer, fence.params["space"] == "lines").toString()
+            }
+        pieces += fence.copy(
+            params = fence.params + (FENCE_CONT_TO to "1") + (FENCE_SPACE_ROWS to rows),
+        )
+        srcOf += i
+        pieces += fence.copy(
+            body = "answer: $answer",
+            // FENCE_ROOM comes off: the tail has no working room, and left on
+            // it the rung that lets a requested room share a nearly empty
+            // page would treat the answer as a drawing area.
+            params = fence.params - FENCE_ROOM +
+                (FENCE_CONT_FROM to "1") +
+                (FENCE_SPACE_ROWS to "0") +
+                (FENCE_ANSWER_PIECE to "1"),
+        )
+        srcOf += i
+    }
+
     val pages = mutableListOf<MutableList<PageItem>>()
     pages.add(mutableListOf())
     var height = 0
@@ -187,13 +249,13 @@ fun paginate(
     // not fit beside it: the next block joins it regardless. See below.
     var forceNext = false
 
-    while (i < blocks.size) {
-        val block = carry ?: blocks[i]
+    while (i < pieces.size) {
+        val block = carry ?: pieces[i]
         val atTop = pages.last().isEmpty()
         val h = estimateHeight(
             block, contentWidthPx, density, measurer, fontScale, lineSpacing,
             hasFigureImage, hasBadge, atPageTop = atTop, answerPrefix = answerPrefix,
-            revealed = isRevealed(i),
+            revealed = isRevealed(srcOf[i]),
         )
 
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
@@ -202,8 +264,8 @@ fun paginate(
         // an empty page, or we would loop.
         val opensSomething = block is Block.Heading ||
             (block is Block.CustomFence && block.kind == "meta")
-        val requiredHeight = if (opensSomething && i + 1 < blocks.size) {
-            val next = blocks[i + 1]
+        val requiredHeight = if (opensSomething && i + 1 < pieces.size) {
+            val next = pieces[i + 1]
             // A heading must not be orphaned at the foot of a page — but it
             // only needs ENOUGH of what follows to look attached, not all of
             // it. Requiring the whole next block was what left half-empty
@@ -215,7 +277,7 @@ fun paginate(
                     estimateHeight(
                         next, contentWidthPx, density, measurer, fontScale, lineSpacing,
                         hasFigureImage, hasBadge, answerPrefix = answerPrefix,
-                        revealed = isRevealed(i + 1),
+                        revealed = isRevealed(srcOf[i + 1]),
                     ),
                     lineHeightPx * MIN_LINES_UNDER_HEADING,
                 )
@@ -223,7 +285,7 @@ fun paginate(
                 estimateHeight(
                     next, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, answerPrefix = answerPrefix,
-                    revealed = isRevealed(i + 1),
+                    revealed = isRevealed(srcOf[i + 1]),
                 )
             }
             if (h + nextH <= budget) h + nextH else h
@@ -246,7 +308,7 @@ fun paginate(
                 block, budget - height, contentWidthPx, measurer, fontScale, lineSpacing, density,
             )
             if (forcedSplit != null) {
-                pages.last().add(PageItem(forcedSplit.head, i, carriedPx))
+                pages.last().add(PageItem(forcedSplit.head, srcOf[i], carriedPx))
                 carry = forcedSplit.tail
                 carriedPx += forcedSplit.headPx
                 forceNext = false
@@ -260,7 +322,7 @@ fun paginate(
         }
 
         if (forceNext || height + requiredHeight <= budget) {
-            pages.last().add(PageItem(block, i, carriedPx))
+            pages.last().add(PageItem(block, srcOf[i], carriedPx))
             height += h
             carry = null
             carriedPx = 0
@@ -297,7 +359,7 @@ fun paginate(
         // its paragraph came back clipped. Forcing the pair during layout
         // lets everything after it re-flow against what is actually left.
         if (atTop && opensSomething) {
-            pages.last().add(PageItem(block, i, carriedPx))
+            pages.last().add(PageItem(block, srcOf[i], carriedPx))
             height += h
             carry = null
             carriedPx = 0
@@ -355,7 +417,7 @@ fun paginate(
             val bareH = estimateHeight(
                 bare, contentWidthPx, density, measurer, fontScale, lineSpacing,
                 hasFigureImage, hasBadge, atPageTop = atTop,
-                answerPrefix = answerPrefix, revealed = isRevealed(i),
+                answerPrefix = answerPrefix, revealed = isRevealed(srcOf[i]),
             )
             val spare = budget - height - bareH
             val kept = if (roomRowPx > 0f) (spare / roomRowPx).toInt() else 0
@@ -363,7 +425,7 @@ fun paginate(
                 pages.last().add(
                     PageItem(
                         block.copy(params = block.params + (FENCE_SPACE_ROWS to kept.toString())),
-                        i,
+                        srcOf[i],
                         carriedPx,
                     ),
                 )
@@ -396,10 +458,10 @@ fun paginate(
                 val tighterH = estimateHeight(
                     tighter, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, answerPrefix = answerPrefix,
-                    revealed = isRevealed(i),
+                    revealed = isRevealed(srcOf[i]),
                 )
                 if (tighterH <= budget - height) {
-                    pages.last().add(PageItem(tighter, i, carriedPx))
+                    pages.last().add(PageItem(tighter, srcOf[i], carriedPx))
                     height += tighterH
                     carry = null
                     carriedPx = 0
@@ -435,7 +497,7 @@ fun paginate(
                 bestH = estimateHeight(
                     room, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
-                    revealed = isRevealed(i),
+                    revealed = isRevealed(srcOf[i]),
                 )
             }
             if (bestH > budget && best.params[FENCE_PLAIN_ANSWER] == null) {
@@ -443,7 +505,7 @@ fun paginate(
                 val plainH = estimateHeight(
                     plain, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
-                    revealed = isRevealed(i),
+                    revealed = isRevealed(srcOf[i]),
                 )
                 if (plainH < bestH) {
                     best = plain
@@ -481,7 +543,7 @@ fun paginate(
                     relaxedFence = best
                     relaxedFenceH = bestH
                 } else {
-                    pages.last().add(PageItem(best, i, carriedPx))
+                    pages.last().add(PageItem(best, srcOf[i], carriedPx))
                     height += bestH
                     carry = null
                     carriedPx = 0
@@ -516,19 +578,24 @@ fun paginate(
             // branch below, which places it and lets the page clip it — and on
             // a small screen that lost the end of an exercise and its "Show
             // answer" button entirely, with no way to reach either.
-            // An inked block is not divided at all: see `hasInk`.
-            is Block.CustomFence -> if (hasInk(i)) {
-                null
-            } else {
+            // INK NO LONGER MAKES A BLOCK ATOMIC. That rule was added on
+            // 2026-10-07 to stop a reveal re-dividing a block the reader had
+            // drawn on, and since the revealed answer became a piece of its
+            // own a reveal cannot divide anything. What the rule DID do was
+            // send an inked block to the last-resort rung, which strips its
+            // working room — so a stray pen contact on a block shrank an
+            // 80%-of-a-page grid to five rows, and a real drawing would have
+            // had the answer printed over it. Measured on the Boox: with the
+            // contact removed the same page drew fifteen rows.
+            is Block.CustomFence ->
                 // The RELAXED form if the rung above made one: having already
                 // decided those rows are not affordable, splitting the
                 // original would hand them to a piece and then drop them.
                 splitFence(
                     relaxedFence ?: block, remaining, contentWidthPx, measurer,
-                    fontScale, lineSpacing, density, hasBadge,
+                    fontScale, lineSpacing, density, hasBadge, answerPrefix,
                 )
                     ?.let { Triple(it.head, it.tail, it.headPx) }
-            }
             // Prose with a marker on it, and it splits like prose. The
             // pieces are BulletItems carrying a blank marker, so only the
             // first shows a bullet or a number — see [splitListItem].
@@ -552,7 +619,7 @@ fun paginate(
         if (split != null) {
             if (block is Block.CustomFence) {
             }
-            pages.last().add(PageItem(split.first, i, carriedPx))
+            pages.last().add(PageItem(split.first, srcOf[i], carriedPx))
             carry = split.second
             carriedPx += split.third
             newPage()
@@ -574,11 +641,11 @@ fun paginate(
                 relaxedH = estimateHeight(
                     bare, contentWidthPx, density, measurer, fontScale, lineSpacing,
                     hasFigureImage, hasBadge, atPageTop = true, answerPrefix = answerPrefix,
-                    revealed = isRevealed(i),
+                    revealed = isRevealed(srcOf[i]),
                 )
             }
             if (relaxed != null && relaxedH <= budget) {
-                pages.last().add(PageItem(relaxed!!, i, carriedPx))
+                pages.last().add(PageItem(relaxed!!, srcOf[i], carriedPx))
                 height += relaxedH
                 carry = null
                 carriedPx = 0
@@ -591,7 +658,7 @@ fun paginate(
             // Taller than a whole page and nothing to split: place it anyway,
             // or we would loop forever. The relaxed form if the ladder made
             // one — it is smaller, so less of it is lost.
-            pages.last().add(PageItem(relaxed ?: block, i, carriedPx))
+            pages.last().add(PageItem(relaxed ?: block, srcOf[i], carriedPx))
             height += if (relaxed != null) relaxedH else h
             carry = null
             carriedPx = 0
@@ -805,6 +872,21 @@ internal const val FENCE_CONT_FROM = "contFrom"
 internal const val FENCE_CONT_TO = "contTo"
 
 /**
+ * This piece IS the revealed answer — no band, no task, no working room.
+ *
+ * Set by [paginate]'s pre-pass when an exercise's answer is open, so the
+ * answer flows as its own piece instead of swelling the block it belongs to.
+ * `"1"` opens the answer and prints its label; `"cont"` is the rest of an
+ * answer longer than a page, and prints neither label nor mascot.
+ *
+ * The piece carries the SOURCE block's index — bookmarks, search and the
+ * page-follow after a reveal all need it — but it must NOT report its bounds
+ * to the ink overlay: two pieces of one block reporting one top is how a
+ * reader ends up with two copies of the same drawing.
+ */
+internal const val FENCE_ANSWER_PIECE = "answerPiece"
+
+/**
  * How many rows of working room this box gets, decided by PAGINATION.
  *
  * Written only when a box would not otherwise fit a page, and read by the
@@ -916,6 +998,7 @@ private fun splitFence(
     lineSpacing: Float,
     density: Density,
     hasBadge: (String) -> Boolean,
+    answerPrefix: String = "Answer:",
 ): SplitFence? = with(density) {
     // A LISTING SPLITS AT A LINE END. Code is the one body that must never
     // be re-wrapped to fit — a line broken in the middle is a different
@@ -923,6 +1006,18 @@ private fun splitFence(
     // machinery below, which exists for prose.
     if (isCodeFence(block.kind)) {
         return splitCode(block, availablePx, widthPx, measurer, fontScale, lineSpacing, density, hasBadge)
+    }
+    // AN ANSWER IS PROSE AND SPLITS LIKE PROSE. Aliaksei: "it can even be
+    // splitted up to 1 line if needed." It cannot reach the oversize branch
+    // and be clipped the way a listing used to — an answer longer than a
+    // whole page is rare on the Boox and ordinary on a phone at a large
+    // font, and losing the end of one is losing the thing the reader pressed
+    // the button for.
+    if (block.params[FENCE_ANSWER_PIECE] != null) {
+        return splitAnswer(
+            block, availablePx, widthPx, measurer, fontScale, lineSpacing,
+            density, hasBadge, answerPrefix,
+        )
     }
     if (block.kind != "exercise" && block.kind != "recap") return null
     val (question, answer) = splitExerciseBody(block.body)
@@ -1174,6 +1269,82 @@ private fun splitListItem(
         rebuild(sliceInlines(inlines, 0, cut), false),
         rebuild(sliceInlines(inlines, cut, text.length), true),
         layout.getLineBottom(fitting - 1).toInt(),
+    )
+}
+
+/**
+ * Splits a revealed answer across a page break.
+ *
+ * The answer became a piece of its own on 2026-10-07 (see [paginate]'s
+ * pre-pass), which is what finally let it flow — but a piece that cannot be
+ * cut still reaches the oversize branch and is clipped by the page, and the
+ * end of an answer is the one thing the reader pressed the button for.
+ *
+ * It is ordinary prose, so it cuts at a wrapped line like a paragraph does,
+ * down to a single line a side. The piece that OPENS the answer keeps the
+ * "Answer:" label and the mascot; the continuation prints neither, which is
+ * also why the two are measured at different widths — the badge narrows the
+ * column it sits beside.
+ */
+private fun splitAnswer(
+    block: Block.CustomFence,
+    availablePx: Int,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    fontScale: Float,
+    lineSpacing: Float,
+    density: Density,
+    hasBadge: (String) -> Boolean,
+    answerPrefix: String,
+): SplitFence? = with(density) {
+    val answer = splitExerciseBody(block.body).second.trim()
+    if (answer.isBlank()) return null
+    val opensAnswer = block.params[FENCE_ANSWER_PIECE] != "cont"
+    val badge = if (opensAnswer && block.params[FENCE_PLAIN_ANSWER] == null && hasBadge("answer")) {
+        (BADGE_SIZE * fontScale).toPx().toInt() + 10.dp.toPx().toInt()
+    } else {
+        0
+    }
+    // What the piece spends before a word is drawn, and what it spends after
+    // the last one. Mirrors the branch in [estimateHeight]: the two outer
+    // spacers, the wrapper's padding, the gaps around the (absent) working
+    // room, and — only on the piece that ends the block — the closing rule.
+    val chrome = 8.dp.toPx().toInt() + 16.dp.toPx().toInt() + 16.dp.toPx().toInt()
+    val room = availablePx - chrome
+    if (room <= 0) return null
+
+    val prefix = if (opensAnswer) "$answerPrefix " else ""
+    val text = prefix + parseInlines(answer).plainText()
+    val layout = measurer.measure(
+        text = AnnotatedString(text),
+        style = TextStyle(
+            fontSize = 16.sp * fontScale,
+            lineHeight = 26.sp * fontScale * lineSpacing,
+            fontFamily = FontFamily.Serif,
+            fontStyle = FontStyle.Italic,
+        ),
+        constraints = Constraints(maxWidth = (widthPx - badge).coerceAtLeast(1)),
+    )
+    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
+
+    var fitting = 0
+    while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= room) fitting++
+    if (fitting < MIN_SPLIT_LINES) return null
+    if (layout.lineCount - fitting < MIN_SPLIT_LINES) fitting = layout.lineCount - MIN_SPLIT_LINES
+    if (fitting < MIN_SPLIT_LINES) return null
+
+    val cut = layout.getLineEnd(fitting - 1, visibleEnd = true) - prefix.length
+    if (cut <= 0 || cut >= answer.length) return null
+    return SplitFence(
+        head = block.copy(
+            body = "answer: ${answer.substring(0, cut).trimEnd()}",
+            params = block.params + (FENCE_CONT_TO to "1"),
+        ),
+        tail = block.copy(
+            body = "answer: ${answer.substring(cut).trimStart()}",
+            params = block.params - FENCE_CONT_TO + (FENCE_ANSWER_PIECE to "cont"),
+        ),
+        headPx = layout.getLineBottom(fitting - 1).toInt() + chrome,
     )
 }
 
@@ -1652,14 +1823,23 @@ private fun estimateHeight(
                     fontStyle = if (flows) FontStyle.Italic else FontStyle.Normal,
                 )
             }
-            val body = measurer.measure(
-                // Measure what will actually be drawn: the renderer parses
-                // these bodies now, so the backtick and asterisk markers are
-                // gone by the time they reach the page.
-                text = AnnotatedString(parseInlines(bodyText).plainText()),
-                style = bodyStyle,
-                constraints = Constraints(maxWidth = innerWidth),
-            )
+            // A piece with no words of its own measures none. The answer
+            // piece and the tail of a part split both have empty bodies, and
+            // an empty AnnotatedString still measures one line high — a line
+            // the renderer does not draw, because it skips the Text when the
+            // body is blank.
+            val bodyHeight = if (bodyText.isBlank()) {
+                0
+            } else {
+                measurer.measure(
+                    // Measure what will actually be drawn: the renderer parses
+                    // these bodies now, so the backtick and asterisk markers
+                    // are gone by the time they reach the page.
+                    text = AnnotatedString(parseInlines(bodyText).plainText()),
+                    style = bodyStyle,
+                    constraints = Constraints(maxWidth = innerWidth),
+                ).size.height
+            }
             // The label row is as tall as the taller of its two children —
             // the label text, or the mascot badge sitting beside it.
             val labelTextHeight = (FLOW_LABEL_SP.sp.toPx() * fontScale).toInt()
@@ -1688,8 +1868,17 @@ private fun estimateHeight(
             // beside the answer text once it is shown. Reserved whether or
             // not the reader has revealed it — revealing must not reflow the
             // page under their thumb.
+            //
+            // A piece that IS the answer always shows it, whatever the
+            // reveal map says and whatever CONT_TO says: the pre-pass only
+            // makes one when the answer is open, and a split answer's head
+            // carries CONT_TO while still drawing the first half. A
+            // continuation prints neither the label nor the mascot.
+            val answerPiece = block.params[FENCE_ANSWER_PIECE]
             val answerBadge =
-                if (block.params[FENCE_PLAIN_ANSWER] == null && hasBadge("answer")) {
+                if (answerPiece != "cont" && block.params[FENCE_PLAIN_ANSWER] == null &&
+                    hasBadge("answer")
+                ) {
                     (BADGE_SIZE * fontScale).toPx().toInt()
                 } else {
                     0
@@ -1698,7 +1887,8 @@ private fun estimateHeight(
             // room for it. A middle piece of a split exercise has neither the
             // button nor the answer, and reserving both left half a page of
             // white under a box that had more to say.
-            val showsReveal = block.params[FENCE_CONT_TO] == null
+            val showsReveal = answerPiece != null || block.params[FENCE_CONT_TO] == null
+            val showsAnswer = answerPiece != null || revealed
             // The reveal button is only drawn when there is something to
             // reveal. An exercise that is pure instruction shows none, and
             // was reserving 48dp plus a badge for a control that never
@@ -1721,10 +1911,11 @@ private fun estimateHeight(
             // from under the answer they wrote it to compare against. Measure
             // the answer exactly as the renderer draws it: same "Answer: "
             // prefix, same 16sp, and in the column the badge leaves behind.
-            val revealedHeight = if (hasAnswer && showsReveal && revealed) {
+            val revealedHeight = if (hasAnswer && showsReveal && showsAnswer) {
                 val gap = if (answerBadge > 0) answerBadge + 10.dp.toPx().toInt() else 0
+                val prefix = if (answerPiece == "cont") "" else "$answerPrefix "
                 val measured = measurer.measure(
-                    text = AnnotatedString(parseInlines("$answerPrefix $answerText").plainText()),
+                    text = AnnotatedString(prefix + parseInlines(answerText).plainText()),
                     style = TextStyle(
                         fontSize = 16.sp * fontScale,
                         lineHeight = 26.sp * fontScale * lineSpacing,
@@ -1744,7 +1935,7 @@ private fun estimateHeight(
             // repaginates, so each state is measured as what it draws.
             val exerciseExtra = when {
                 !hasAnswer || !showsReveal -> 0
-                revealed -> revealedHeight
+                showsAnswer -> revealedHeight
                 else -> 48.dp.toPx().toInt()
             }
             // The ruled lines the reader writes their own answer on. Measured
@@ -1791,7 +1982,7 @@ private fun estimateHeight(
             // they have to be counted, and counting them errs tall, which is
             // the safe direction for a budget whose failure is clipping.
             val contentSpacers = if (block.kind == "exercise") 16.dp.toPx().toInt() else 0
-            label + body.size.height + exerciseExtra + answerSpace + figureExtra +
+            label + bodyHeight + exerciseExtra + answerSpace + figureExtra +
                 outerSpacers + wrapperVPad + borderInner + contentSpacers + footRule
         }
     }

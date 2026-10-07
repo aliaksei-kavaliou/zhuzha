@@ -1200,7 +1200,8 @@ yet" note that used to live here was two months stale.
       and the panel had to, and the panel answered within a day of being asked. The
       alternative — shipping it to testers and hearing "the screen flickers sometimes" — would
       have cost a week and been much harder to attribute.
-- [x] **A requested room is never divided; an INKED block never moves (2026-10-07)** — two
+- [x] **A requested room is never divided; an INKED block never moves (2026-10-07) — THE
+      INK HALF IS GONE, see the answer-piece item below** — two
       questions from Aliaksei while reading, both finding a gap in the morning's work.
       "Will it move the drawing zone to the next page if the model says 100%?" Nearly: the
       explicit room was already safe from both shrink rungs, but the part split would have
@@ -1399,7 +1400,8 @@ yet" note that used to live here was two months stale.
       grid is worth nothing to anybody.
       Note what the two faults say together: the reveal repaginating is SAFE only while every
       other rule holds. It was the trigger here, not the cause.
-- [x] **Ink makes a block ATOMIC, and a slice ends where its box ends (2026-10-07)** — "you
+- [x] **Ink makes a block ATOMIC, and a slice ends where its box ends (2026-10-07) — THE
+      ATOMIC HALF IS GONE, see below; the slice bound stands** — "you
       didn't fix an issue... same 2 mugs, same empty page 5." Both were still there, and both
       first attempts had been aimed one step short of the cause.
       **The ownership test used the wrong bottom.** I had given it "the next block's top, or
@@ -1420,6 +1422,56 @@ yet" note that used to live here was two months stale.
       split this, ask the thing that knows. Verified on the Boox: page 5 now carries the band,
       the whole task, the grid, Show answer, the closing rule and ONE mug, drawn where he drew
       it; page 6 carries prose and no ink at all.
+- [x] **The answer is a piece of its own, and a stray pen contact is not handwriting
+      (2026-10-07)** — Aliaksei, two reports an hour apart that turned out to be the same
+      mistake. First: "why grid zone now so small? Model asked 100... but now the task is
+      almost 50% so draw grid must go to the next page." Then, after pressing the button:
+      "show answer is broken feature, might have no option and have to create answers page.
+      Because it looks like our block split never ending issue."
+      **Both measured on the Boox before anything was changed.** The grid was five rows where
+      the chapter asked for 80% of a page; clearing one stroke from the ink file and
+      reopening drew fifteen. And tapping Show answer took the chapter 11 pages → 12 and left
+      the page he was on holding four lines of task and NOTHING ELSE — no grid, no button, no
+      answer. Both are the same cause wearing two costumes: **the answer was part of the
+      exercise BLOCK**, so opening it changed the block's height, which changed how the block
+      was divided, which moved the task, the working room and the reader's handwriting.
+      Every rule written to contain that was paying for the same structural mistake — reserve
+      the revealed height (a page holding one button), measure an inked block revealed (the
+      page moved under the nib mid-stroke), never divide an inked block (this morning's
+      five-row grid). Three fixes, three new defects, one week.
+      **His fix, and it is the right one: "it a separate element and can go next page alone",
+      "it can even be splitted up to 1 line if needed."** A pre-pass in `paginate` splits a
+      revealed exercise into a HEAD — band, task, working room, measured and placed exactly as
+      the closed block was — and a TAIL that is the answer and the rule closing the block. The
+      tail is an ordinary piece: it fills what is left of the page, moves to the next one when
+      it does not fit, and `splitAnswer` cuts it like prose when it is longer than a page.
+      Both carry the SOURCE block's index so bookmarks, search and the page-follow still work;
+      the tail does not report its bounds to the ink overlay, because two pieces of one block
+      reporting one top is how a reader gets two copies of one drawing.
+      **`hasInk` is deleted rather than fixed.** Its whole job was stopping a reveal from
+      re-dividing an inked block, and a reveal can no longer divide anything. What it DID do
+      was send an inked block to the last-resort rung, which strips working room — and the
+      "ink" that triggered it was a two-point, zero-extent pen contact with a pressure of
+      0.0015. A tap. **A stray touch was silently rewriting the page**, and with a real drawing
+      it would have printed the answer over it.
+      **Device-verified on the Boox**, which is the only place the first half could be seen:
+      the grid is back to the full request, and revealing leaves the task and the top of the
+      grid at exactly the same pixel (the room GROWS downward by three rows, since the head no
+      longer reserves the button — dots are added below, so nothing already drawn moves).
+      **And on the emulator at 320x640 with a deliberately long answer**: it opens under the
+      grid, runs across four pages with no label repeated and nothing clipped, and the closing
+      rule lands under its last line with the next paragraph beside it.
+      **Not built, and Aliaksei talked himself out of it in the same breath:** auto-opening an
+      answer that lands on a later page, since hiding it there achieves nothing — "if answer
+      naturally goes next page it can be opened at once", then "but it probably creates extra
+      rule extra room for the bug". He is right. It is implementable (paginate with every
+      answer open, close the ones that land on their head's page, iterate — monotone, so it
+      terminates) and it is a second pagination pass whose outcome feeds the first, in the one
+      file that produced three regressions today.
+      **Noticed while testing, pre-existing, NOT fixed:** a revealed answer closes itself after
+      a few page turns. `revealed` is `remember(blocks)` and `blocks` is keyed on the `course`
+      object, which progress-writing reloads — so the page count flips 12 → 11 mid-chapter.
+
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

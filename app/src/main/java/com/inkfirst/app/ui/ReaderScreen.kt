@@ -336,25 +336,6 @@ fun ReaderScreen(
     // Chapter-scoped freehand strokes. Load in the same effect that pulls
     // the chapter markdown so both are ready by the time PagedContent runs.
     var strokes by remember(chapterSlug) { mutableStateOf<List<InkStroke>>(emptyList()) }
-    /**
-     * Which blocks carried ink WHEN THE CHAPTER OPENED, so an exercise the
-     * reader has written on is measured in its revealed state and opening
-     * its answer cannot move the page under their hand.
-     *
-     * Frozen deliberately. The live version of this — recomputed from
-     * `strokes` as they were drawn — repaginated THE MOMENT THE FIRST STROKE
-     * WAS SAVED: the block grew to its revealed height, the page re-flowed,
-     * and the reader was drawing a mug when the page changed under the nib
-     * and the rest of the line landed on the page before. Reported from the
-     * Boox within the hour, and far worse than the problem it was added for.
-     *
-     * Nothing a reader does during a session may change pagination. A block
-     * inked today reserves from the next time the chapter is opened, which
-     * is soon enough: the risk it guards against is a reveal moving a room
-     * that already has handwriting in it, and handwriting that is minutes
-     * old is still on the screen in front of them.
-     */
-    var inkedAtOpen by remember(chapterSlug) { mutableStateOf<List<Int>>(emptyList()) }
     // Dev toggle read once per session; the Settings screen writes it and it
     // takes effect on next chapter open (no live rebinding — a chapter's
     // gestures are re-keyed on chapter change so this is fine).
@@ -503,8 +484,6 @@ fun ReaderScreen(
         course = store.load(courseSlug)
         markdown = store.readChapter(courseSlug, chapterSlug)
         strokes = store.readStrokes(courseSlug, chapterSlug)
-        // FROZEN AT OPEN, and that is the whole point — see [inkedAtOpen].
-        inkedAtOpen = strokes.map { it.blockIndex }.distinct().sorted()
         // Record where we are so a cold start of the app resumes here.
         store.writeLastRead(courseSlug, chapterSlug)
     }
@@ -979,7 +958,6 @@ fun ReaderScreen(
                     },
                     chipOpen = viewingStroke != null || pendingGestureStroke != null,
                     chipBoundsInRoot = lastChipBounds,
-                    inkedAtOpen = inkedAtOpen,
                     selectionEpoch = selectionEpoch,
                     selectionActive = askToolbar.selectionRect != null,
                     onClearSelection = clearSelection,
@@ -1608,8 +1586,6 @@ private fun PagedContent(
      * than a quarter of the screen. Null until one has been laid out.
      */
     chipBoundsInRoot: Rect?,
-    /** Blocks that already carried ink when the chapter opened. */
-    inkedAtOpen: List<Int>,
     /** Rebuilds the SelectionContainer when it changes, dropping any selection. */
     selectionEpoch: Int,
     /** Whether a text selection and its chip are showing. */
@@ -1742,10 +1718,9 @@ private fun PagedContent(
             // is applied now: an inked block is measured in its revealed
             // state from the start, so revealing it changes nothing, and
             // every other block stays dense.
-            val inkedKey = inkedAtOpen.joinToString(",")
             val pages = remember(
                 blocks, widthPx, availableHeightPx, fontScale, lineSpacing, pictureVersion,
-                answerPrefix, revealedKey, inkedKey,
+                answerPrefix, revealedKey,
             ) {
                 paginate(
                     blocks = blocks,
@@ -1760,14 +1735,6 @@ private fun PagedContent(
                     inkTopMarginPx = with(density) { INK_TOP_MARGIN.toPx().toInt() },
                     answerPrefix = answerPrefix,
                     isRevealed = { idx -> revealed[idx] == true },
-                    // INK MAKES A BLOCK ATOMIC — it does not make it taller.
-                    // Reserving the revealed height was the first attempt and
-                    // it did the opposite of its job: the block grew, no
-                    // longer fitted, split, and the room the reader had drawn
-                    // in moved to the next page without them. What the ink
-                    // actually needs is for the block NOT TO BE DIVIDED, so
-                    // the drawing stays whole and stays where it was made.
-                    hasInk = { idx -> idx in inkedAtOpen },
                 )
             }
             // Page index is view state; the block anchor is for persistence
@@ -1815,10 +1782,7 @@ private fun PagedContent(
                 val target = revealTarget
                 if (target < 0) return@LaunchedEffect
                 val p = pages.indexOfFirst { page ->
-                    page.any {
-                        it.index == target &&
-                            (it.block as? Block.CustomFence)?.params?.get(FENCE_CONT_TO) == null
-                    }
+                    page.any { it.index == target && isAnswerPiece(it.block) }
                 }
                 when {
                     p < 0 -> revealTarget = -1
@@ -2131,6 +2095,19 @@ private fun PagedContent(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .onGloballyPositioned { coords ->
+                                            // AN ANSWER PIECE IS NOT WHERE
+                                            // INK LIVES. It carries its
+                                            // exercise's block index, so
+                                            // bookmarks and search still find
+                                            // it, but reporting a second top
+                                            // under one index is how a reader
+                                            // ends up looking at two copies
+                                            // of the same drawing. The head
+                                            // owns the coordinate space; the
+                                            // answer owns none.
+                                            if (isAnswerPiece(block)) {
+                                                return@onGloballyPositioned
+                                            }
                                             // The VIRTUAL top: where this block
                                             // would have started had it not been
                                             // split. Stroke offsets are stored
@@ -3497,6 +3474,11 @@ private fun ExerciseBlock(
     // second time, which would read as a second exercise.
     val isHead = f.params[FENCE_CONT_TO] != null
     val isTail = f.params[FENCE_CONT_FROM] != null
+    // A piece that IS the revealed answer: no band, no task, no working
+    // room, just the answer and the rule that closes the block. Pagination
+    // makes one whenever an answer is open, so this is the only path that
+    // ever draws an answer — see FENCE_ANSWER_PIECE.
+    val answerPiece = f.params[FENCE_ANSWER_PIECE]
     FramedHeaderBlock(
         label = labels.t("TRY THIS"),
         fontScale = fontScale,
@@ -3507,6 +3489,21 @@ private fun ExerciseBlock(
         // carries on over the leaf, the way a paragraph does.
         opener = !isTail,
     ) {
+        if (answerPiece != null) {
+            AnswerText(
+                answer = answer,
+                // The second half of an answer longer than a page prints
+                // neither the label nor the mascot: it is the same sentence
+                // carrying on, not a second answer.
+                opens = answerPiece != "cont",
+                plain = f.params[FENCE_PLAIN_ANSWER] != null,
+                fontScale = fontScale,
+                lineSpacing = lineSpacing,
+                loadBadge = loadBadge,
+                labels = labels,
+            )
+            return@FramedHeaderBlock
+        }
         // A part split can leave a tail with no words at all — the task fitted
         // where it was and only the room and the answer came over the leaf.
         // An empty Text still draws a blank line, which reads as a gap.
@@ -3572,44 +3569,13 @@ private fun ExerciseBlock(
             ruled = ruledSpace,
         )
         Spacer(Modifier.height(8.dp))
+        // NOTHING IS DRAWN HERE ONCE THE ANSWER IS OPEN. It used to swell
+        // this block, which changed how the block was divided, which moved
+        // the task and the working room and the reader's handwriting with
+        // them — the defect behind "show answer is broken feature". The
+        // answer is a piece of its own now and draws itself above.
         if (revealed || answer.isEmpty()) {
-            if (answer.isNotEmpty()) {
-                // The mascot again, in its telling-you-a-secret pose. Top
-                // aligned rather than centred: the answer usually runs to
-                // several lines and a centred badge would float oddly.
-                Row {
-                    // Pagination drops the mascot when the page needs the
-                    // width it was taking from the answer beside it. See
-                    // FENCE_PLAIN_ANSWER.
-                    val answerBadge =
-                        if (f.params[FENCE_PLAIN_ANSWER] == null) loadBadge("answer") else null
-                    if (answerBadge != null) {
-                        Image(
-                            bitmap = answerBadge,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .padding(end = 10.dp)
-                                .size(BADGE_SIZE * fontScale),
-                            colorFilter = badgeColorFilter(),
-                        )
-                    }
-                    Text(
-                        // The label in bold, the answer in italic like the
-                        // task it belongs to. With no frame to mark where the
-                        // answer starts, the word has to do it: a run of
-                        // italic that merely continues reads as more task.
-                        text = buildAnnotatedString {
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                append(labels.t("Answer:"))
-                            }
-                            append(" ")
-                            append(renderInlines(parseInlines(answer)))
-                        },
-                        style = answerBodyStyle(fontScale, lineSpacing),
-                        color = Ink,
-                    )
-                }
-            }
+            Unit
         } else {
             // The bounds are reported so the tap ladder can treat this as the
             // target it is. On the pen path the SDK owns the touch stream and
@@ -3626,6 +3592,66 @@ private fun ExerciseBlock(
             }
         }
         }
+    }
+}
+
+/** Whether this page item is the piece carrying a revealed answer. */
+private fun isAnswerPiece(block: Block): Boolean =
+    (block as? Block.CustomFence)?.params?.get(FENCE_ANSWER_PIECE) != null
+
+/**
+ * The revealed answer, drawn as its own piece of the exercise.
+ *
+ * Lifted out of [ExerciseBlock] on 2026-10-07, when the answer stopped being
+ * part of the exercise BLOCK and became a piece pagination places on its own.
+ * Nothing else changed about how it looks; what changed is that it can now
+ * land on the next page without dragging the task and the working room with
+ * it.
+ */
+@Composable
+private fun AnswerText(
+    answer: String,
+    opens: Boolean,
+    plain: Boolean,
+    fontScale: Float,
+    lineSpacing: Float,
+    loadBadge: (String) -> ImageBitmap?,
+    labels: UiLabels,
+) {
+    // The mascot again, in its telling-you-a-secret pose. Top aligned rather
+    // than centred: the answer usually runs to several lines and a centred
+    // badge would float oddly.
+    Row {
+        // Pagination drops the mascot when the page needs the width it was
+        // taking from the answer beside it. See FENCE_PLAIN_ANSWER.
+        val badge = if (opens && !plain) loadBadge("answer") else null
+        if (badge != null) {
+            Image(
+                bitmap = badge,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(end = 10.dp)
+                    .size(BADGE_SIZE * fontScale),
+                colorFilter = badgeColorFilter(),
+            )
+        }
+        Text(
+            // The label in bold, the answer in italic like the task it
+            // belongs to. With no frame to mark where the answer starts, the
+            // word has to do it: a run of italic that merely continues reads
+            // as more task.
+            text = buildAnnotatedString {
+                if (opens) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(labels.t("Answer:"))
+                    }
+                    append(" ")
+                }
+                append(renderInlines(parseInlines(answer)))
+            },
+            style = answerBodyStyle(fontScale, lineSpacing),
+            color = Ink,
+        )
     }
 }
 
