@@ -634,7 +634,25 @@ private fun splitParagraph(
         style = style,
         constraints = Constraints(maxWidth = widthPx),
     )
-    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
+    // A WIDOW COSTS LESS THAN A HOLE — sometimes. The tail floor is two
+    // lines, so a three-line paragraph cannot be cut at all: the only cut
+    // leaves one line alone at the top of the next page, which is the widow
+    // typesetters avoid hardest. The whole paragraph moves instead and the
+    // page runs short.
+    //
+    // That is orthodox and it is what Aliaksei kept seeing: "I don't get why
+    // pages have unfixed line count... why can it not have 2 more lines to be
+    // the same fit as the previous one?" Measured on his page 7: 168px free,
+    // the next paragraph three lines, refused.
+    //
+    // So the floor is now a COMPARISON rather than a rule. When the hole left
+    // behind is bigger than two lines, a one-line tail is the cheaper of the
+    // two — a reader of a single-column screen with no facing page sees the
+    // hole every time and the widow barely at all, because a short line at
+    // the top of a page reads as the end of a paragraph, which it is. Below
+    // that, the floor stands and the paragraph moves.
+    val tailFloor = if (availablePx >= 2 * lineHeightOf(layout)) 1 else MIN_SPLIT_LINES
+    if (layout.lineCount < MIN_SPLIT_LINES + tailFloor) return null
 
     var fitting = 0
     while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= availablePx) fitting++
@@ -643,8 +661,8 @@ private fun splitParagraph(
     // abandoning the split. Refusing outright is what left a 589px gap for an
     // eight-line paragraph of which seven fitted: the orphan guard cost more
     // than the orphan it was avoiding.
-    if (layout.lineCount - fitting < MIN_SPLIT_LINES) {
-        fitting = layout.lineCount - MIN_SPLIT_LINES
+    if (layout.lineCount - fitting < tailFloor) {
+        fitting = layout.lineCount - tailFloor
     }
     if (fitting < MIN_SPLIT_LINES) return null
 
@@ -1141,6 +1159,10 @@ private fun sliceInlines(inlines: List<Inline>, from: Int, to: Int): List<Inline
 /** Fewest lines worth leaving on a page, or carrying to the next one. */
 private const val MIN_SPLIT_LINES = 2
 
+/** One line of the measured text, for comparing a hole against a widow. */
+private fun lineHeightOf(layout: androidx.compose.ui.text.TextLayoutResult): Float =
+    if (layout.lineCount > 0) layout.getLineBottom(0) else 0f
+
 /**
  * Rows of working room the model asked for, expressed as a PERCENTAGE OF A
  * PAGE and converted here.
@@ -1202,6 +1224,9 @@ internal const val FRAME_HEADER_GAP_DP = 10
 
 /** Air above the rule that closes a framed block, and the rule itself. */
 internal const val FRAME_FOOT_GAP_DP = 12
+
+/** Air BELOW that rule, so the next paragraph is not hard against it. */
+internal const val FRAME_FOOT_AIR_DP = 16
 
 /**
  * Returns the page index that contains the block at [blockIndex]. Purely
@@ -1519,7 +1544,7 @@ private fun estimateHeight(
             // The rule that closes a framed block, drawn on the last piece.
             val footRule =
                 if (flows && FLOW_HEADER_FRAME && block.params[FENCE_CONT_TO] == null) {
-                    (FRAME_FOOT_GAP_DP + 1).dp.toPx().toInt()
+                    (FRAME_FOOT_GAP_DP + 1 + FRAME_FOOT_AIR_DP).dp.toPx().toInt()
                 } else {
                     0
                 }

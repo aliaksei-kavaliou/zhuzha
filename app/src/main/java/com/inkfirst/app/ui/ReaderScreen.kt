@@ -3964,6 +3964,10 @@ private fun FramedHeaderBlock(
                     strokeWidth = size.height,
                 )
             }
+            // A blank line under the rule, Aliaksei's note. The rule closes
+            // the block; without air beneath it the next paragraph starts
+            // hard against it and reads as being inside what just ended.
+            Spacer(Modifier.height(FRAME_FOOT_AIR))
         }
     }
 }
@@ -4126,6 +4130,7 @@ private val FLOW_RULE_INDENT = 14.dp
 /** Air under a boxed header, and above the rule that closes the block. */
 private val FRAME_HEADER_GAP = FRAME_HEADER_GAP_DP.dp
 private val FRAME_FOOT_GAP = FRAME_FOOT_GAP_DP.dp
+private val FRAME_FOOT_AIR = FRAME_FOOT_AIR_DP.dp
 
 @Composable
 private fun BorderedBlock(

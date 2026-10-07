@@ -1259,6 +1259,31 @@ yet" note that used to live here was two months stale.
       a log line only** — the surface for "the book may be wrong here" does not exist yet. The
       obvious shape is a line on the compile result, beside where a refusal already shows its
       reason.
+- [x] **A widow costs less than a hole — sometimes (2026-10-07)** — Aliaksei, twice:
+      "I don't get why pages have unfixed line count... why can it not have 2 more lines or
+      even 3 to be the same fit as the previous one?" Measured on the page he named, which is
+      the only way this question gets a real answer.
+      **Page 7 was 1242 of 1410, and the next paragraph was THREE LINES.** Splitting it means
+      two lines there and ONE ALONE AT THE TOP of page 8 — the widow typesetters avoid
+      hardest — so `splitParagraph` refuses anything shorter than four lines and the whole
+      paragraph moves. Orthodox, and invisible as a reason while it looks like a ragged page.
+      The floor is a COMPARISON now rather than a rule: when the hole left behind exceeds two
+      lines, a one-line tail is the cheaper of the two, because a reader of a single column
+      with no facing page meets the hole every time and barely registers the widow — a short
+      line at the top of a page reads as the end of a paragraph, which is what it is. Under
+      two lines the floor stands.
+      **And the honest part: that did not fix page 7, because the hole there is 1.7 lines.**
+      Two lines do not fit at all. The only thing that would fill it is a single line of the
+      next paragraph stranded at the FOOT — an orphan, the widow's twin — which needs
+      `MIN_SPLIT_LINES = 1`, a different decision and his to make.
+      What the measurements settle is where the variance actually comes from. Across the
+      chapter: 62px, 742px, 11px, 138px, 308px, 143px. **The big ones are all unsplittable
+      blocks** — a 742px hole before a figure, 308px before an exercise — which he had already
+      said he understands. The prose-to-prose gaps are one or two lines, and those are the
+      floors.
+- [x] **A blank line under the closing rule (2026-10-07)** — his note, and right: the rule
+      says the block has ended, and without air beneath it the next paragraph starts hard
+      against the rule and reads as being inside what just finished.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
