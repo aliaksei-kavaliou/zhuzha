@@ -189,7 +189,7 @@ fun paginate(
                         hasFigureImage, hasBadge, answerPrefix = answerPrefix,
                         revealed = isRevealed(i + 1),
                     ),
-                    lineHeightPx * MIN_SPLIT_LINES,
+                    lineHeightPx * MIN_LINES_UNDER_HEADING,
                 )
             } else {
                 estimateHeight(
@@ -634,25 +634,9 @@ private fun splitParagraph(
         style = style,
         constraints = Constraints(maxWidth = widthPx),
     )
-    // A WIDOW COSTS LESS THAN A HOLE — sometimes. The tail floor is two
-    // lines, so a three-line paragraph cannot be cut at all: the only cut
-    // leaves one line alone at the top of the next page, which is the widow
-    // typesetters avoid hardest. The whole paragraph moves instead and the
-    // page runs short.
-    //
-    // That is orthodox and it is what Aliaksei kept seeing: "I don't get why
-    // pages have unfixed line count... why can it not have 2 more lines to be
-    // the same fit as the previous one?" Measured on his page 7: 168px free,
-    // the next paragraph three lines, refused.
-    //
-    // So the floor is now a COMPARISON rather than a rule. When the hole left
-    // behind is bigger than two lines, a one-line tail is the cheaper of the
-    // two — a reader of a single-column screen with no facing page sees the
-    // hole every time and the widow barely at all, because a short line at
-    // the top of a page reads as the end of a paragraph, which it is. Below
-    // that, the floor stands and the paragraph moves.
-    val tailFloor = if (availablePx >= 2 * lineHeightOf(layout)) 1 else MIN_SPLIT_LINES
-    if (layout.lineCount < MIN_SPLIT_LINES + tailFloor) return null
+    // Two lines to divide at all — one to leave, one to carry. See
+    // [MIN_SPLIT_LINES] for why that is now one rather than two.
+    if (layout.lineCount < MIN_SPLIT_LINES * 2) return null
 
     var fitting = 0
     while (fitting < layout.lineCount && layout.getLineBottom(fitting) <= availablePx) fitting++
@@ -661,8 +645,8 @@ private fun splitParagraph(
     // abandoning the split. Refusing outright is what left a 589px gap for an
     // eight-line paragraph of which seven fitted: the orphan guard cost more
     // than the orphan it was avoiding.
-    if (layout.lineCount - fitting < tailFloor) {
-        fitting = layout.lineCount - tailFloor
+    if (layout.lineCount - fitting < MIN_SPLIT_LINES) {
+        fitting = layout.lineCount - MIN_SPLIT_LINES
     }
     if (fitting < MIN_SPLIT_LINES) return null
 
@@ -1020,7 +1004,7 @@ private fun splitFence(
     // layout instead: back up no further than the start of the second line
     // from the cut, and never past MIN_SPLIT_LINES lines, which is what
     // stranded a one-line piece under a mascot at the foot of page 9.
-    val backstopLine = (fitting - 2).coerceAtLeast(MIN_SPLIT_LINES - 1)
+    val backstopLine = (fitting - 2).coerceAtLeast(0)
     val backstop = layout.getLineStart(backstopLine.coerceAtMost(fitting - 1))
     val cut = sentenceCutAtOrBefore(text, lineCut, budgetChars = (lineCut - backstop).coerceAtLeast(0))
     val tailBody = buildString {
@@ -1156,12 +1140,35 @@ private fun sliceInlines(inlines: List<Inline>, from: Int, to: Int): List<Inline
     return out
 }
 
-/** Fewest lines worth leaving on a page, or carrying to the next one. */
-private const val MIN_SPLIT_LINES = 2
+/**
+ * Fewest lines worth leaving on a page, or carrying to the next one. ONE.
+ *
+ * It was two, to prevent an orphan at the foot of a page and a widow at the
+ * head of the next. That is the typesetter's ideal and it is not what books
+ * do — Aliaksei: "nothing bad to put 1 line of paragraph to the next page,
+ * paper books do this." They do, constantly; a press fixes the ones it minds
+ * by adjusting spacing over a whole spread, which is not available here and
+ * never will be.
+ *
+ * What IS available here, and what a printed page does not have, is the hole:
+ * a single column with no facing page, where every short page is met on its
+ * own. Measured on his chapter, the floors were costing one to two lines a
+ * page and producing exactly the ragged bottom edge he kept asking about.
+ * A line carried over is the cheaper of the two, every time.
+ *
+ * A heading keeps its own floor — see [MIN_LINES_UNDER_HEADING].
+ */
+private const val MIN_SPLIT_LINES = 1
 
-/** One line of the measured text, for comparing a hole against a widow. */
-private fun lineHeightOf(layout: androidx.compose.ui.text.TextLayoutResult): Float =
-    if (layout.lineCount > 0) layout.getLineBottom(0) else 0f
+/**
+ * How much of the following block a heading must keep beside it.
+ *
+ * This one stays at two. A heading alone above a single line is not a short
+ * page, it is a heading that looks detached from what it introduces — a
+ * different defect from a ragged foot, and the reason the keep-with-next rule
+ * exists at all.
+ */
+private const val MIN_LINES_UNDER_HEADING = 2
 
 /**
  * Rows of working room the model asked for, expressed as a PERCENTAGE OF A

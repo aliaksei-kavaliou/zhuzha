@@ -1259,7 +1259,7 @@ yet" note that used to live here was two months stale.
       a log line only** — the surface for "the book may be wrong here" does not exist yet. The
       obvious shape is a line on the compile result, beside where a refusal already shows its
       reason.
-- [x] **A widow costs less than a hole — sometimes (2026-10-07)** — Aliaksei, twice:
+- [x] **A widow costs less than a hole (2026-10-07) — and the floor went to ONE, see below** — Aliaksei, twice:
       "I don't get why pages have unfixed line count... why can it not have 2 more lines or
       even 3 to be the same fit as the previous one?" Measured on the page he named, which is
       the only way this question gets a real answer.
@@ -1284,6 +1284,23 @@ yet" note that used to live here was two months stale.
 - [x] **A blank line under the closing rule (2026-10-07)** — his note, and right: the rule
       says the block has ended, and without air beneath it the next paragraph starts hard
       against the rule and reads as being inside what just finished.
+- [x] **One line is enough to carry (2026-10-07)** — Aliaksei, cutting through an hour of
+      my typographic hedging: "nothing bad to put 1 line of paragraph to the next page. Paper
+      books do this." They do, constantly. The widow-and-orphan floor of two lines is the
+      typesetter's IDEAL, and a press keeps it by adjusting spacing across a whole spread —
+      which this reader does not have and never will.
+      What it does have, and a printed book does not, is the hole: one column, no facing
+      page, every short page met on its own. Measured on his chapter, the two-line floors
+      were costing one to two lines a page and producing exactly the ragged bottom edge he
+      kept asking about. `MIN_SPLIT_LINES = 1`.
+      **Measured before and after on the Boox, same chapter.** Free space per page was 62,
+      742, 11, 138, 308, 143; it is now 22, 74, -13, 50, 824, 11, 44, 48, -1, 308, 11, 24,
+      23, 44. Every prose page is inside ~50px — under one line — and the three that are not
+      are the unsplittable blocks he already said he understood: 824px before a figure, 308px
+      before an exercise, and the last page of the chapter.
+      **A heading keeps the stricter floor** (`MIN_LINES_UNDER_HEADING = 2`): a heading alone
+      above a single line is not a short page, it is a heading detached from what it
+      introduces, which is a different defect and the reason keep-with-next exists.
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
