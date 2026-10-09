@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -67,6 +68,9 @@ fun SearchScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Edge-to-edge (2026-10-02) made adjustResize inert — see
+            // ChatPanel for the full story. Every text field needs this.
+            .imePadding()
             .background(Paper)
             .padding(horizontal = 20.dp),
     ) {

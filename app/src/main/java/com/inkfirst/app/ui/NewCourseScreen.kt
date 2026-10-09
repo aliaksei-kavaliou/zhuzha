@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -316,6 +317,9 @@ fun NewCourseScreen(
         else -> Column(
             modifier = Modifier
                 .fillMaxSize()
+                // Edge-to-edge (2026-10-02) made adjustResize inert — see
+                // ChatPanel for the full story. Every text field needs this.
+                .imePadding()
                 .pointerInput(Unit) {
                     // Tap outside any input dismisses the IME so the Generate
                     // button becomes reachable on short viewports.

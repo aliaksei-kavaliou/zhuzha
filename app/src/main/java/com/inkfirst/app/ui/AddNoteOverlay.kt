@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -55,6 +56,9 @@ fun AddNoteOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // Edge-to-edge (2026-10-02) made adjustResize inert — see
+            // ChatPanel for the full story. Every text field needs this.
+            .imePadding()
             .background(Scrim)
             // Tap outside the card = cancel. Card intercepts its own taps below.
             .pointerInput(Unit) { detectTapGestures { onCancel() } },

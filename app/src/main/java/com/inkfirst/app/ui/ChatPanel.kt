@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -181,6 +182,20 @@ fun ChatPanel(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // THE KEYBOARD COVERS THE INPUT WITHOUT THIS, and the manifest's
+            // `windowSoftInputMode="adjustResize"` does NOT help.
+            //
+            // Going edge-to-edge on 2026-10-02 set decorFitsSystemWindows to
+            // false, which is what lets the status bar overlay the page
+            // instead of repaginating it. The same flag also stops the window
+            // resizing for the IME, so adjustResize became inert and every
+            // screen with a text field has to pad for the keyboard itself.
+            // Settings happened to survive because it was given imePadding on
+            // 2026-09-21 for an unrelated reason; nothing else was.
+            //
+            // Reported here first because this is the panel you type into
+            // most: "I do not see what I'm typing."
+            .imePadding()
             .background(Paper)
             .focusRequester(keyFocus)
             .focusable()
