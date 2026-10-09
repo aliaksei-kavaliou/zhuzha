@@ -27,46 +27,64 @@ a BYO-key personal reader and is worth being able to explain if asked — it is
 not an attempt to evade moderation, it is a refusal to block a reader because
 their connection dropped.
 
-## Half 2 — in-app reporting: NOT BUILT. This is a release blocker.
+## Half 2 — in-app reporting: BUILT 2026-10-09
 
 > Apps that generate content using AI must contain in-app user reporting or
 > flagging features that allow users to report or flag offensive content to
 > developers without needing to exit the app.
 
-There is no report affordance anywhere in InkFirst.
+Two entry points, one dialog:
 
-### The awkward part: there is no backend to report TO
+- **Reader menu → Chapter → "Report this page"**, next to Rewrite, because
+  those are the two answers to the same discovery — this page is wrong.
+  Rewrite is what you do about YOUR copy; report is what you do about the
+  model that wrote it.
+- **The Ask panel, under any answer.** Aliaksei's suggestion, and right about
+  WHEN people report: a fresh answer is the likeliest thing to be offensive
+  and the easiest moment to flag. It is the second entry point rather than
+  the only one, because the chapters are the bulk of what the app generates
+  and a reader mid-page needs somewhere to go.
 
-The app has no server by design and that is not being reconsidered. The
-requirement is about the REPORTING SURFACE being in-app, not about where the
-report ultimately lands. The shape that satisfies it without a backend:
+### The ordering is the design
 
-1. A **"Report this page"** row in the reader's own menu — the menu is already
-   the one place a reader operates the book from, and a report is about the
-   page in front of them.
-2. An in-app sheet, not a browser and not a mailto straight away: reason
-   (offensive / harmful / wrong / other) plus an optional free-text box.
-3. **Write the report locally** alongside the book — it is the same
-   plain-files principle as everything else, and it means the reader keeps a
-   record of what they flagged.
-4. THEN offer to send it. An email intent is acceptable as the delivery
-   mechanism; what must not require leaving the app is the REPORTING itself.
+There is no backend and there is not going to be one. The requirement is
+about the reporting SURFACE being in-app, not about where the report lands —
+so the report is WRITTEN FIRST, to `reports.md`, and sending is a separate
+offer afterwards. Declining to send still leaves a complete record. A report
+that only exists if an email client opens is not an in-app report.
 
-### Why this is cheap here
+Sending uses `ACTION_SENDTO` with a `mailto:` URI, so the chooser offers mail
+clients rather than every app that can take text, and a device with no mail
+client loses the convenience and not the record.
 
-The report needs the course, chapter and page, and the reader menu already
-knows all three. The passage can come from the same block addressing that
-search and the reader record already use. No new data model.
+### Two decisions worth not re-litigating
 
-### Also worth doing, not strictly required
+**The file sits at the courses ROOT, not inside the book.** A report must
+outlive what it complains about — deleting a book you reported should not
+delete the complaint — and one file is what you can actually send. The
+backup's shelf archive already sweeps everything at the root, so this is
+backed up without teaching the backup anything new.
 
-- A line in the chapter front matter or the Contents saying the book is
-  AI-generated. The App Promotion policy requires the listing to reflect
-  functionality accurately; being explicit in-product costs nothing and this
-  book LOOKS like a real textbook, which is exactly when a reader should be
-  told.
-- Declare AI-generated content in the Play Console "App content" section and
-  answer the IARC rating questions about it honestly.
+**A report QUOTES the passage.** "Chapter 2, page 9 was offensive" is a
+dangling pointer within one tap of being made: rewriting a chapter replaces
+every word and repaginates. The quote is what keeps the report meaningful
+afterwards, and it is capped so a report cannot become a chapter.
+
+It also records WHICH of the three AI outputs it is about — page, answer or
+picture — because that decides what would be fixed: the chapter prompt,
+`QaGenerator`, or the illustrator and its house style.
+
+### Verified
+
+Ten unit tests on the format and the file, including the one that matters:
+every line of a multi-paragraph passage stays inside the block quote, or the
+remainder renders as the reader's own note and puts words in their mouth.
+
+Walked end to end on the emulator at 320x640 — menu, dialog, four reasons,
+note field, saved state, and the written `reports.md` read back off the
+device. NOT yet exercised: the email intent (no mail client on the emulator;
+it fails closed by design) and the Ask-panel entry point (needs a book with
+existing Q&A).
 
 ## Sequencing
 

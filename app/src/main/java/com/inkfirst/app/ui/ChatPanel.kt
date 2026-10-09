@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -71,8 +72,10 @@ import com.inkfirst.core.KtorGeminiClient
 import com.inkfirst.core.PersistedChapter
 import com.inkfirst.core.QaGenerator
 import com.inkfirst.core.QaTranscript
+import com.inkfirst.core.ReportedContent
 import com.inkfirst.core.parseInlines
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Composable
@@ -93,6 +96,8 @@ fun ChatPanel(
     var input by remember(chapter.slug) { mutableStateOf("") }
     var pending by remember(chapter.slug) { mutableStateOf(false) }
     var error by remember(chapter.slug) { mutableStateOf<String?>(null) }
+    /** The answer being reported, if any — see [ReportDialog]. */
+    var reportingAnswer by remember(chapter.slug) { mutableStateOf<String?>(null) }
     val selection = initialSelection?.trim()?.takeIf { it.isNotEmpty() }
 
     LaunchedEffect(chapter.slug) {
@@ -321,7 +326,7 @@ fun ChatPanel(
                     when (val row = rows[rows.size - 1 - i]) {
                         is ChatRow.Passage -> PassageTurn(row.text)
                         is ChatRow.Question -> QuestionTurn(row.text)
-                        is ChatRow.Answer -> AnswerTurn(row.text)
+                        is ChatRow.Answer -> AnswerTurn(row.text) { reportingAnswer = row.text }
                         is ChatRow.Note -> Text(
                             text = row.text,
                             fontFamily = FontFamily.Serif,
@@ -413,6 +418,25 @@ fun ChatPanel(
             }
         }
     }
+
+    // The report dialog, shared with the reader's menu. Reporting an ANSWER
+    // rather than a page: same four reasons, same local file, and the record
+    // says which of the three AI outputs it was about, because an offensive
+    // answer is a QaGenerator problem where an offensive page is a chapter
+    // prompt problem.
+    reportingAnswer?.let { answer ->
+        ReportDialog(
+            what = ReportedContent.ANSWER,
+            passage = answer,
+            courseSlug = course.slug,
+            courseTitle = course.title,
+            chapterN = chapter.n,
+            chapterTitle = chapter.title,
+            blockIndex = chapter.lastBlockIndex,
+            today = LocalDate.now().toString(),
+            onDismiss = { reportingAnswer = null },
+        )
+    }
 }
 
 /**
@@ -468,15 +492,35 @@ private fun QuestionTurn(question: String) {
  * renderer would drag chapter typography into a side panel.
  */
 @Composable
-private fun AnswerTurn(answer: String) {
+private fun AnswerTurn(answer: String, onReport: () -> Unit) {
     if (answer.isBlank()) return
-    SelectionContainer {
+    Column {
+        SelectionContainer {
+            Text(
+                text = renderInlines(parseInlines(answer)),
+                fontFamily = FontFamily.Serif,
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+                color = Ink,
+            )
+        }
+        // Report sits on the ANSWER, which is where a bad one is freshest
+        // and where a reader is most likely to want to flag it. It is the
+        // second entry point rather than the only one: the chapters are the
+        // bulk of what the model writes, so the reader's menu carries the
+        // same dialog for a page. Play requires at least one of them to
+        // exist — docs/play/ai-content-policy.md.
+        //
+        // Quiet, because an answer the reader is pleased with should not be
+        // shouting about complaints: muted, small, and under the text.
         Text(
-            text = renderInlines(parseInlines(answer)),
+            text = stringResource(R.string.report),
             fontFamily = FontFamily.Serif,
-            fontSize = 15.sp,
-            lineHeight = 22.sp,
-            color = Ink,
+            fontSize = 12.sp,
+            color = Muted,
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .clickable { onReport() },
         )
     }
 }

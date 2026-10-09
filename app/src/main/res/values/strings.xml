@@ -51,6 +51,7 @@
     <string name="closing_picture">closing picture</string>
     <string name="compile_chapter">Compile chapter</string>
     <string name="delete">Delete</string>
+    <string name="done">Done</string>
     <string name="draw_n">Draw %1$s</string>
     <string name="draw_closing_picture">Draw closing picture</string>
     <string name="draw_opening_picture">Draw opening picture</string>
@@ -78,6 +79,19 @@
     <string name="redraw">Redraw</string>
     <string name="redraw_this_picture">Redraw this picture?</string>
     <string name="remove_bookmark">Remove bookmark</string>
+    <string name="report">Report</string>
+    <string name="report_note_optional">Add a note (optional)</string>
+    <string name="report_reason_harmful">Harmful or dangerous advice</string>
+    <string name="report_reason_offensive">Offensive or inappropriate</string>
+    <string name="report_reason_other">Something else</string>
+    <string name="report_reason_wrong">Confidently wrong</string>
+    <string name="report_save">Report</string>
+    <string name="report_saved_body">Your report was saved on this device. Nothing has been sent. You can email it now, or find it later in reports.md alongside your books.</string>
+    <string name="report_saved_title">Report saved</string>
+    <string name="report_send_email">Send by email</string>
+    <string name="report_this_page">Report this page</string>
+    <string name="report_title">Report this content</string>
+    <string name="report_what_is_wrong">What is wrong with it?</string>
     <string name="rewrite_this_chapter">Rewrite this chapter</string>
     <string name="save">Save</string>
     <string name="search">Search</string>

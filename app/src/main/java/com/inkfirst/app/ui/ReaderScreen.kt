@@ -156,7 +156,9 @@ import com.inkfirst.core.findFigureSlots
 import com.inkfirst.core.parseInlines
 import com.inkfirst.core.TopicChecker
 import com.inkfirst.core.TopicVerdict
+import com.inkfirst.core.ReportedContent
 import com.inkfirst.core.parseMarkdown
+import com.inkfirst.core.plainText
 import com.inkfirst.core.splitExerciseBody
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -343,6 +345,8 @@ fun ReaderScreen(
     // Hoisted here so both the header (bookmark ribbon indicator) and the
     // format menu (Bookmark this page row) can read/toggle without prop-drilling.
     var headerFirstBlock by remember(chapterSlug) { mutableStateOf(-1) }
+    /** Whether the content-report dialog is up — see [ReportDialog]. */
+    var reportingPage by remember(chapterSlug) { mutableStateOf(false) }
     // The bookmark THIS page carries, as its stored block index, or null.
     //
     // Resolved by the pager rather than compared here, and that distinction
@@ -1532,9 +1536,39 @@ fun ReaderScreen(
                 tailStale = tailStale,
                 onRedrawCover = { confirmingRedraw = false },
                 onRedrawTail = { confirmingRedraw = true },
+                onReportPage = {
+                    showFormatMenu = false
+                    reportingPage = true
+                },
                 onBack = { menuPane = MenuPane.READING },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
+        }
+
+        // Play requires an in-app way to report AI output. The dialog is the
+        // reporting surface; saving is local and immediate, and sending is a
+        // separate offer — see ReportDialog and docs/play/ai-content-policy.md.
+        if (reportingPage) {
+            val c = course
+            val ch = chapter
+            if (c == null || ch == null) {
+                reportingPage = false
+            } else {
+                ReportDialog(
+                    what = ReportedContent.PAGE,
+                    // Quoted from the page's first block onwards, so the
+                    // report still means something after the chapter is
+                    // rewritten and this page stops existing.
+                    passage = pageQuote(blocks, headerFirstBlock),
+                    courseSlug = c.slug,
+                    courseTitle = c.title,
+                    chapterN = ch.n,
+                    chapterTitle = ch.title,
+                    blockIndex = headerFirstBlock.coerceAtLeast(0),
+                    today = LocalDate.now().toString(),
+                    onDismiss = { reportingPage = false },
+                )
+            }
         }
     }
     }
@@ -2975,6 +3009,7 @@ private fun ChapterToolsMenu(
     onRedrawCover: () -> Unit,
     onRedrawTail: () -> Unit,
     onRewriteChapter: () -> Unit,
+    onReportPage: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -3011,6 +3046,26 @@ private fun ChapterToolsMenu(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (busyDrawing) Muted else Ink,
+                )
+            }
+        }
+
+        // Reporting a page lives next to rewriting one because they are the
+        // two answers to the same discovery — this page is wrong. Rewrite is
+        // what you do about YOUR copy; report is what you do about the model
+        // that wrote it, and Play requires the second to exist for any app
+        // that generates content with AI (docs/play/ai-content-policy.md).
+        MenuRow(label = stringResource(R.string.report)) {
+            Box(
+                modifier = Modifier
+                    .clickable { onReportPage() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.report_this_page),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
                 )
             }
         }
@@ -4306,14 +4361,12 @@ private fun extractAskableText(block: Block): String? = when (block) {
     else -> null
 }
 
-private fun List<Inline>.plainText(): String = joinToString("") { i ->
-    when (i) {
-        is Inline.Text -> i.text
-        is Inline.Bold -> i.text
-        is Inline.Italic -> i.text
-        is Inline.Code -> i.text
-    }
-}
+/**
+ * Flattens a run of inlines. Delegates to the shared rule in `:core` rather
+ * than restating the when — the same rule had drifted into three copies
+ * (here, CourseSearch, and the report quote) before it was promoted.
+ */
+private fun List<Inline>.plainText(): String = joinToString("") { it.plainText() }
 
 private fun goPrev(
     pageIndex: Int,
@@ -6088,3 +6141,34 @@ internal fun stripChapterNumber(inlines: List<Inline>): List<Inline> {
     if (stripped.isBlank() && inlines.size == 1) return inlines
     return listOf(Inline.Text(stripped)) + inlines.drop(1)
 }
+
+/**
+ * The text a report should quote, starting at the page's first block.
+ *
+ * A report has to survive the thing it complains about. Rewriting a chapter
+ * replaces every word of it and repaginates, so "chapter 2, page 9" is a
+ * dangling pointer within one tap of being made — the quote is what keeps
+ * the report meaningful afterwards.
+ *
+ * Takes whole blocks from the anchor until there is enough, rather than the
+ * page's exact extent: the paginator's page boundaries are not reachable
+ * from the menu, and a block or two of real text identifies a page perfectly
+ * well for someone reading the complaint. Erring long is safe because
+ * [ContentReport] truncates.
+ */
+private fun pageQuote(blocks: List<Block>, firstBlockIndex: Int): String {
+    if (blocks.isEmpty()) return ""
+    val from = firstBlockIndex.coerceIn(0, blocks.lastIndex)
+    val out = StringBuilder()
+    for (i in from..blocks.lastIndex) {
+        val text = blocks[i].plainText().trim()
+        if (text.isEmpty()) continue
+        if (out.isNotEmpty()) out.append("\n\n")
+        out.append(text)
+        if (out.length >= REPORT_QUOTE_TARGET) break
+    }
+    return out.toString()
+}
+
+/** Enough text to recognise a page by. [ContentReport] caps the stored size. */
+private const val REPORT_QUOTE_TARGET = 400

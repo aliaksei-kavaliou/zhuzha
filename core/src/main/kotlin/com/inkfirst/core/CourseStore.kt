@@ -314,6 +314,41 @@ class CourseStore(private val root: File) {
     private fun labelsFile(language: String): File =
         File(root, "labels/${labelsFileName(language)}")
 
+    /**
+     * Appends a reader's content report to `reports.md`.
+     *
+     * At the ROOT rather than inside the book, for two reasons that pull the
+     * same way. A report should outlive the thing it is about — deleting a
+     * book you reported must not delete the complaint — and one file is what
+     * you can actually send. The backup's shelf archive already sweeps
+     * everything at the root that is not a course directory, so this is
+     * backed up without teaching the backup anything new.
+     *
+     * Newest LAST, like every other appendable file here. Reading a report
+     * file is reading a history, and a history runs forwards.
+     */
+    fun appendReport(report: ContentReport) {
+        val file = File(root, REPORTS_FILE).apply { parentFile?.mkdirs() }
+        val existing = if (file.exists()) file.readText() else ""
+        val separator = if (existing.isNotBlank() && !existing.endsWith("\n\n")) "\n" else ""
+        file.writeText(existing + separator + report.toMarkdown())
+    }
+
+    /** Every report written so far; empty string if none. */
+    fun readReports(): String {
+        val file = File(root, REPORTS_FILE)
+        return if (file.exists()) file.readText() else ""
+    }
+
+    /**
+     * Whether anything has been reported.
+     *
+     * Lets the UI say so, because a report that vanishes on submit looks
+     * exactly like a report that was never recorded — the same defect as
+     * "generate did nothing", which this app has fixed twice elsewhere.
+     */
+    fun hasReports(): Boolean = File(root, REPORTS_FILE).isFile
+
     fun readMemory(courseSlug: String): String {
         val file = File(root, "$courseSlug/memory.md")
         return if (file.exists()) file.readText() else ""

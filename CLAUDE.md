@@ -1501,6 +1501,40 @@ yet" note that used to live here was two months stale.
       the mug exactly where he drew it, and the answer page stays clean through repeated
       back-and-forth.
 
+- [x] **A reader can report what the model wrote (2026-10-09)** — built because Google Play
+      requires it: an app that generates content with AI must carry an IN-APP way to report
+      or flag offensive output, usable without leaving the app. InkFirst had no report
+      affordance anywhere, which is a release blocker rather than a gap. The other half of
+      that policy — PREVENT restricted content — was already built and is a better story than
+      most apps can tell (the three gates, §19).
+      **Two entry points, one dialog.** Reader menu → Chapter → "Report this page", next to
+      Rewrite, because those are the two answers to the same discovery: rewrite is what you do
+      about YOUR copy, report is what you do about the model. And under any answer in the Ask
+      panel — Aliaksei's suggestion, and right about WHEN people report, since a fresh answer
+      is the likeliest thing to be offensive. It is the second entry point rather than the
+      only one: the chapters are the bulk of what the app generates.
+      **The ordering IS the design.** There is no backend and will not be one, and the
+      requirement is about the reporting SURFACE being in-app rather than where the report
+      lands. So the report is WRITTEN FIRST and sending is offered afterwards; declining to
+      send still leaves a complete record. A report that only exists if an email client opens
+      is not an in-app report.
+      **`reports.md` sits at the courses ROOT, not in the book** — a report must outlive what
+      it complains about, and one file is what you can send. The backup's shelf archive
+      already sweeps the root, so it is backed up without teaching the backup anything.
+      **And a report QUOTES the passage**, because "chapter 2 page 9" is a dangling pointer
+      within one tap of being made: a rewrite replaces every word and repaginates. It records
+      which of the three outputs it was — page, answer or picture — since that decides whether
+      the fix is the chapter prompt, `QaGenerator` or the illustrator.
+      Promoting `Block.plainText()` into `:core` on the way: the same flatten-to-text rule was
+      about to exist in three copies (search, the report quote, and a private one in
+      `ReaderScreen`), which is the `kebabOf` lesson exactly.
+      Ten unit tests, including the one that matters — every line of a multi-paragraph
+      passage stays inside the block quote, or the rest renders as the reader's own note and
+      puts words in their mouth. **Walked end to end on the emulator at 320x640** and the
+      written file read back off the device. **NOT exercised: the email intent** (no mail
+      client there; it fails closed) **and the Ask-panel entry point** (needs a book with
+      existing Q&A). docs/play/ai-content-policy.md.
+
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
