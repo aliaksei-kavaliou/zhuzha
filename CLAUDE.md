@@ -1533,6 +1533,21 @@ yet" note that used to live here was two months stale.
       the device.**
       **Still latent from §T9:** every `scheduleUnlock` cancels the last, so a pen event inside
       the 200ms leaves a repaint armed but unperformed. Real, not this symptom.
+- [ ] **A vertical mark with nothing to point at still raises the chip (2026-10-09)** —
+      Aliaksei, as a nit while testing something else: "vertical stroke also should not show
+      chip if there is no text."
+      The guard already looks like it covers this — the dispatch requires
+      `(enclosing || verticalMark) && !annotatedText.isNullOrBlank()` — and the text half
+      passes anyway, because a margin bar is a passage-marking gesture that reads ACROSS
+      blocks, so the near-miss fallback hands it a confident and wrong passage rather than
+      nothing. **Exactly the shape of the working-room fix of 2026-10-02**: the guard was
+      present and what it actually guards against is not "no text" but "text the reader never
+      pointed at".
+      So the fix is likely geometric for the same reason that one was — a vertical mark whose
+      span overlaps no laid-out text line has nothing to ask about, whatever the extractor
+      managed to resolve — and it belongs at the dispatch site, since it disqualifies the
+      gesture whatever shape it had. Cheap, and it removes a chip that appears over blank
+      page, which reads as the app misfiring.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what
