@@ -222,3 +222,32 @@ fun parseInlines(text: String): List<Inline> {
     flushText()
     return out
 }
+
+/**
+ * The text of a block as a reader sees it, with the markup dropped.
+ *
+ * Fence bodies count: an exercise or a recap is chapter content, and a recap
+ * is often where a concept got its clearest one-line statement.
+ *
+ * Public and shared rather than copied, because this rule had already been
+ * written twice — once for search, once for reporting — and a rule living in
+ * two places is the `kebabOf` lesson, which cost two separate fixes for one
+ * defect. A reader reporting an offensive passage and a reader searching for
+ * it must be looking at the same text.
+ */
+fun Block.plainText(): String = when (this) {
+    is Block.Heading -> inlines.joinToString("") { it.plainText() }
+    is Block.Paragraph -> inlines.joinToString("") { it.plainText() }
+    is Block.BulletItem -> inlines.joinToString("") { it.plainText() }
+    is Block.OrderedItem -> inlines.joinToString("") { it.plainText() }
+    is Block.CustomFence -> body
+    Block.Rule -> ""
+}
+
+/** One inline run's text, whatever emphasis it carried. */
+fun Inline.plainText(): String = when (this) {
+    is Inline.Text -> text
+    is Inline.Bold -> text
+    is Inline.Italic -> text
+    is Inline.Code -> text
+}

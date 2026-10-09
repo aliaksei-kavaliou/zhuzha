@@ -50,7 +50,7 @@ object CourseSearch {
         val needle = query.trim()
         if (needle.isEmpty() || chapterMarkdown.isBlank()) return emptyList()
         return parseMarkdown(chapterMarkdown).mapIndexedNotNull { index, block ->
-            val text = block.searchableText()
+            val text = block.plainText()
             if (!text.contains(needle, ignoreCase = true)) return@mapIndexedNotNull null
             Hit(
                 kind = Kind.CHAPTER,
@@ -131,24 +131,4 @@ object CourseSearch {
         }
     }
 
-    /**
-     * The text of a block as a reader sees it. Fence bodies count — an
-     * exercise or a recap is chapter content, and a recap is often exactly
-     * where a concept got its clearest one-line statement.
-     */
-    private fun Block.searchableText(): String = when (this) {
-        is Block.Heading -> inlines.joinToString("") { it.textValue() }
-        is Block.Paragraph -> inlines.joinToString("") { it.textValue() }
-        is Block.BulletItem -> inlines.joinToString("") { it.textValue() }
-        is Block.OrderedItem -> inlines.joinToString("") { it.textValue() }
-        is Block.CustomFence -> body
-        Block.Rule -> ""
-    }
-
-    private fun Inline.textValue(): String = when (this) {
-        is Inline.Text -> text
-        is Inline.Bold -> text
-        is Inline.Italic -> text
-        is Inline.Code -> text
-    }
 }
