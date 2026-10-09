@@ -1529,10 +1529,37 @@ yet" note that used to live here was two months stale.
       driver's rendering while the chip is up (`setRawDrawingRenderEnabled` → `PEN_PAUSE` /
       `PEN_DRAWING`), a symmetric pair that is told a state in both directions. Neither is
       visible to `screencap`; neither ships without eyes on the glass, and not in the same
-      build as the other. **(2) is built, on the branch `pen-chip-render-pause`, waiting for
-      the device.**
+      build as the other.
+      **Both were run on the device on 2026-10-09, and the item is still open. §T11.**
+      **(2) is REJECTED: it costs a blink.** The toggle works — matched `render paused/resumed
+      (chip)` pairs, never stuck — but Aliaksei read with it and reported blinking. A/B'd
+      rather than argued about, because the log showed a full-panel `repaint(chipShow, GC, …)`
+      that PREDATES the branch: two APKs built from the two trees, clean `main` does not blink,
+      the pause build does. Same verdict as the grey wash, for the same reason — a full refresh
+      on every stroke-tap is worse than the ghost, because tapping a stroke is how you ask
+      about a passage. `pen-chip-render-pause` stays unmerged as the record.
+      **(1) works as designed and did NOT fix what Aliaksei is seeing.** On
+      `pen-chip-exclude-nonempty`: the hole is cut on show and released with the 1×1 on close,
+      the band stays live, no blink. But the remaining ghost is **a light-grey copy of the
+      whole pill**, which is not pen ink at all — it is an incomplete e-ink clear, and both
+      dismissals in the log were FINGER taps, so the pen never touched the pill. Candidate 1's
+      benefit against the reported symptom is therefore UNPROVEN; it is not merged.
+      **What the two runs together say, and neither says alone:** show and close are not a
+      matched pair. When the show repaint is full-surface you get a blink and no ghost; when it
+      is pill-sized you get no blink and sometimes the grey remnant. So the fix is not a bigger
+      or smaller rect — it is making the close reliably clear the pill.
+      **One unexplained observation, and it is the thread to pull.** With `queueRepaint`
+      instrumented: the queue held exactly `[Rect(219,1328-1046,1458)]` (the pill) and 69ms
+      later the GC fired over `[Rect(0,0-1264,1497)]` (the whole surface). The repaint prints
+      `repaintRectsRef.value`; the only writers are `queueRepaint` (appends, and was logging
+      every call) and two `= emptyList()`. There is one overlay in the tree (checked) and
+      `clearSurface` does not touch the ref. One of those assumptions is false and reading has
+      not found which — next step is logging the queue at unlock entry, before the clear block
+      and again before the repaint.
       **Still latent from §T9:** every `scheduleUnlock` cancels the last, so a pen event inside
-      the 200ms leaves a repaint armed but unperformed. Real, not this symptom.
+      the 200ms leaves a repaint armed but unperformed. Real, and NOT this symptom — the
+      2026-10-09 logs show no dropped repaint: two `inkRemoved` ones coalesced into the
+      following `chipClose`, which carried both rects.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what

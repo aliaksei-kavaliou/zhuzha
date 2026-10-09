@@ -909,3 +909,56 @@ faithfully and was TRUE — the app asked for the hole to be removed. What no lo
 that the ask was dropped one layer further down. When a fix is a request to another process,
 logging that we asked is not evidence that it happened.
 
+
+## T11 · device → CLI · 2026-10-09 (candidate 2 costs a full refresh; candidate 1 is on the glass)
+
+The Boox came back on the cable, which is the one thing §T10's two candidates had been waiting
+for. Candidate 2 — pause the driver's render while the pill is up — had been built on
+`pen-chip-render-pause` since 2026-10-06 and never run. It ran today and it is REJECTED.
+
+### Candidate 2: the mechanism works and the price is a blink
+
+The branch was rebased onto `main` (28 commits, clean — nothing on main had touched the chip
+code) and installed. The toggle itself is sound: logcat shows `render paused (chip)` /
+`render resumed (chip)` in matched pairs, never a stuck state, and the resume path held across
+repeated opens. So the SDK reading in §T10 was right about what the two flags do.
+
+Aliaksei, reading with it: *"you introduced blinking."*
+
+**A/B'd rather than argued about**, because the log also showed `repaint(chipShow, GC, …)` on
+every chip transition and that GC — a full greyscale refresh — PREDATES the branch. Two APKs
+were built from the two trees and installed in turn. Clean `main`: **no blink**. The pause
+build: blink. So the pre-existing GC repaint is scoped tightly enough to be invisible, and the
+new cost is `setRawDrawingRenderEnabled` itself — resuming the raw-draw render forces a
+panel-wide update that the scoped repaint does not.
+
+That settles it against the pause, and the precedent is this project's own: the grey wash of
+2026-10-06 lasted one evening for exactly this reason, and Aliaksei's verdict there applies
+word for word — *"blinking is too high a price for that."* A refresh on every stroke-tap is
+worse than the ghost it removes, because tapping a stroke is how you ask about a passage.
+`pen-chip-render-pause` stays unmerged, as the record of a tested and rejected approach.
+
+Not established: whether the pause actually removed the ghost. The blink disqualified it before
+that was checked, and the answer would not change the decision.
+
+### What the A/B also confirmed
+
+On clean `main`, dismissing the chip by tapping free page space leaves the ghost — and
+`screencap` of that page shows **no pill artefact at all**, while showing every real stroke.
+By the differential test this is driver ink, not app state, which is §T9's diagnosis standing
+up on the current build rather than being re-litigated.
+
+### Candidate 1, as specced above
+
+The exclude rect comes back; the RELEASE is what changes. `NO_HOLE = Rect(0, 0, 1, 1)` goes to
+the firmware whenever there is no chip, so the list is never zero-length and always REPLACES.
+Two pieces of plumbing were missing and are the reason the region used to be set once and never
+revised: `applyLimitRect` is local to the surface callback, so it is now exposed through
+`limitRectRequestRef` the way `scheduleUnlock` already is through `unlockRequestRef`; and the
+chip effect calls it on both transitions, BEFORE the unlock, so the region is the right shape
+by the time that cycle's `setRawDrawingEnabled(true)` makes the pen live again.
+
+Verified at startup: `limitRect(created) holes=[Rect(0, 0 - 1, 1)]`.
+
+**The falsifier is written into the code comment**: if the bottom band goes dead again, the
+empty-array theory is wrong, and a third shape should not be tried without re-reading §T10.

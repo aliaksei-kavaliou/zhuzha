@@ -190,6 +190,7 @@ internal fun OnyxInkOverlay(
     val resolveSwipeRef = rememberUpdatedState(resolveSwipe)
     val drawEnabledRef = rememberUpdatedState(drawingEnabled)
     val chipRectRef = rememberUpdatedState(chipRect)
+    val chipOpenRef = rememberUpdatedState(chipOpen)
     val tapActionRef = rememberUpdatedState(onTapAction)
     val strokesRef = rememberUpdatedState(pageStrokes)
     val blockTopYRef = rememberUpdatedState(blockTopY)
@@ -233,6 +234,15 @@ internal fun OnyxInkOverlay(
     val eraseEndedAtRef = remember { mutableStateOf(0L) }
     /** Set once the SurfaceView is built, so the interop filter can ask for an unlock. */
     val unlockRequestRef = remember { mutableStateOf<((String) -> Unit)?>(null) }
+    /**
+     * Same pattern as [unlockRequestRef], for the drawable region.
+     *
+     * The chip's hole has to be cut and released as the pill opens and
+     * closes, and `applyLimitRect` is local to the surface callback where the
+     * TouchHelper lives. Nothing outside could reach it, which is why the
+     * region used to be set once and never revised.
+     */
+    val limitRectRequestRef = remember { mutableStateOf<((String) -> Unit)?>(null) }
     /**
      * Whether a repaint is owed, tracked separately from the unlock job that
      * asked for it. Unlock jobs supersede one another — each one cancels the
@@ -458,6 +468,15 @@ internal fun OnyxInkOverlay(
                     ),
                 )
             }
+            // Cut the pill out of the drawable region, or hand the region
+            // back. This runs BEFORE the unlock: the unlock's own cycle ends
+            // in setRawDrawingEnabled(true), and the region should already be
+            // the right shape by the time the pen is live again.
+            //
+            // On close this is what releases the hole, and it is the half
+            // that failed in 2026-10-05's revert — see the comment in
+            // applyLimitRect. The release now REPLACES rather than empties.
+            limitRectRequestRef.value?.invoke(if (chipOpen) "chipShow" else "chipClose")
             unlockRequestRef.value?.invoke(if (chipOpen) "chipShow" else "chipClose")
         }
         chipWasOpenRef.value = chipOpen
@@ -1336,26 +1355,44 @@ internal fun OnyxInkOverlay(
                                 surface.getLocationOnScreen(loc)
                                 val bounds = AndroidRect(0, 0, surface.width, surface.height)
                                 // THE SECOND ARGUMENT IS A LIST OF HOLES, AND
-                                // IT STAYS EMPTY. Cutting the stroke chip out
-                                // of it while the pill was up is the right
-                                // diagnosis of the chip ghost — raw drawing is
-                                // a hardware path, so the driver inks wherever
-                                // the nib lands regardless of what Compose
-                                // drew on top — and it was REVERTED on
-                                // 2026-10-05 because the region never came
-                                // back. The pill sits at BottomCenter, so a
-                                // fixed band of the page stopped taking ink;
-                                // the points still arrived and still saved, so
-                                // the stroke appeared on the next page turn,
-                                // which is the pair of symptoms that names the
-                                // cause. Handing back emptyList() reaches the
-                                // firmware as a zero-length int[], and that
-                                // does not clear what was set.
-                                // Read docs/onyx-pen-thread.md §T10 before
-                                // putting anything in this list again: the
-                                // decompiled call chain and the two candidate
-                                // replacements are written up there.
-                                helper?.setLimitRect(bounds, emptyList())
+                                // IT IS NEVER EMPTY.
+                                //
+                                // Cutting the stroke chip out of it while the
+                                // pill is up is the right diagnosis of the
+                                // chip ghost — raw drawing is a hardware path,
+                                // so the driver inks wherever the nib lands
+                                // regardless of what Compose drew on top. That
+                                // cure was REVERTED on 2026-10-05 because the
+                                // region never came BACK: the pill sits at
+                                // BottomCenter, so one fixed band of the page
+                                // stopped taking ink for the rest of the
+                                // session, while the points still arrived and
+                                // still saved — the stroke appeared on the
+                                // next page turn. That symptom pair says the
+                                // app-side filter was fine and the firmware
+                                // was still holding the exclusion.
+                                //
+                                // §T10 read the call chain out of the aar and
+                                // found the two layers parting company on
+                                // empty: `safeAddAll(dst, src, true)` clears
+                                // the SDK's own list correctly, but the
+                                // firmware is handed `new int[0]`, and a
+                                // zero-length region array is read as "nothing
+                                // to do" rather than "clear what you have".
+                                //
+                                // So the release is a DEGENERATE RECT rather
+                                // than an absence: one pixel in the top-left
+                                // corner, which always REPLACES whatever was
+                                // set last. The cost is that single pixel not
+                                // taking ink. If the band ever goes dead
+                                // again, this theory is wrong — read §T10
+                                // before trying a third shape.
+                                val holes = chipRectRef.value
+                                    ?.takeIf { chipOpenRef.value }
+                                    ?.let { listOf(AndroidRect(it)) }
+                                    ?: listOf(AndroidRect(NO_HOLE))
+                                helper?.setLimitRect(bounds, holes)
+                                Log.d(TAG, "limitRect($reason) holes=$holes")
                                 Log.d(TAG, "  (view origin on screen = ${loc[0]},${loc[1]})")
                                 if (drawEnabledRef.value) helper?.setRawDrawingEnabled(true)
                                 Log.d(TAG, "limitRect($reason) viewLocal=$bounds")
@@ -1364,6 +1401,8 @@ internal fun OnyxInkOverlay(
                             }
                         }
                     }
+
+                    limitRectRequestRef.value = { reason -> applyLimitRect(reason) }
 
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(h: SurfaceHolder) {
@@ -1640,6 +1679,17 @@ private const val DRAG_CONTACT_TIMEOUT_MS = 1500L
  * chip away never repaints the page above it.
  */
 private const val CHIP_BAND_FRACTION = 0.25f
+
+/**
+ * The hole handed to the driver when there is no chip to cut out.
+ *
+ * It exists because an EMPTY list is not a release: the SDK clears its own
+ * in-process list but passes the firmware a zero-length array, which does not
+ * clear what was set, so the last exclusion stands for the rest of the session
+ * (docs/onyx-pen-thread.md §T10). A one-pixel rect in the corner is always a
+ * replacement, and costs one pixel that does not take ink.
+ */
+private val NO_HOLE = AndroidRect(0, 0, 1, 1)
 
 /**
  * How far above a block's visible edge a stroke may start and still count as
