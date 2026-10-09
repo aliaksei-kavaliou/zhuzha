@@ -4,6 +4,54 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+        THE ONYX SDK MERGES TEN PERMISSIONS WE NEVER ASKED FOR.
+
+        Our own manifest declares INTERNET and nothing else, but the built APK
+        carried eleven — read off the artifact with `aapt2 dump permissions`,
+        which is the only place the merged set is visible. None of them are
+        used by our code: no ConnectivityManager, no WakeLock, no overlay
+        window, no services of any kind.
+
+        Four of them actively cost us on Play:
+
+          SYSTEM_ALERT_WINDOW    "display over other apps" — a sensitive
+                                 permission that draws review scrutiny and is
+                                 indefensible on a reading app.
+          READ/WRITE_EXTERNAL_STORAGE
+                                 legacy broad storage, with its own policy
+                                 declarations. Books live in app-private
+                                 storage and backup goes through SAF, so we
+                                 want no part of it.
+          BLUETOOTH              made android.hardware.bluetooth an IMPLIED
+                                 REQUIRED FEATURE, so Play would filter the
+                                 app off any device without Bluetooth.
+          ACCESS/CHANGE_WIFI_STATE
+                                 same, for android.hardware.wifi — and
+                                 CHANGE_WIFI_STATE on a book reader is a
+                                 question nobody wants to answer.
+
+        DUMP is signature-level and can never be granted; FOREGROUND_SERVICE
+        has no service to attach to. Both are noise.
+
+        WAKE_LOCK and ACCESS_NETWORK_STATE are deliberately KEPT. Neither is
+        sensitive and neither filters devices, and both are plausibly used by
+        the pen SDK or its HTTP stack at runtime. The pen working on the Boox
+        matters more than two harmless lines.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" tools:node="remove" />
+    <uses-permission android:name="android.permission.DUMP" tools:node="remove" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+
     <application
         android:name=".InkFirstApplication"
         android:allowBackup="false"
@@ -13,6 +61,32 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.InkFirst"
         tools:replace="android:allowBackup">
+
+        <!--
+            KEEP THE PORTRAIT LOCK ON THE BOOX.
+
+            Android 16 ignores screenOrientation, aspect-ratio and resizability
+            restrictions on any display whose smallest width is >= 600dp, for
+            apps targeting SDK 36. The Go 7 measures 1264x1680 at density 300,
+            which is 674dp — MEASURED on the device, not computed from the spec
+            sheet — so it is a "large screen" by that rule and the portrait lock
+            below would simply be ignored.
+
+            That is not cosmetic here. The reader paginates to the SCREEN: a
+            rotation reflows every page in the book, moves every bookmark's
+            page, and strands handwriting, which is anchored to blocks and does
+            not reflow with the text. A reading app that repaginates when the
+            device tips is a broken one.
+
+            This opt-out stops working at targetSdk 37, so a genuinely adaptive
+            layout is deferred work rather than avoided work. When that comes,
+            the question to answer first is what a landscape page even IS for
+            this book — two columns, or a wider measure — and the ink anchoring
+            has to be solved alongside it.
+        -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
