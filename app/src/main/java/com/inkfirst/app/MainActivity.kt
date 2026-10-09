@@ -264,12 +264,19 @@ private fun InkFirstApp() {
             val slug = entry.arguments?.getString("slug").orEmpty()
             ExportScreen(
                 slug = slug,
-                // Names its destination rather than popping — same rule as
-                // ReaderNotesScreen above, and for the same reason.
+                // Pops BACK TO the Contents entry rather than building a
+                // fresh one. Navigating with `popUpTo(inclusive = true)`
+                // destroyed it and created a replacement, so Contents lost
+                // its state and reopened at its default page — reported as
+                // "back from export goes to the first TOC page, not the page
+                // where export opened".
+                //
+                // Export is reached from Contents and nowhere else, so there
+                // is always an entry to go back to; the fallback is for a
+                // deep link that never happens today.
                 onBack = {
-                    nav.navigate(Routes.courseDetail(slug)) {
-                        popUpTo(Routes.COURSE_DETAIL) { inclusive = true }
-                        launchSingleTop = true
+                    if (!nav.popBackStack(Routes.COURSE_DETAIL, inclusive = false)) {
+                        nav.navigate(Routes.courseDetail(slug)) { launchSingleTop = true }
                     }
                 },
             )
@@ -278,14 +285,19 @@ private fun InkFirstApp() {
             val slug = entry.arguments?.getString("slug").orEmpty()
             ReaderNotesScreen(
                 slug = slug,
-                // Always Contents, never a pop: this screen is reached from
-                // the Contents list AND from the reader's own menu, and a pop
-                // from the second lands back in the chapter rather than
-                // where the label says.
+                // Always Contents, never a bare pop: this screen is reached
+                // from the Contents list AND from the reader's own menu, and
+                // popping one entry from the second lands back in the chapter
+                // rather than where the label says.
+                //
+                // But popping TO Contents does both jobs — it unwinds the
+                // reader as well when that is what sits between — and unlike
+                // the old navigate-with-inclusive it keeps the EXISTING entry,
+                // so Contents does not lose its page. Same defect as the
+                // export screen's back; same fix.
                 onBack = {
-                    nav.navigate(Routes.courseDetail(slug)) {
-                        popUpTo(Routes.COURSE_DETAIL) { inclusive = true }
-                        launchSingleTop = true
+                    if (!nav.popBackStack(Routes.COURSE_DETAIL, inclusive = false)) {
+                        nav.navigate(Routes.courseDetail(slug)) { launchSingleTop = true }
                     }
                 },
             )

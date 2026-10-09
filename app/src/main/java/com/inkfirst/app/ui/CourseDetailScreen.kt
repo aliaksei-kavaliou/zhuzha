@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
@@ -430,9 +431,16 @@ private fun PagedContents(
         val pages = remember(blocks, availableHeightPx, contentWidthPx) {
             paginateToc(blocks, contentWidthPx, availableHeightPx, density, measurer)
         }
-        // Preserve pageIndex across content changes (e.g. deleting a note).
-        // Only clamp if the current page no longer exists — otherwise stay put.
-        var pageIndex by remember { mutableStateOf(0) }
+        // Preserve pageIndex across content changes (e.g. deleting a note),
+        // AND across leaving the screen. Only clamp if the current page no
+        // longer exists — otherwise stay put.
+        //
+        // rememberSaveable, not remember: opening Export or the reading
+        // record takes this composable out of composition, and a plain
+        // remember dies with it. Reported as "back from export goes to the
+        // first TOC page, not the page where export opened". The navigation
+        // entry survives the trip; only saveable state rides along with it.
+        var pageIndex by rememberSaveable { mutableStateOf(0) }
         LaunchedEffect(pages.size) {
             if (pageIndex >= pages.size) pageIndex = (pages.size - 1).coerceAtLeast(0)
         }
@@ -449,7 +457,14 @@ private fun PagedContents(
         // A book with nothing read has no current chapter, so this finds
         // nothing and leaves it on the title page, which is the right opening
         // for a book you have not started.
-        var openedAtCurrent by remember { mutableStateOf(false) }
+        //
+        // Saveable for the same reason as pageIndex, and it is the half that
+        // actually bit: restoring the page is useless if this flag resets,
+        // because the jump then re-runs on the way back and overrides it.
+        // Going back from Export landed on the current chapter's page rather
+        // than the page you left, which looks like the page was not restored
+        // at all.
+        var openedAtCurrent by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(pages) {
             if (openedAtCurrent || availableHeightPx <= 0) return@LaunchedEffect
             openedAtCurrent = true
