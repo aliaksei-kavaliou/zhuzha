@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace = "com.inkfirst.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.inkfirst"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
         // Onyx pen SDK ships prebuilt native libs only for arm; strip the
