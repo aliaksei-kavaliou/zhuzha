@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zhuzha — Privacy Policy</title>
+<style>
+  :root { --fg:#111; --bg:#fff; --muted:#555; --rule:#ddd; --accent:#000; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e8e8e8; --bg:#121212; --muted:#aaa; --rule:#333; --accent:#fff; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:2.5rem 1.25rem 5rem;
+    background:var(--bg); color:var(--fg);
+    font:17px/1.65 Georgia,'Times New Roman',serif;
+  }
+  main { max-width:40rem; margin:0 auto; }
+  h1 { font-size:1.9rem; line-height:1.2; margin:0 0 .25rem; }
+  h2 { font-size:1.15rem; margin:2.25rem 0 .6rem; padding-top:1rem; border-top:1px solid var(--rule); }
+  .updated { color:var(--muted); font-size:.9rem; margin:0 0 2rem; }
+  p, li { margin:0 0 .9rem; }
+  ul { padding-left:1.25rem; }
+  strong { color:var(--accent); }
+  code { font:0.9em ui-monospace,SFMono-Regular,Menlo,monospace; background:rgba(128,128,128,.14); padding:.1em .35em; border-radius:3px; }
+  a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--rule); color:var(--muted); font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Zhuzha — Privacy Policy</h1>
+<p class="updated">Last updated: 9 October 2026</p>
+
+<p>Zhuzha is a reading app that compiles study books on your device. It has no server, no
+account, and no analytics. This policy describes what happens to your data, which is mostly:
+it stays on your device.</p>
+
+<h2>What the developer collects</h2>
+<p><strong>Nothing.</strong> Zhuzha has no backend. The developer operates no server, receives no
+telemetry, runs no analytics or crash reporting SDK, and serves no advertising. There is no
+account to create and no way for the developer to identify you or see your books.</p>
+
+<h2>Your API key</h2>
+<p>Zhuzha requires you to supply your own Google Gemini API key. It is stored encrypted on your
+device, in the Android Keystore via EncryptedSharedPreferences. It is never written to a plain
+file, never included in a backup made by the app, and never transmitted anywhere except to
+Google's own API when generating a book.</p>
+
+<h2>What is sent off the device, and to whom</h2>
+<p>To generate a book, Zhuzha sends text to <strong>Google's Gemini API</strong> using your API key.
+The app communicates with no other network service of any kind.</p>
+<p>What is sent:</p>
+<ul>
+  <li>The topic, daily reading time and prior-knowledge description you type when creating a course</li>
+  <li>The course outline and previously generated chapters, as context for writing the next chapter</li>
+  <li>A passage you select together with the question you ask about it</li>
+  <li>A record of how a chapter was read — which passages were asked about or marked, and notes you wrote — used to shape later chapters</li>
+  <li>Briefs describing pictures to draw</li>
+</ul>
+<p>Because you use your own API key, this traffic is between you and Google under <strong>your</strong>
+agreement with Google. Google's handling of it is governed by the Google APIs Terms of Service
+and the Gemini API terms, not by this policy. Review them if that matters to you:
+<a href="https://ai.google.dev/gemini-api/terms">ai.google.dev/gemini-api/terms</a></p>
+<p>Nothing is sent to the developer at any point.</p>
+
+<h2>What stays on your device</h2>
+<p>Your books, chapters, pictures, notes, handwriting, questions, bookmarks and reading progress
+are written as ordinary files in the app's private storage. They are deliberately plain and
+inspectable — Markdown and JSON — so they remain readable even if this app stops existing.</p>
+
+<h2>Backups you choose to make</h2>
+<p>If you use the backup feature, Zhuzha writes copies of your books to a folder <strong>you</strong>
+pick, using Android's document picker. That folder is yours; the app only writes to the location
+you grant it. It never uploads anything.</p>
+
+<h2>Export</h2>
+<p>Exporting a book writes an EPUB file to a location you choose. Whether that file leaves your
+device is entirely your decision. Annotations are excluded from an export unless you explicitly
+switch them on.</p>
+
+<h2>Permissions</h2>
+<p>Zhuzha requests three permissions, and only the first is used by the app's own code:</p>
+<ul>
+  <li><strong><code>INTERNET</code></strong> — to reach the Gemini API. This is the only network use, and the Gemini API is the only host contacted.</li>
+  <li><strong><code>ACCESS_NETWORK_STATE</code></strong> and <strong><code>WAKE_LOCK</code></strong> — merged in by the Onyx stylus SDK that provides low-latency handwriting on Boox devices. Zhuzha's own code calls neither.</li>
+</ul>
+<p>It requests no access to contacts, location, camera, microphone, phone state, storage,
+Bluetooth, or your photo library.</p>
+
+<h2>Children</h2>
+<p>Zhuzha is not directed at children and the developer does not knowingly collect data from
+anyone. Books are generated by a third-party AI model from prompts you write; as with any
+generative model, output is not guaranteed suitable for children.</p>
+
+<h2>Deleting your data</h2>
+<p>Deleting a book from the Library removes its files. Uninstalling the app removes all of its
+data from your device, including the stored API key. Backups you made to your own folder are not
+touched — delete those yourself.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the date above changes with it.</p>
+
+<h2>Contact</h2>
+<p><a href="mailto:aliaksei.kavaliou@kiloverse.com">aliaksei.kavaliou@kiloverse.com</a></p>
+
+<footer>Zhuzha · AI-generated study books for e-ink readers</footer>
+</main>
+</body>
+</html>

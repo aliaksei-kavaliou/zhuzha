@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zhuzha</title>
+<meta name="description" content="AI-compiled study books for e-ink readers. You say what you want to learn; it writes you a book, one chapter at a time.">
+<meta property="og:title" content="Zhuzha">
+<meta property="og:description" content="Ask for a book, not an answer.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://zhuzha.app/">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+  /* Light is the ground truth: this is a product about paper-white screens.
+     Dark is defined only as token overrides, in both the unstamped
+     (prefers-color-scheme) and explicitly stamped states. */
+  :root {
+    --paper:#ffffff; --ink:#111111; --muted:#555555; --rule:#dddddd;
+    --measure:38rem;
+    --serif:"Literata",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#121212; --ink:#e8e8e8; --muted:#9a9a9a; --rule:#333333;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#121212; --ink:#e8e8e8; --muted:#9a9a9a; --rule:#333333;
+  }
+
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; padding:0 1.25rem 4rem;
+    background:var(--paper); color:var(--ink);
+    font:400 17px/1.7 var(--serif);
+    font-optical-sizing:auto;
+  }
+  main { max-width:var(--measure); margin:0 auto; }
+
+  /* ---- the reader's own chrome: a running head, and a page number ---- */
+  .runhead {
+    display:flex; justify-content:space-between; align-items:baseline; gap:1rem;
+    max-width:var(--measure); margin:0 auto; padding:1.25rem 0 2.25rem;
+    font:500 12px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted);
+  }
+  .runhead a { color:inherit; }
+
+  h1 {
+    font:600 clamp(2.4rem,9vw,3.2rem)/1.05 var(--serif);
+    margin:0; letter-spacing:-.02em; text-wrap:balance;
+  }
+  .byline {
+    font:400 12px/1.6 var(--mono); letter-spacing:.07em; text-transform:uppercase;
+    color:var(--muted); margin:.7rem 0 2rem;
+  }
+  .lede { font-size:1.22rem; line-height:1.55; margin:0 0 1.4rem; text-wrap:pretty; }
+  p { margin:0 0 1.1rem; text-wrap:pretty; }
+  strong { font-weight:600; }
+  a { color:inherit; text-decoration:underline; text-underline-offset:.18em; text-decoration-thickness:1px; }
+  a:hover { text-decoration-thickness:2px; }
+  :focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+
+  /* ---- the app's block treatment: a label on a band, body, closing rule.
+         Used only where the content really is a block in the app's sense. ---- */
+  .block { margin:2.6rem 0; }
+  .block > .label {
+    display:block; border-top:2px solid var(--ink); padding:.55rem 0 .15rem;
+    font:500 12px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase;
+  }
+  .block > .close { border-top:1px solid var(--ink); margin-top:1.1rem; }
+  .block.task p { font-style:italic; }
+
+  /* Three rows of the working room an exercise leaves you. Here it is the
+     space after the only instruction on the page. */
+  .room {
+    height:4.6rem; margin:.9rem 0 0;
+    background-image:radial-gradient(var(--ink) 1.3px, transparent 1.4px);
+    background-size:1.55rem 1.55rem; background-position:.4rem .6rem;
+    opacity:.42;
+  }
+
+  h2 { font:600 1.28rem/1.3 var(--serif); margin:2.6rem 0 .7rem; text-wrap:balance; }
+  ul { list-style:none; padding:0; margin:0 0 1.1rem; }
+  li { position:relative; padding-left:1.4rem; margin:0 0 .8rem; }
+  li::before { content:"\2014"; position:absolute; left:0; color:var(--muted); }
+  .term { font-weight:600; }
+
+  figure { margin:2.8rem 0; text-align:center; }
+  figure svg { width:clamp(120px,34vw,168px); height:auto; display:inline-block; }
+  figure svg path { fill:var(--ink); }
+  figcaption {
+    font:400 12px/1.6 var(--mono); letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); margin-top:.9rem;
+  }
+
+  .plain { color:var(--muted); font-size:.95rem; }
+  footer {
+    max-width:var(--measure); margin:4rem auto 0; padding-top:1rem;
+    border-top:1px solid var(--rule);
+    display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap;
+    font:400 12px/1.8 var(--mono); letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<div class="runhead">
+  <span>&#8801;&ensp;Zhuzha</span>
+  <span>zhuzha.app</span>
+</div>
+
+<main>
+  <h1>Ask for a book,<br>not an answer.</h1>
+  <p class="byline">A study-book compiler for e-ink readers &middot; ~4 min &middot; one reader</p>
+
+  <p class="lede">Chat is a bad container for learning. Answers scroll away, nothing
+  paces you, and there is no way to move back and forth through an argument.</p>
+
+  <p>Zhuzha inverts that. You say what you want to learn and how many minutes a day
+  you have. It writes you a <strong>book</strong> &mdash; an outline first, then chapters one
+  at a time, in a teaching style you choose. The chat lives <em>around</em> the book
+  instead of being the product.</p>
+
+  <p>You read paginated pages on e-ink, mark a passage with a stylus, ask about that
+  exact passage, and write in the margin. The book notices how you read, and carries
+  it into the next chapter.</p>
+
+  <figure>
+    <svg viewBox="26.6 28.9 54.8 51.9" role="img" aria-label="Zhuzha, a black dog with upright ears"><path d="M76.668,29.920C75.239,30.188 73.995,30.838 71.901,32.412C70.316,33.601 68.292,35.264 66.849,36.561C65.489,37.785 64.215,38.989 63.430,39.800L62.867,40.378L62.610,40.210C62.405,40.074 62.344,40.046 62.310,40.072C62.235,40.135 62.076,40.453 61.828,41.045C61.542,41.714 61.449,41.908 61.319,42.087C61.230,42.208 61.224,42.211 61.109,42.197C61.042,42.188 60.722,42.142 60.395,42.096C59.321,41.940 59.217,41.931 58.244,41.934C56.856,41.937 56.030,42.044 54.488,42.410C54.349,42.442 54.312,42.436 53.824,42.312C53.278,42.174 52.473,42.012 51.892,41.925C51.606,41.882 51.361,41.873 50.477,41.876C49.325,41.879 48.872,41.914 47.922,42.078C47.226,42.200 47.287,42.202 47.183,42.058C47.044,41.862 46.900,41.585 46.753,41.238C46.557,40.776 46.285,40.265 46.172,40.141L46.074,40.034L45.939,40.112C45.861,40.158 45.748,40.228 45.685,40.271L45.572,40.349L45.280,40.046C44.284,39.003 41.660,36.636 39.794,35.100C38.258,33.835 36.220,32.296 35.204,31.632C33.512,30.526 32.374,30.053 31.187,29.963C29.920,29.868 29.013,30.209 28.517,30.968C27.855,31.978 27.642,34.236 28.003,36.387C28.242,37.811 28.681,39.387 29.290,40.993C29.868,42.523 30.803,44.336 31.545,45.370C31.872,45.826 31.967,46.008 32.259,46.738C32.596,47.584 32.692,47.919 32.969,49.279C33.289,50.853 33.558,51.196 35.380,52.383C36.151,52.885 36.688,53.255 36.864,53.408C36.962,53.492 36.962,53.495 36.907,53.529C36.685,53.662 36.486,53.936 36.535,54.040C36.569,54.113 36.971,54.439 37.398,54.742C37.661,54.930 37.820,55.068 38.036,55.311C38.359,55.669 38.365,55.680 38.599,56.570L38.691,56.916L38.671,57.494C38.663,57.811 38.648,58.103 38.642,58.143C38.637,58.184 38.622,58.351 38.611,58.519C38.570,59.191 38.429,60.323 38.235,61.507C37.713,64.718 37.710,64.729 37.629,65.595C37.577,66.158 37.568,67.131 37.615,67.380C37.632,67.478 37.692,67.674 37.744,67.816C37.799,67.957 37.845,68.093 37.845,68.116C37.845,68.197 37.996,68.639 38.206,69.173C38.781,70.628 38.775,70.680 37.993,72.721C37.675,73.541 37.531,74.021 37.441,74.543C37.410,74.725 37.378,74.904 37.366,74.939C37.346,75.011 37.511,75.150 38.553,75.929C40.666,77.514 42.864,78.707 45.185,79.533L45.581,79.674L45.835,79.368C46.187,78.943 46.253,78.860 46.386,78.640L46.502,78.450L46.239,78.430C46.097,78.421 45.739,78.412 45.451,78.412C45.029,78.412 44.896,78.404 44.804,78.366C44.489,78.239 44.735,77.933 45.471,77.532C45.786,77.358 46.086,77.165 46.233,77.044L46.320,76.971L46.216,76.969C46.057,76.969 45.477,76.859 45.266,76.790C44.821,76.648 44.400,76.377 44.400,76.235C44.400,76.102 44.521,76.042 45.312,75.782C46.519,75.381 47.154,75.040 47.746,74.471C47.971,74.254 48.419,73.729 48.448,73.648C48.456,73.622 48.523,73.657 48.641,73.746C49.799,74.598 51.173,74.947 53.350,74.947C54.670,74.947 55.591,74.774 56.619,74.330L56.723,74.286L56.844,74.445C57.323,75.080 58.132,75.767 58.735,76.059C59.096,76.232 59.752,76.460 60.274,76.596C60.791,76.729 60.904,76.830 60.788,77.052C60.704,77.214 60.185,77.500 59.731,77.633C59.368,77.742 59.379,77.716 59.604,77.904C60.216,78.412 60.898,78.736 61.963,79.019C62.197,79.082 62.440,79.160 62.503,79.192C62.699,79.293 62.723,79.443 62.572,79.622C62.532,79.671 62.512,79.712 62.526,79.712C62.610,79.712 63.736,79.278 64.495,78.955C67.628,77.618 70.827,75.360 73.331,72.718L73.787,72.236L73.706,71.962C73.541,71.396 73.244,70.741 72.704,69.750C71.884,68.243 71.812,67.715 72.176,65.838C72.314,65.128 72.360,64.683 72.337,64.322C72.311,63.958 72.274,63.788 72.046,63.037C71.939,62.688 71.763,62.102 71.656,61.738C71.549,61.371 71.393,60.860 71.312,60.598C71.145,60.063 70.902,59.145 70.666,58.166L70.507,57.511L70.547,57.271C70.663,56.599 70.951,55.669 71.171,55.256C71.324,54.967 71.376,54.918 71.769,54.681C72.242,54.398 72.522,54.173 72.522,54.072C72.522,53.988 72.407,53.850 72.161,53.648C72.083,53.581 72.025,53.521 72.031,53.515C72.040,53.506 72.482,53.174 73.013,52.773C75.513,50.887 75.655,50.717 75.926,49.236C75.958,49.060 76.056,48.523 76.146,48.038C76.460,46.328 76.585,45.913 76.922,45.439C78.300,43.513 79.420,40.863 79.839,38.538C80.393,35.466 80.301,32.469 79.605,31.078C79.322,30.509 78.854,30.116 78.253,29.946C78.008,29.879 76.992,29.862 76.668,29.920ZM74.021,38.616C74.133,38.700 74.197,38.847 74.197,39.029C74.197,39.220 74.055,39.818 73.951,40.074C73.908,40.176 73.819,40.427 73.749,40.638C73.556,41.218 72.973,42.428 72.617,42.982C72.381,43.346 71.653,44.394 71.341,44.818C70.937,45.361 70.723,45.670 70.738,45.687C70.761,45.711 71.252,45.557 71.598,45.419C72.519,45.058 73.504,44.509 74.113,44.019C74.396,43.793 74.509,43.721 74.535,43.747C74.563,43.776 74.370,44.293 74.229,44.558C73.761,45.451 73.019,46.415 72.196,47.192C71.641,47.717 71.564,47.859 71.685,48.093C71.760,48.240 71.872,48.306 72.210,48.396C72.675,48.517 72.831,48.612 72.929,48.832C73.001,48.988 73.001,49.285 72.929,49.438C72.814,49.692 72.522,49.920 72.121,50.070C71.575,50.275 70.163,50.570 70.088,50.495C70.071,50.477 70.195,50.310 70.426,50.041C70.943,49.441 70.920,49.415 70.111,49.643C69.505,49.816 68.965,49.949 68.948,49.929C68.942,49.923 68.979,49.836 69.037,49.735C69.092,49.634 69.196,49.450 69.265,49.323C69.392,49.097 69.583,48.653 69.623,48.491C69.643,48.399 69.574,48.298 69.485,48.298C69.381,48.298 69.104,48.413 68.832,48.572C68.682,48.658 68.555,48.728 68.549,48.722C68.543,48.719 68.618,48.540 68.711,48.329C68.806,48.119 68.922,47.827 68.968,47.683C69.109,47.241 69.222,46.559 69.153,46.568C69.138,46.568 69.014,46.701 68.870,46.860C68.584,47.180 68.260,47.440 67.946,47.596C67.836,47.654 67.674,47.743 67.591,47.795C67.507,47.850 67.420,47.893 67.397,47.893C67.354,47.893 66.863,47.215 66.863,47.154C66.863,47.065 67.290,46.008 67.513,45.543C67.671,45.211 67.822,44.963 68.113,44.547C68.336,44.235 68.344,44.215 68.318,44.114C68.295,44.019 68.281,44.010 68.182,44.001C67.980,43.984 67.501,44.189 67.189,44.429C67.106,44.492 67.036,44.535 67.036,44.527C67.036,44.403 67.882,43.175 68.370,42.595C68.558,42.373 68.572,42.301 68.442,42.240C68.344,42.194 68.006,42.228 67.686,42.321C67.576,42.353 67.484,42.373 67.478,42.367C67.472,42.364 67.608,42.223 67.778,42.058C69.153,40.724 70.435,39.846 71.844,39.272C72.066,39.182 72.424,39.032 72.638,38.937C73.530,38.541 73.824,38.472 74.021,38.616ZM35.137,38.654C35.282,38.703 35.536,38.804 35.706,38.882C35.873,38.960 36.260,39.125 36.561,39.246C37.768,39.734 38.651,40.279 39.852,41.281C40.193,41.564 41.030,42.350 41.013,42.367C41.007,42.373 40.938,42.358 40.860,42.335C40.658,42.272 40.187,42.202 40.100,42.223C40.060,42.234 40.011,42.260 39.991,42.286C39.945,42.344 39.968,42.387 40.242,42.725C40.747,43.352 41.455,44.403 41.455,44.527C41.455,44.535 41.371,44.478 41.270,44.403C41.050,44.238 40.782,44.105 40.522,44.036C40.346,43.987 40.331,43.987 40.259,44.033C40.138,44.114 40.164,44.195 40.450,44.622C40.750,45.075 41.091,45.757 41.394,46.513C41.605,47.042 41.628,47.125 41.559,47.151C41.538,47.160 41.408,47.316 41.270,47.501C40.967,47.908 40.932,47.934 40.802,47.879C40.649,47.815 40.464,47.680 40.311,47.515C40.233,47.434 40.124,47.327 40.069,47.278C40.014,47.229 39.820,47.042 39.644,46.860C39.260,46.470 39.266,46.464 39.393,47.082C39.491,47.556 39.604,47.905 39.812,48.378C39.907,48.589 39.982,48.768 39.982,48.774C39.982,48.783 39.864,48.710 39.722,48.618C39.240,48.300 38.885,48.234 38.885,48.459C38.885,48.609 39.136,49.161 39.428,49.649C39.514,49.796 39.581,49.923 39.572,49.929C39.552,49.952 39.229,49.874 38.599,49.695C38.290,49.606 37.970,49.528 37.886,49.519C37.736,49.502 37.730,49.504 37.730,49.574C37.730,49.646 37.866,49.816 38.241,50.206C38.357,50.327 38.452,50.443 38.452,50.460C38.452,50.581 37.141,50.345 36.555,50.119C35.680,49.779 35.334,49.245 35.680,48.765C35.821,48.569 36.211,48.413 36.555,48.413C36.852,48.413 37.008,48.185 36.913,47.882C36.849,47.685 36.783,47.602 36.581,47.463C36.344,47.304 35.539,46.464 35.230,46.060C34.693,45.355 34.086,44.313 33.994,43.938C33.936,43.704 33.971,43.710 34.309,43.981C35.134,44.648 36.864,45.511 37.623,45.633C37.733,45.650 37.736,45.647 37.704,45.586C37.684,45.552 37.493,45.289 37.274,44.997C36.344,43.756 35.663,42.708 35.273,41.917C34.779,40.918 34.265,39.425 34.265,39.000C34.265,38.870 34.355,38.674 34.441,38.614C34.554,38.536 34.834,38.553 35.137,38.654ZM46.184,52.556C46.276,52.585 46.377,52.643 46.450,52.712C46.557,52.813 46.565,52.834 46.565,52.984C46.565,53.197 46.473,53.310 46.256,53.365C45.907,53.457 45.583,53.235 45.583,52.906C45.583,52.574 45.806,52.447 46.184,52.556ZM61.573,52.649C61.686,52.732 61.767,52.940 61.741,53.079C61.695,53.316 61.406,53.492 61.129,53.449C60.626,53.373 60.572,52.770 61.054,52.614C61.233,52.559 61.472,52.574 61.573,52.649ZM43.201,53.905C43.577,55.256 44.994,55.906 46.340,55.345C46.577,55.247 46.528,55.305 46.248,55.455C45.569,55.816 44.798,55.828 44.097,55.487C43.551,55.221 43.193,54.797 42.985,54.159L42.898,53.890L43.005,53.798C43.066,53.746 43.123,53.708 43.132,53.714C43.141,53.720 43.173,53.807 43.201,53.905ZM64.394,53.928L64.507,54.043L64.472,54.182C64.452,54.257 64.380,54.436 64.311,54.577C63.782,55.657 62.581,56.119 61.363,55.715C61.126,55.634 60.713,55.415 60.713,55.369C60.713,55.357 60.811,55.386 60.930,55.429C61.755,55.750 62.766,55.649 63.401,55.181C63.698,54.964 64.071,54.393 64.192,53.971C64.218,53.885 64.250,53.812 64.262,53.812C64.273,53.812 64.334,53.864 64.394,53.928ZM54.075,57.170C54.292,57.315 54.320,57.549 54.188,58.097C54.087,58.519 54.133,58.608 54.500,58.677C54.826,58.741 55.025,58.830 55.195,58.995C55.348,59.142 55.348,59.145 55.371,59.359C55.406,59.723 55.461,59.766 55.943,59.815C56.434,59.867 56.795,59.968 57.237,60.182C57.707,60.410 58.230,60.817 58.230,60.956C58.230,61.048 58.366,61.293 58.643,61.709C59.425,62.873 60.078,64.111 60.349,64.943C60.586,65.679 60.687,66.704 60.595,67.527C60.580,67.663 60.560,67.957 60.551,68.182L60.531,68.592L60.635,68.696C60.878,68.939 61.117,68.766 61.285,68.220C61.345,68.018 61.478,67.400 61.507,67.172C61.524,67.042 61.533,67.028 61.646,66.976C62.004,66.814 62.448,67.007 62.624,67.403C62.772,67.738 62.795,68.096 62.688,68.399C62.281,69.548 61.527,70.466 60.638,70.891C59.919,71.234 59.266,71.286 58.591,71.050C58.496,71.018 58.178,70.925 57.883,70.845C57.179,70.654 56.359,70.411 55.299,70.082C54.199,69.739 53.804,69.629 53.336,69.534C52.839,69.433 52.608,69.358 52.556,69.277C52.499,69.187 52.426,68.665 52.418,68.255L52.412,67.917L52.571,67.810C52.816,67.643 53.264,67.435 53.740,67.267C54.621,66.958 54.736,66.880 55.649,65.979C56.076,65.552 56.255,65.356 56.333,65.217C56.466,64.983 56.622,64.516 56.700,64.103C56.734,63.929 56.780,63.704 56.804,63.600C56.997,62.780 56.841,62.070 56.319,61.374C56.102,61.085 55.888,60.895 55.516,60.647C55.146,60.404 55.025,60.341 54.699,60.225C54.101,60.014 53.607,59.965 52.865,60.034C52.308,60.086 51.866,60.084 51.315,60.020C50.244,59.893 49.351,60.205 48.494,60.999C47.885,61.562 47.619,62.160 47.584,63.043C47.564,63.560 47.596,63.808 47.735,64.207C47.789,64.357 47.864,64.602 47.905,64.749C47.948,64.900 48.015,65.093 48.058,65.180C48.300,65.697 48.904,66.378 49.424,66.724C49.759,66.950 49.825,66.981 50.348,67.172C50.766,67.322 51.043,67.464 51.387,67.695C51.681,67.891 51.661,67.827 51.690,68.714L51.713,69.340L51.644,69.384C51.606,69.410 51.419,69.462 51.228,69.505C50.244,69.716 49.510,69.955 47.864,70.611C47.004,70.951 46.796,70.977 46.403,70.793C45.529,70.383 45.182,69.675 45.049,68.018C44.951,66.794 45.023,65.948 45.312,64.986C45.774,63.442 46.282,62.186 46.857,61.175C47.044,60.843 47.128,60.756 47.605,60.407C47.945,60.156 48.595,59.783 49.141,59.521C49.455,59.370 49.637,59.232 50.088,58.793C50.937,57.964 51.170,57.892 51.731,58.291C51.988,58.475 52.083,58.444 52.504,58.048C52.845,57.730 53.385,57.318 53.625,57.190C53.821,57.087 53.942,57.081 54.075,57.170ZM52.501,61.319C53.246,61.386 54.066,61.643 54.205,61.853C54.326,62.038 54.072,62.307 53.668,62.417C53.498,62.463 53.018,62.457 52.680,62.405C52.201,62.330 51.892,62.321 51.505,62.373C50.541,62.500 49.886,62.336 49.886,61.966C49.886,61.660 50.431,61.432 51.459,61.311C51.647,61.288 52.198,61.293 52.501,61.319ZM53.232,64.677C53.769,65.159 54.300,65.232 55.366,64.963C55.634,64.897 55.689,64.891 55.689,64.926C55.689,64.969 55.039,65.621 54.912,65.702C54.806,65.774 54.323,65.760 54.029,65.682C53.397,65.509 53.041,65.133 53.013,64.614L52.998,64.394L53.056,64.481C53.085,64.527 53.166,64.617 53.232,64.677ZM50.752,64.764C50.752,65.142 50.405,65.460 49.912,65.538C49.513,65.598 49.170,65.532 48.993,65.359C48.858,65.229 48.638,64.905 48.658,64.871C48.667,64.856 48.748,64.874 48.840,64.905C49.092,64.995 49.406,65.041 49.759,65.044C50.174,65.044 50.298,65.004 50.532,64.784C50.628,64.692 50.717,64.622 50.732,64.631C50.743,64.637 50.752,64.697 50.752,64.764ZM49.926,71.307C50.784,71.581 51.557,71.685 52.773,71.685C54.098,71.685 55.051,71.529 55.689,71.208L55.822,71.142L56.570,71.396C57.855,71.829 58.129,71.922 58.172,71.936C58.207,71.948 58.207,71.956 58.161,71.982C58.094,72.025 57.615,72.349 57.141,72.672C56.203,73.310 55.288,73.628 54.087,73.732C52.946,73.833 51.318,73.671 50.466,73.374C49.692,73.102 48.884,72.542 48.228,71.818C48.104,71.679 48.006,71.564 48.012,71.558C48.032,71.543 48.803,71.197 49.002,71.113L49.201,71.026L49.426,71.122C49.548,71.177 49.776,71.257 49.926,71.307Z"/></svg>
+    <figcaption>Zhuzha, who the app is named after</figcaption>
+  </figure>
+
+  <h2>What it does</h2>
+  <ul>
+    <li><span class="term">Writes the course.</span> Topic, daily minutes and what you
+    already know become an outline with chapters, objectives and time estimates.</li>
+    <li><span class="term">Remembers across chapters.</span> Each chapter is written
+    against a running memory of the course, so chapter&nbsp;6 knows what chapter&nbsp;2 taught.</li>
+    <li><span class="term">Draws.</span> Loose greyscale sketches, a cover picture of the
+    problem each chapter solves, and a mascot marking exercises and recaps. They exist to
+    make a study page feel alive, not to be reference diagrams.</li>
+    <li><span class="term">Takes handwriting.</span> Raw stylus ink with no perceptible
+    lag on supported hardware: underline a line to ask about it, sweep to erase, write
+    your answer before you reveal the book&rsquo;s.</li>
+    <li><span class="term">Reads you back.</span> What you asked, what you marked without
+    asking, what you wrote &mdash; kept in a plain file you can read and edit, and fed into
+    the next chapter.</li>
+    <li><span class="term">Lets go.</span> Every book exports as an EPUB, and everything
+    is on disk as Markdown and JSON. Nothing is trapped in the app.</li>
+  </ul>
+
+  <h2>Why it looks like this</h2>
+  <p>The design rules come from the display, not from taste. E-ink renders every
+  intermediate frame, so a smooth scroll arrives as a crawling smear &mdash; everything
+  paginates instead. A grey that looks subtle on a laptop is mud at 300&nbsp;DPI on
+  paper-white, so there are no greys. Narrow bands at the edges turn pages, and the
+  middle of the page is deliberately inert, because with a stylus in hand most contacts
+  with the middle of a page are accidental.</p>
+  <p>The constraint is the point. The book-page metaphor is the whole idea.</p>
+
+  <div class="block">
+    <span class="label">Plainly</span>
+    <p>This is a personal project in daily use, not a company. There is no account, no
+    server, and no telemetry &mdash; the developer receives nothing, because there is
+    nowhere for it to go. Your books live on your device as ordinary files.</p>
+    <p>It runs on <strong>your own Google Gemini API key</strong>, which you enter once
+    and which is stored encrypted on the device. That keeps it free to run and free to
+    give away, and it means the first thing the app asks you for is a key. If that is a
+    dealbreaker, it is better to know now than after installing.</p>
+    <div class="close"></div>
+  </div>
+
+  <div class="block task">
+    <span class="label">Try this</span>
+    <p>Any Android phone will run it, and it is built for a 7-inch e-ink tablet with a
+    stylus &mdash; an Onyx Boox, in the one case it has been tuned against. Get a Gemini
+    API key, install, and ask it for a book about the thing you keep meaning to learn.</p>
+    <div class="room" aria-hidden="true"></div>
+    <div class="close"></div>
+  </div>
+
+  <p class="plain">Not on Google Play yet. If the app writes you something wrong or
+  offensive, there is a report button on the page itself &mdash; it writes a file you can
+  read before you send anything.</p>
+</main>
+
+<footer>
+  <!-- Add the issue tracker here when the repository goes public. No dead links until then. -->
+  <span><a href="privacy.html">Privacy</a></span>
+  <span>Page 1 of 1</span>
+</footer>
+
+</body>
+</html>
