@@ -1,10 +1,10 @@
-# InkFirst
+# Zhuzha
 
 AI-generated study books for e-ink readers. Personal project by Aliaksei (aliaksei.kavaliou@kiloverse.com), may be open-sourced later. This file is the handoff context for Claude Code sessions — read it fully before doing anything.
 
 ## The idea (elevator pitch)
 
-Chat AI is a bad container for learning: answers scroll away, there's no pacing, no structure, no way to go back and forth. InkFirst inverts this — the AI **compiles a book**, and the chat lives *around* the book instead of *being* the product.
+Chat AI is a bad container for learning: answers scroll away, there's no pacing, no structure, no way to go back and forth. Zhuzha inverts this — the AI **compiles a book**, and the chat lives *around* the book instead of *being* the product.
 
 The user says "I want to learn X, I have N minutes/day." The app (via Gemini API) generates a course outline, then chapters one at a time, in a pedagogical style chosen at course-creation time — either a built-in preset or one described in the user's own words. Presets ship in `:core` as named system-prompt templates:
 
@@ -15,7 +15,7 @@ The user says "I want to learn X, I have N minutes/day." The app (via Gemini API
 
 The chosen style key is stored in `course.json` and drives prompt selection for all generation calls. The user reads paginated chapters, selects text to ask the AI about it, takes notes (typed first, stylus handwriting later), and tracks progress chapter by chapter.
 
-Name origin: "Ink First" = e-ink-first design + a nod to Head First. GitHub name checked as free in Aug 2026.
+Name: **Zhuzha**, Aliaksei's dog — black with a white chest, which is the whole palette an e-ink screen has, and the launcher icon is her head. It means nothing else on purpose; nine rounds of naming proved every word that MEANS something is already somebody's app. Renamed from InkFirst on 2026-10-12 (a real iOS app owns that name); `applicationId` is `app.zhuzha`, domain `zhuzha.app`. Dated entries below predate the rename and still say InkFirst — they are a record of what happened, not current naming.
 
 ## Target device & constraints
 

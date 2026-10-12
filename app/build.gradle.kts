@@ -11,7 +11,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.inkfirst"
+        applicationId = "app.zhuzha"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

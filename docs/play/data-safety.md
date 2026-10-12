@@ -1,7 +1,7 @@
 # Play Data safety — draft answers
 
 The Data safety form is a **declaration you sign**, and under-declaring is a
-common cause of enforcement action. The awkward question for InkFirst is the
+common cause of enforcement action. The awkward question for Zhuzha is the
 BYO-key one, and it is answered conservatively below. Verify against the live
 form text before submitting — Play's wording changes.
 

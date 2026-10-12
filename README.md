@@ -1,9 +1,9 @@
-# InkFirst
+# Zhuzha
 
 AI-generated study books for e-ink readers.
 
 Chat is a bad container for learning. Answers scroll away, there is no pacing, no
-structure, and no way to move back and forth through an argument. InkFirst inverts
+structure, and no way to move back and forth through an argument. Zhuzha inverts
 that: the AI **compiles a book**, and the chat lives *around* the book instead of
 *being* the product.
 
@@ -122,6 +122,10 @@ than a phone screen.
 
 ## A note on names
 
-"Ink First" is e-ink-first design, and a nod to the Head First pedagogy that inspired
-the default teaching style. This project is not affiliated with or endorsed by
-O'Reilly Media, and uses none of their branding or trade dress.
+Zhuzha is the author's dog. She is black with a white chest, which happens to be the
+entire palette an e-ink screen has. The name means nothing else, on purpose: every
+word that meant something was already an app.
+
+The default teaching style is inspired by the Head First pedagogy. This project is not
+affiliated with or endorsed by O'Reilly Media, and uses none of their branding or
+trade dress.

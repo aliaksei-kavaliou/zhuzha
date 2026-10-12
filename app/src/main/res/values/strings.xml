@@ -22,7 +22,7 @@
   and the Russian that existed is recoverable from the commit that removed it.
 -->
 <resources>
-    <string name="app_name">InkFirst</string>
+    <string name="app_name">Zhuzha</string>
 
     <string name="about_this_chapter">About this chapter</string>
     <string name="add_note">Add note</string>

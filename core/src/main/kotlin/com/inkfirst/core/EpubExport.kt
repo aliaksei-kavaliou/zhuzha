@@ -320,7 +320,7 @@ private fun opfDocument(
     <dc:identifier id="bookid">${esc(bookId(course))}</dc:identifier>
     <dc:title>${esc(course.title)}</dc:title>
     <dc:language>${esc(langCode(course.language))}</dc:language>
-    <dc:creator>InkFirst</dc:creator>
+    <dc:creator>Zhuzha</dc:creator>
     <dc:date>${esc(course.created)}</dc:date>
     <meta property="dcterms:modified">${esc(modified)}</meta>
   </metadata>

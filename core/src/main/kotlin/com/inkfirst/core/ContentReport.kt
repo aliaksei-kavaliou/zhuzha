@@ -125,7 +125,7 @@ fun ContentReport.toMarkdown(): String = buildString {
  * body: a reader forwarding this should not need anything to render it.
  */
 fun reportsAsEmailBody(markdown: String): String = buildString {
-    appendLine("InkFirst — content reports")
+    appendLine("Zhuzha — content reports")
     appendLine()
     appendLine(
         "These are reports written in the app about AI-generated pages. " +

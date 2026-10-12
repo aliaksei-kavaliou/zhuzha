@@ -202,4 +202,4 @@ private fun sendReportsByEmail(context: Context, markdown: String) {
 }
 
 private const val REPORT_EMAIL = "aliaksei.kavaliou@kiloverse.com"
-private const val REPORT_SUBJECT = "InkFirst — content report"
+private const val REPORT_SUBJECT = "Zhuzha — content report"

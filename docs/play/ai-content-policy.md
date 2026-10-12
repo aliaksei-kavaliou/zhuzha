@@ -1,6 +1,6 @@
-# Play's AI-Generated Content policy — what InkFirst owes
+# Play's AI-Generated Content policy — what Zhuzha owes
 
-InkFirst's entire product is generative-AI output, so this policy applies in
+Zhuzha's entire product is generative-AI output, so this policy applies in
 full. It has two halves. We are strong on one and have nothing on the other.
 
 ## Half 1 — prevent Restricted Content: ALREADY BUILT

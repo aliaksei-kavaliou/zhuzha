@@ -1,4 +1,4 @@
-# InkFirst — Design Notes
+# Zhuzha — Design Notes
 
 Companion to `../CLAUDE.md` (read that first for context and decisions). This doc holds the concrete design: on-disk formats, data model, generation strategy, UI shape. It's a living document — update it when the design actually changes.
 
@@ -7,7 +7,7 @@ Companion to `../CLAUDE.md` (read that first for context and decisions). This do
 Everything a course is lives under one folder. Plain, inspectable, greppable, syncable-by-anything.
 
 ```
-/storage/.../InkFirst/courses/<course-slug>/
+/storage/.../Android/data/app.zhuzha/files/courses/<course-slug>/
 ├── course.json          # outline, metadata, progress — single source of truth
 ├── memory.md            # running course memory (see §3)
 ├── chapters/
@@ -892,8 +892,8 @@ changed, the run says so in words ("only where you left off had changed").
 **Where the picker opens.** A folder outside the app's own is reachable only through a grant a
 person hands over, so there is no such thing as a default backup directory — what there is, is
 a picker that starts somewhere useful. It opens at the chosen folder when there is one, and at
-`Documents` when there is not, with `Documents/InkFirst` named on screen as the suggestion.
-Pointing it at `Documents/InkFirst` directly would be better and is wrong: a provider that
+`Documents` when there is not, with `Documents/Zhuzha` named on screen as the suggestion.
+Pointing it at `Documents/Zhuzha` directly would be better and is wrong: a provider that
 cannot resolve the initial URI gives up and opens wherever it likes, which is exactly the
 first-run case the hint exists for.
 

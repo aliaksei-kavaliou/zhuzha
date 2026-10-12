@@ -132,7 +132,7 @@ class ContentReportTest {
         val store = CourseStore(tmp)
         store.appendReport(report())
         val body = reportsAsEmailBody(store.readReports())
-        assertTrue(body.startsWith("InkFirst — content reports"), body)
+        assertTrue(body.startsWith("Zhuzha — content reports"), body)
         assertTrue(body.contains("nothing was sent automatically"), body)
         assertTrue(body.contains("Looking Really Closely"), body)
     }

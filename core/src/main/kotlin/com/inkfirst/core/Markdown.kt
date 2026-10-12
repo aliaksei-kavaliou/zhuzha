@@ -1,7 +1,7 @@
 package com.inkfirst.core
 
 /**
- * The subset of Markdown InkFirst chapters use. See docs/design.md §2 —
+ * The subset of Markdown Zhuzha chapters use. See docs/design.md §2 —
  * vanilla Markdown plus the three custom fenced-block kinds (exercise,
  * recap, figure). Kept lean on purpose: no links, block quotes, tables,
  * HR, or nested lists. A `commonmark` swap-in is possible later without

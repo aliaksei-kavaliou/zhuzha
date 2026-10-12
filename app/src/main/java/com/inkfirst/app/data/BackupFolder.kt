@@ -38,7 +38,7 @@ class BackupFolder(context: Context) {
      * Where the picker should open when it is opened.
      *
      * The chosen folder if there is one — changing it usually means moving it
-     * somewhere near — and otherwise a suggestion: `Documents/InkFirst` on
+     * somewhere near — and otherwise a suggestion: `Documents/Zhuzha` on
      * the device's own storage. The app cannot CREATE that folder or write to
      * it unaided; a folder outside its own is reachable only through the
      * picker, by a grant a person hands over. What it can do is open the
@@ -50,7 +50,7 @@ class BackupFolder(context: Context) {
      */
     fun suggestion(): Uri = uri() ?: DocumentsContract.buildDocumentUri(
         EXTERNAL_STORAGE_PROVIDER,
-        // Documents itself, not Documents/InkFirst: pointing the picker at a
+        // Documents itself, not Documents/Zhuzha: pointing the picker at a
         // folder that does not exist yet is how you get it to give up and
         // open wherever it feels like, which is the case this is for.
         "primary:Documents",
@@ -69,9 +69,9 @@ class BackupFolder(context: Context) {
 
     /**
      * What to call the folder on screen. The provider's own display name when
-     * it gives one ("Downloads", "InkFirst backup"), otherwise the tail of
+     * it gives one ("Downloads", "Zhuzha backup"), otherwise the tail of
      * the document id, which for the built-in provider reads like
-     * "primary:Documents/InkFirst".
+     * "primary:Documents/Zhuzha".
      */
     fun label(uri: Uri): String {
         val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
@@ -92,7 +92,7 @@ class BackupFolder(context: Context) {
 
     companion object {
         /** Shown on screen when no folder is chosen, so the suggestion is sayable. */
-        const val SUGGESTED_PATH = "Documents/InkFirst"
+        const val SUGGESTED_PATH = "Documents/Zhuzha"
 
         /** What the picker actually opens at — the parent, which exists. */
         const val SUGGESTED_PARENT = "Documents"
