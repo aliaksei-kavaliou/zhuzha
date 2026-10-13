@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "title": "Pen and Paper Confidence: Drawing Real Life Without Looking for an Eraser",
+  "slug": "pen-and-paper-confidence-drawing-real-life-without-looking-f",
+  "topic_prompt": "Drawing everyday things from observation with an ordinary pen, no eraser and no special materials",
+  "prior_knowledge": "I cannot draw at all. Stick figures only. I have never had a lesson and I am slightly embarrassed to try.",
+  "expectations": "Draw recognisable everyday objects and people from life, in pen, and not mind that it is imperfect",
+  "daily_minutes": 15,
+  "style": "headfirst-inspired",
+  "style_request": "",
+  "style_prompt": "",
+  "style_mascot": "",
+  "model": "gemini-3.5-flash-lite",
+  "language": "English",
+  "units": "metric",
+  "figures": "generous",
+  "created": "2026-09-29",
+  "chapters": [
+    {
+      "n": 1,
+      "slug": "01-embracing-the-wobble-why-mistakes-are-just-lines",
+      "title": "Embracing the Wobble: Why Mistakes Are Just Lines",
+      "objectives": [
+        "Hold a regular ballpoint pen without tensing your hand muscles",
+        "Make marks on paper on purpose without stopping to judge them",
+        "Accept messy, uneven lines as part of real drawing"
+      ],
+      "est_minutes": 15,
+      "status": "done",
+      "last_block_index": 0
+    },
+    {
+      "n": 2,
+      "slug": "02-looking-really-closely-at-your-coffee-mug",
+      "title": "Looking Really Closely at Your Coffee Mug",
+      "objectives": [
+        "Focus purely on the physical edges of a simple object right in front of you",
+        "Ignore what you think a mug looks like and draw only what your eyes actually see",
+        "Complete a full pen outline of a mug without lifting the pen from the paper"
+      ],
+      "est_minutes": 15,
+      "status": "done",
+      "last_block_index": 0
+    },
+    {
+      "n": 3,
+      "slug": "03-chasing-shadows-with-ink-making-flat-things-look-round",
+      "title": "Chasing Shadows with Ink: Making Flat Things Look Round",
+      "objectives": [
+        "Notice where light hits an everyday object and where it casts a shadow",
+        "Use simple lines placed close together to show dark areas",
+        "Add weight and depth to a flat outline using only ink density"
+      ],
+      "est_minutes": 30,
+      "status": "pending",
+      "last_block_index": 0
+    },
+    {
+      "n": 4,
+      "slug": "04-drawing-boxy-things-like-books-and-tables",
+      "title": "Drawing Boxy Things Like Books and Tables",
+      "objectives": [
+        "Spot tilted angles on rectangular household objects",
+        "Translate receding edges onto your flat sheet of paper using pen strokes",
+        "Draw a recognisable stack of books sitting on a flat surface"
+      ],
+      "est_minutes": 30,
+      "status": "pending",
+      "last_block_index": 0
+    },
+    {
+      "n": 5,
+      "slug": "05-finding-curves-in-soft-things-like-shirts-and-socks",
+      "title": "Finding Curves in Soft Things Like Shirts and Socks",
+      "objectives": [
+        "Trace the gentle folds and bends of soft fabric left on a chair",
+        "Use curving lines to suggest flexible material",
+        "Draw a piece of clothing with confidence despite messy line work"
+      ],
+      "est_minutes": 30,
+      "status": "pending",
+      "last_block_index": 0
+    },
+    {
+      "n": 6,
+      "slug": "06-capturing-people-without-drawing-stick-figures",
+      "title": "Capturing People Without Drawing Stick Figures",
+      "objectives": [
+        "Look at a real person or a photo and see simple block shapes instead of details",
+        "Capture the general posture and slouch of a human body in pen",
+        "Draw a recognisable human silhouette within a 15-minute time limit"
+      ],
+      "est_minutes": 30,
+      "status": "pending",
+      "last_block_index": 0
+    },
+    {
+      "n": 7,
+      "slug": "07-putting-it-all-together-a-complete-scene-from-your-room",
+      "title": "Putting It All Together: A Complete Scene from Your Room",
+      "objectives": [
+        "Select a corner of your room containing multiple everyday objects",
+        "Arrange a small still-life scene on paper using overlapping pen lines",
+        "Finish a complete drawing and feel proud of its imperfect charm"
+      ],
+      "est_minutes": 45,
+      "status": "pending",
+      "last_block_index": 0
+    }
+  ],
+  "bookmarks": [],
+  "annotations": []
+}

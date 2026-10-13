@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -42,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import com.inkfirst.app.R
+import com.inkfirst.app.data.DemoBook
+import com.inkfirst.app.data.coursesRootFor
 import com.inkfirst.app.data.rememberCourseStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,6 +59,7 @@ fun LibraryScreen(
     onSettings: () -> Unit,
     onOpenCourse: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     val store = rememberCourseStore()
     var summaries by remember { mutableStateOf<List<CourseSummary>>(emptyList()) }
     // The book the reader has asked to remove, held until they confirm. Null
@@ -67,7 +71,13 @@ fun LibraryScreen(
     // the map holds nulls rather than being retried on every recomposition.
     var covers by remember { mutableStateOf<Map<String, ImageBitmap?>>(emptyMap()) }
 
-    LaunchedEffect(Unit) { summaries = store.list() }
+    // The demo is installed before the first listing rather than after, so a
+    // new reader never sees an empty shelf blink into a full one. Off the main
+    // thread: it is ~1 MB of asset copy, once in the app's life.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { DemoBook.installIfAbsent(context, coursesRootFor(context)) }
+        summaries = store.list()
+    }
 
     LaunchedEffect(summaries) {
         if (summaries.isEmpty()) return@LaunchedEffect
