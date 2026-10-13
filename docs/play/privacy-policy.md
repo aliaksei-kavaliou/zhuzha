@@ -96,4 +96,4 @@ If this policy changes, the date above changes with it.
 
 ## Contact
 
-aliaksei.kavaliou@kiloverse.com
+a.kavaliou@gmail.com
