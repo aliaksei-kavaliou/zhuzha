@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import com.inkfirst.app.InkFirstApplication
 import com.inkfirst.app.R
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -330,6 +331,10 @@ fun ReaderScreen(
     val apiKeyStore = remember { ApiKeyStore(context) }
     val readerPrefs = remember { ReaderPrefs(context) }
     val scope = rememberCoroutineScope()
+    // Everything on this screen is scoped to the screen, EXCEPT compiling a
+    // chapter, which spends money and takes minutes. That one gets a scope
+    // belonging to the process — see InkFirstApplication.longRunning.
+    val compileScope = (context.applicationContext as InkFirstApplication).longRunning
 
     var course by remember { mutableStateOf<Course?>(null) }
     // The book's own words, re-read when the book (and so the language) changes.
@@ -845,7 +850,7 @@ fun ReaderScreen(
                         compileChapter(
                             course = c,
                             chapterN = chapter.n,
-                            scope = scope,
+                            scope = compileScope,
                             store = store,
                             apiKeyStore = apiKeyStore,
                             onState = { compileState = it },
@@ -1347,7 +1352,7 @@ fun ReaderScreen(
                         compileChapter(
                             course = c,
                             chapterN = ch.n,
-                            scope = scope,
+                            scope = compileScope,
                             store = store,
                             apiKeyStore = apiKeyStore,
                             onState = { compileState = it },

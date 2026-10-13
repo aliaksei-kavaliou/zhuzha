@@ -13,6 +13,10 @@ no telemetry, runs no analytics or crash reporting SDK, and serves no
 advertising. There is no account to create and no way for the developer to
 identify you or see your books.
 
+The single exception is a content report, which only exists because you chose to
+send one, and which reaches the developer as an ordinary email from your own
+mail app. See **Reporting content** below.
+
 ## Your API key
 
 Zhuzha requires you to supply your own Google Gemini API key. It is stored
@@ -42,14 +46,36 @@ Because you use your own API key, this traffic is between you and Google under
 Google APIs Terms of Service and the Gemini API terms, not by this policy.
 Review them if that matters to you: https://ai.google.dev/gemini-api/terms
 
-Nothing is sent to the developer at any point.
+Nothing is sent to the developer automatically. The one exception is a report
+you choose to send — see **Reporting content** below.
 
 ## What stays on your device
 
 Your books, chapters, pictures, notes, handwriting, questions, bookmarks and
-reading progress are written as ordinary files in the app's private storage.
+reading progress are written as ordinary files in the app's own folder on your
+device's storage (`Android/data/app.zhuzha/files`). This is deliberate: the files
+are plain Markdown and JSON, and a file manager can open them, so your study
+material stays readable even if this app stops existing. The trade is that it is
+app-specific storage rather than hidden storage — on Android 9 and earlier, an
+app you have granted storage permission to could read it.
 They are deliberately plain and inspectable — Markdown and JSON — so they remain
 readable even if this app stops existing.
+
+## Reporting content
+
+Every page the app generates can be reported from inside it — this is required of
+apps that produce AI content, and it is the only feature that sends anything to
+the developer.
+
+A report is **written to a file on your device first**, at `reports.md` beside
+your books, and you can read it before deciding anything. Sending is a separate,
+optional step that hands the text to **your own email app**, addressed to
+`reports@zhuzha.app`. The app does not send it; your mail client does, and you
+can edit or abandon it at that point.
+
+A report contains the passage you are reporting, which output it was (a page, an
+answer, or a picture), the book and chapter it came from, and anything you choose
+to write. Declining to send still leaves the record on your device.
 
 ## Backups you choose to make
 

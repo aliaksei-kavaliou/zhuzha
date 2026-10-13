@@ -846,4 +846,33 @@ class CourseStoreTest {
         assertNotNull(store.load("kotlin"))
         assertEquals(1, store.list().size)
     }
+    /**
+     * A course.json is restored from archives and sits in a folder the reader
+     * can edit, so its contents arrive from outside. The folder it was found in
+     * is the slug; what the file claims to be is ignored.
+     */
+    @Test
+    fun `slug comes from the directory, not from the file`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("real-course")
+
+        val onDisk = File(tmp, "real-course/course.json")
+        onDisk.writeText(onDisk.readText().replace("\"real-course\"", "\"../../escaped\""))
+
+        assertEquals(listOf("real-course"), store.list().map { it.slug })
+        assertEquals("real-course", store.load("real-course")?.slug)
+    }
+
+    @Test
+    fun `a slug that leaves the courses root does not load`(@TempDir tmp: File) {
+        val store = CourseStore(tmp)
+        store.createTest("real-course")
+
+        assertNull(store.load("../real-course"))
+        assertNull(store.load(".."))
+        assertNull(store.load("a/b"))
+        // The ordinary case still works, or the guard is just breakage.
+        assertNotNull(store.load("real-course"))
+    }
+
 }

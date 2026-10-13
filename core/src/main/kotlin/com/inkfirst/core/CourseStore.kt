@@ -87,7 +87,14 @@ class CourseStore(private val root: File) {
                 val file = File(dir, "course.json").takeIf { it.exists() } ?: return@mapNotNull null
                 val course = tryDecode(file) ?: return@mapNotNull null
                 CourseSummary(
-                    slug = course.slug,
+                    // THE DIRECTORY IS THE SLUG, not whatever the file says it
+                    // is. course.json is restored from backups and sits in a
+                    // folder the reader can edit, so its contents are data from
+                    // outside; a slug of "../../x" would otherwise reach a dozen
+                    // File(root, "$slug/...") writes. deleteCourse has
+                    // canonicalised against root since it was written — this is
+                    // the same rule, applied where the value enters.
+                    slug = dir.name,
                     title = course.title,
                     chapterCount = course.chapters.size,
                     created = course.created,
@@ -99,8 +106,26 @@ class CourseStore(private val root: File) {
     }
 
     fun load(slug: String): Course? {
+        if (!isContained(slug)) return null
         val file = File(root, "$slug/course.json").takeIf { it.exists() } ?: return null
-        return tryDecode(file)
+        // The loaded object is what the app carries around and passes back as a
+        // courseSlug, so its slug is normalised to the folder it came out of
+        // rather than trusted from the file.
+        return tryDecode(file)?.copy(slug = slug)
+    }
+
+    /**
+     * Whether a slug names a direct child of the courses root.
+     *
+     * Slugs are produced by [courseSlug], which keeps only letters, digits,
+     * marks and hyphens — so a legitimate one can never fail this. It is here
+     * for the ones that did not come from there: a restored archive, or a
+     * folder edited by hand.
+     */
+    private fun isContained(slug: String): Boolean {
+        if (slug.isBlank() || slug == "." || slug == "..") return false
+        if (slug.contains('/') || slug.contains('\\')) return false
+        return File(root, slug).canonicalFile.parentFile == root.canonicalFile
     }
 
     /** Writes chapters/&lt;chapterSlug&gt;.md. Overwrites any prior body. */
