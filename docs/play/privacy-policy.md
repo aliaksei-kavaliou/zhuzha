@@ -96,4 +96,4 @@ If this policy changes, the date above changes with it.
 
 ## Contact
 
-a.kavaliou@gmail.com
+info@zhuzha.app

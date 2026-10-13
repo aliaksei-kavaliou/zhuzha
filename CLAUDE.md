@@ -1,6 +1,6 @@
 # Zhuzha
 
-AI-generated study books for e-ink readers. Personal project by Aliaksei Kavaliou (a.kavaliou@gmail.com), GPL-3.0. This file is the handoff context for Claude Code sessions — read it fully before doing anything.
+AI-generated study books for e-ink readers. Personal project by Aliaksei Kavaliou (info@zhuzha.app), GPL-3.0. This file is the handoff context for Claude Code sessions — read it fully before doing anything.
 
 ## The idea (elevator pitch)
 
