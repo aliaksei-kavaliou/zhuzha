@@ -33,3 +33,9 @@ captures/
 # OS
 .DS_Store
 Thumbs.db
+
+# Wrangler writes deploy state here when run from the repo root. It holds no
+# credentials — those live in ~/Library/Preferences/.wrangler — but it does
+# carry the Cloudflare account id and account name, and it is build state
+# rather than source either way.
+.wrangler/
