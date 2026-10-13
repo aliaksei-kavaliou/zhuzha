@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import com.inkfirst.app.data.ApiKeyStore
 import com.inkfirst.app.data.ReaderPrefs
 import com.inkfirst.app.data.maskApiKey
@@ -93,6 +94,21 @@ fun SettingsScreen(
                 text = "Your Gemini API key stays on this device (encrypted). Get one at ai.google.dev.",
                 style = MaterialTheme.typography.bodySmall,
             )
+
+            // The encrypted store could not be opened — the device's Keystore
+            // would not give us a master key. The app still works, but nothing
+            // typed here outlives the session, and a reader who is not told
+            // simply re-enters their key every morning and wonders why.
+            if (!store.isPersistent) {
+                Text(
+                    text = "This device would not unlock encrypted storage, so a key entered " +
+                        "here lasts until the app closes. It is not saved anywhere, and it is " +
+                        "not written in plain text. Changing the screen lock, or reinstalling, " +
+                        "usually fixes it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
 
             if (!storedKey.isNullOrBlank() && !showKey) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
