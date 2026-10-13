@@ -1,6 +1,6 @@
 # Zhuzha
 
-AI-generated study books for e-ink readers. Personal project by Aliaksei (aliaksei.kavaliou@kiloverse.com), may be open-sourced later. This file is the handoff context for Claude Code sessions — read it fully before doing anything.
+AI-generated study books for e-ink readers. Personal project by Aliaksei Kavaliou (a.kavaliou@gmail.com), Apache-2.0. This file is the handoff context for Claude Code sessions — read it fully before doing anything.
 
 ## The idea (elevator pitch)
 
@@ -36,14 +36,19 @@ Name: **Zhuzha**, Aliaksei's dog — black with a white chest, which is the whol
 5. **Figures are illustrations, not diagrams.** Phase 3 was originally specced as generated *diagrams*; that was reframed on 2026-09-10. The pictures exist to make a study page feel alive (the Head First trick), not to be reference material — so they're loose greyscale sketches from an image-capable Gemini model ("Nano Banana"), drawn per figure slot, with the house style in one constant in `:core`. A semantic diagram DSL rendered natively was designed and rejected: accurate, boring, and not what the pictures are for. See docs/design.md §7.
 6. **Chapter generation is async**: request → outline/chapter generated → rendered → then read (possibly offline). Fits e-ink usage patterns; no need for streaming UI.
 
-## Critical context: the user is NEW to Kotlin
+## Code conventions
 
-Aliaksei's main language is PHP; Python is a language he likes but rarely uses; some frontend — **zero Kotlin experience**. Implications for every session:
-
-- You write the Kotlin; explain non-obvious idioms briefly as you go (coroutines, sealed classes, null-safety, Compose recomposition). When an analogy helps, map from PHP (or web dev generally), not Python.
-- Prefer boring, readable Kotlin over clever Kotlin.
-- When a design choice involves a Kotlin/Android-ecosystem tradeoff the user can't be expected to evaluate yet, state your recommendation and the one-line reason; don't present unexplained option menus.
-- Set up the project so `./gradlew` works from CLI — the user works in VS Code + Claude Code CLI, not necessarily Android Studio.
+- Prefer boring, readable Kotlin over clever Kotlin. This code is read far more often
+  than it is written, usually months later and usually while something is broken.
+- Explain a non-obvious idiom where it appears — coroutines, sealed classes,
+  null-safety, Compose recomposition — rather than assuming the next reader has the
+  same Kotlin in their head you do.
+- When a design choice turns on a Kotlin or Android-ecosystem tradeoff, state the
+  recommendation and the one-line reason. An unexplained menu of options is not a
+  decision.
+- `./gradlew` must work from the command line. This is developed in an editor and a
+  terminal, not necessarily Android Studio; anything that only works from the IDE is
+  broken.
 
 ## MVP scope (build in this order)
 

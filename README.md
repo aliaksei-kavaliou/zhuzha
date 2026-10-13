@@ -129,3 +129,9 @@ word that meant something was already an app.
 The default teaching style is inspired by the Head First pedagogy. This project is not
 affiliated with or endorsed by O'Reilly Media, and uses none of their branding or
 trade dress.
+
+## Licence
+
+Copyright 2026 Aliaksei Kavaliou
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
