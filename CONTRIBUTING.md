@@ -9,6 +9,9 @@ patches are welcome; so is reading the code and taking ideas out of it.
 merge-on-green, and a passing CI run is not consent. If a change is sitting
 open it is because I have not read it yet, not because it has been refused.
 
+The description has to carry the licensing line described at the bottom of this
+file. It is the only hard requirement here, and it is one sentence.
+
 Before opening one, open an issue. Most of the decisions in this codebase were
 argued somewhere — `CLAUDE.md` is a log of ninety-odd of them with the wrong
 turns left in — and a patch that reverses one of those arguments without
@@ -49,6 +52,15 @@ including proprietary ones**.
 **You keep the copyright in what you wrote.** This grant is non-exclusive — it
 takes nothing away from you, and you may do whatever you like with your own
 work elsewhere.
+
+**Say so in the pull request.** Every PR description must contain the line:
+
+> I agree to the contribution terms in CONTRIBUTING.md
+
+A PR without it will not be merged. This is not ceremony: the terms above only
+mean anything if there is a record that a particular person agreed to them, and
+a file in the repository is not that record. Your PR description is — dated,
+attached to your account, and still there years later when somebody asks.
 
 The reason it is here: GPL only stays a meaningful choice while one person can
 still relicense the whole. Without this, a handful of merged patches would
