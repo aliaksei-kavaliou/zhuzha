@@ -10,3 +10,8 @@ One static page, no build step. Deploy this folder as-is.
 
 The only external request is Google Fonts (Literata, IBM Plex Mono). Both have real
 fallbacks, so the page still reads if that request fails.
+
+Pages serves `privacy.html` at `/privacy` and 308-redirects the `.html` form, so the
+canonical URL — the one to give Google Play — is `https://zhuzha.app/privacy`.
+
+Deploy: `npx wrangler pages deploy docs/site --project-name zhuzha --branch main`
