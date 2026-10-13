@@ -134,4 +134,9 @@ trade dress.
 
 Copyright 2026 Aliaksei Kavaliou
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+Licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
+
+Use it, change it, ship it — but a derivative has to stay under the same licence
+and ship its source. The name **Zhuzha** and her likeness are not covered by the
+licence and remain mine. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a
+pull request.
