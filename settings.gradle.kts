@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "InkFirst"
+rootProject.name = "Zhuzha"
 include(":app", ":core")
