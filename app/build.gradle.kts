@@ -23,9 +23,30 @@ android {
         }
     }
 
+    // Release signing is OPTIONAL BY DESIGN. This repository is public, so a
+    // clone with no keystore must still build — it simply produces an unsigned
+    // release, which is fine for anyone who is not publishing to Play. The
+    // properties live in ~/.gradle/gradle.properties, never here: a keystore
+    // path is harmless, a password in a public repo is not.
+    val uploadStore = providers.gradleProperty("ZHUZHA_UPLOAD_STORE_FILE").orNull
+
+    signingConfigs {
+        if (uploadStore != null) {
+            create("upload") {
+                storeFile = file(uploadStore)
+                storePassword = providers.gradleProperty("ZHUZHA_UPLOAD_STORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("ZHUZHA_UPLOAD_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("ZHUZHA_UPLOAD_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            // findByName rather than getByName: absent on a machine without
+            // the keystore, and null here means "leave it unsigned".
+            signingConfig = signingConfigs.findByName("upload")
         }
     }
 
