@@ -91,7 +91,8 @@ fun SettingsScreen(
             Text("Settings", style = MaterialTheme.typography.headlineMedium)
 
             Text(
-                text = "Your Gemini API key stays on this device (encrypted). Get one at ai.google.dev.",
+                text = "Your Gemini API key stays on this device (encrypted). Get one at " +
+                    "aistudio.google.com/apikey.",
                 style = MaterialTheme.typography.bodySmall,
             )
 

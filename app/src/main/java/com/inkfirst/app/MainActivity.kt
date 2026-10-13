@@ -311,6 +311,7 @@ private fun InkFirstApp() {
                 chapterSlug = chapterSlug,
                 startBlockIndex = blockIndex,
                 onBack = { nav.popBackStack() },
+                onSettings = { nav.navigate(Routes.SETTINGS) },
                 onOpenContents = {
                     // Reader → Contents shouldn't stack a new Contents entry each
                     // time; pop any existing Contents off first so the back stack

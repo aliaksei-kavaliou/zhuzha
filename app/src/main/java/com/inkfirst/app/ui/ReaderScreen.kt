@@ -313,6 +313,16 @@ private sealed interface CompileState {
      */
     data class Illustrating(val done: Int, val total: Int, val what: String = "pictures") : CompileState
     data class Failed(val message: String) : CompileState
+
+    /**
+     * Not a failure — a thing the reader has not done yet.
+     *
+     * Separate from [Failed] because Failed renders as one line in the footer,
+     * which is the right size for "Gemini returned 503" and the wrong size for
+     * "here is what a key is, where to get one and what it costs". This one
+     * opens [ApiKeyNeededDialog].
+     */
+    data object NeedsKey : CompileState
 }
 
 @Composable
@@ -325,6 +335,7 @@ fun ReaderScreen(
     onOpenReaderNotes: () -> Unit,
     onSearch: () -> Unit,
     onOpenChapter: (chapterSlug: String, blockIndex: Int) -> Unit,
+    onSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     val store = rememberCourseStore()
@@ -625,6 +636,9 @@ fun ReaderScreen(
             if (state.total <= 1) "Drawing ${state.what}…"
             else "Drawing ${state.what}… ${state.done}/${state.total}"
         is CompileState.Failed -> state.message
+        // The dialog is saying this at full length; a clipped echo in the
+        // footer would only compete with it.
+        CompileState.NeedsKey -> picturesOutstanding
         CompileState.Idle -> picturesOutstanding
     }
     // Anything that spends an API call is off while one is in flight. Failed
@@ -843,6 +857,11 @@ fun ReaderScreen(
                     dayLabel = pendingDayLabel,
                     compileState = compileState,
                     onBack = onBack,
+                    onOpenSettings = {
+                        compileState = CompileState.Idle
+                        onSettings()
+                    },
+                    onDismissNeedsKey = { compileState = CompileState.Idle },
                     onOpenPrevChapter = pendingPrev?.let { p -> { onOpenChapter(p.slug, -1) } },
                     onOpenNextChapter = pendingNext?.let { n -> { onOpenChapter(n.slug, 0) } },
                     onCompile = {
@@ -1334,6 +1353,19 @@ fun ReaderScreen(
             if (c == null || ch == null) {
                 confirmingRewrite = false
             } else {
+                if (compileState is CompileState.NeedsKey) {
+                    ApiKeyNeededDialog(
+                        onOpenSettings = {
+                            compileState = CompileState.Idle
+                            onSettings()
+                        },
+                        // Back to Idle, or the button that opened this stays
+                        // dressed as an error for a chapter that is simply
+                        // not written yet.
+                        onDismiss = { compileState = CompileState.Idle },
+                    )
+                }
+
                 RewriteChapterDialog(
                     chapterTitle = ch.title,
                     marksLost = describeChapterMarks(store, c, chapterSlug),
@@ -5122,6 +5154,11 @@ private fun CompilePrompt(
     compileState: CompileState,
     onBack: () -> Unit,
     onCompile: () -> Unit,
+    // A pending chapter is the likeliest place to meet the missing key — it
+    // is the screen with the button that spends one — and this composable
+    // returns long before the reader body, so the dialog has to be here too.
+    onOpenSettings: () -> Unit,
+    onDismissNeedsKey: () -> Unit,
     onOpenPrevChapter: (() -> Unit)? = null,
     onOpenNextChapter: (() -> Unit)? = null,
 ) {
@@ -5370,6 +5407,10 @@ private fun CompilePrompt(
                 Text(stringResource(R.string.try_again), color = Paper)
             }
         }
+        CompileState.NeedsKey -> ApiKeyNeededDialog(
+            onOpenSettings = onOpenSettings,
+            onDismiss = onDismissNeedsKey,
+        )
         CompileState.Idle -> {
             Button(
                 onClick = onCompile,
@@ -5461,7 +5502,7 @@ private fun illustrateExistingChapter(
 ) {
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     if (apiKey.isBlank()) {
-        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        onState(CompileState.NeedsKey)
         return
     }
     scope.launch {
@@ -5511,7 +5552,7 @@ private fun drawCourseBadges(
 ) {
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     if (apiKey.isBlank()) {
-        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        onState(CompileState.NeedsKey)
         return
     }
     scope.launch {
@@ -5633,7 +5674,7 @@ private fun drawChapterCover(
 ) {
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     if (apiKey.isBlank()) {
-        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        onState(CompileState.NeedsKey)
         return
     }
     scope.launch {
@@ -5679,7 +5720,7 @@ private fun drawChapterTail(
 ) {
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     if (apiKey.isBlank()) {
-        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        onState(CompileState.NeedsKey)
         return
     }
     val coverFile = store.coverFile(course.slug, chapter.slug)
@@ -5738,7 +5779,7 @@ private fun compileChapter(
     val apiKey = apiKeyStore.getApiKey().orEmpty()
     val model = apiKeyStore.getModelName()
     if (apiKey.isBlank()) {
-        onState(CompileState.Failed("No API key set. Go to Settings first."))
+        onState(CompileState.NeedsKey)
         return
     }
     onState(CompileState.Running)
