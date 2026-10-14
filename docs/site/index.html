@@ -85,6 +85,11 @@
   .term { font-weight:600; }
 
   figure { margin:2.8rem 0; text-align:center; }
+  /* A figure is framed by the page's OWN block device rather than by anything
+     added for it: same 2px band, same uppercase label, same closing rule as
+     "Plainly" and "Getting started". The label pulls back left because figure
+     centres its children and the other two blocks are flush left. */
+  figure.block > .label { text-align:left; }
   /* An <img>, not inline: the trace is 196KB of path data and this file is meant
      to stay readable.
 
@@ -138,11 +143,13 @@
   exact passage, and write in the margin. The book notices how you read, and carries
   it into the next chapter.</p>
 
-  <figure>
+  <figure class="block">
+    <span class="label">Figure</span>
     <img src="zhuzha.svg" width="1592" height="1619"
          alt="Zhuzha, a black dog with upright ears and a white chest, drawn as a one-bit sketch">
     <figcaption>Zhuzha, who the app is named after. Black with a white chest
     &mdash; the whole palette an e-ink screen has</figcaption>
+    <div class="close"></div>
   </figure>
 
   <h2>What it does</h2>
