@@ -15,6 +15,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -327,6 +328,25 @@ class KtorGeminiClient(
 
         return try {
             response.body()
+        } catch (e: CancellationException) {
+            // CancellationException IS an Exception, so without this the catch
+            // below would turn "the reader navigated away" into "the server
+            // sent something malformed" — and lie to the parent coroutine,
+            // which must see a cancellation to unwind.
+            //
+            // Defensive consistency rather than a fix for an observed failure,
+            // and worth being exact about which. Every other broad catch in
+            // :core already guards this (BookBadger, ChapterIllustrator,
+            // TopicChecker); this was the one that did not. But a cancellation
+            // during the NETWORK read does not reach here: ktor's SaveBodyPlugin
+            // buffers the body during the call, so it surfaces inside
+            // `http.post` and is rethrown by postWithRetry. Measured off a stack
+            // trace, not assumed — see GeminiCancellationTest, which documents
+            // two attempts that failed to reach this line.
+            //
+            // What is left for this guard is cancellation during the DESERIALIZE
+            // that body() still performs, which can suspend.
+            throw e
         } catch (e: Exception) {
             throw GeminiHttpException("Gemini response was not the expected shape: ${e.message}")
         }
