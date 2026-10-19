@@ -60,10 +60,20 @@ this repo (see `screenshots.md`).
       actually built — the three screening gates (request, outline, chapter)
       and the in-app report path — rather than claiming the output is bounded.
       Under-declaring here is the common way to get re-rated later.
-- [ ] **Target audience** — 18+, or 13+ at the lowest. NOT a children's
-      audience: the app writes on whatever subject is asked for, so it cannot
-      commit to the Families policy, and `data-safety.md` already answers
-      "Committed to Play Families Policy: No".
+- [ ] **Target audience — 18+ ONLY.** Not a judgement call: the Gemini API
+      Additional Terms say "You must be 18 years of age or older to use the
+      APIs", and go on to prohibit using the services through "applications
+      directed toward or likely to be accessed by individuals under 18".
+      Ticking 13-15 or 16-18 is declaring, in Google's own Console, that the
+      app is directed at under-18s, while the Gemini terms it runs on forbid
+      exactly that — two contradictory declarations in the same company's
+      paperwork. 16-18 does not escape it: 16- and 17-year-olds are under 18.
+      It is also simply true, since the app cannot write anything without a
+      key its user may not hold until they are 18.
+      This checklist said "18+, or 13+ at the lowest" until 2026-10-19, which
+      was wrong, and wrong in the direction that gets noticed.
+      Consistent with `data-safety.md` answering "Committed to Play Families
+      Policy: No".
 - [ ] **Data safety** — answers drafted in `data-safety.md`, including the one
       genuinely debatable call (shared: YES, collected: NO) with the reasoning
       written out. Re-read Play's current wording before signing; it changes.
