@@ -17,6 +17,36 @@ On this machine the outputs live in `~/dev_pers/screenshots/play/` — `phone/`
 (icon and feature graphic). The device originals stay in
 `~/dev_pers/screenshots/go7/` and `exported book/` untouched.
 
+## What the shelf screenshot is allowed to contain
+
+**A store screenshot is evidence for the target-audience declaration**, which
+is not obvious until the Console asks whether the app could unintentionally
+appeal to children.
+
+The phone shelf shot originally showed a book called "Fun Big Word Reading
+Adventures for Parents and Kids", with a cartoon child on its cover. It was
+picked for the shelf because it had a cover thumbnail and showed subject
+range — and sitting next to a 13+ declaration it is about the plainest
+child-appeal signal available. Replaced on 2026-10-19 with "How Database
+Indexes Actually Work", which argues the other way.
+
+The Boox shelf never had the problem: drawing, ukulele, sketching, neural
+networks. Worth checking whenever the shelf is reshot, because the library is
+whatever happened to be on the device that day.
+
+## Three asset classes, three different rules
+
+Conflating them is how a correct file looks broken — a check that applied the
+screenshot ratio rule to the feature graphic flagged it, because 1024x500 is
+2.048:1 and screenshots are capped at 2:1. The feature graphic has an EXACT
+required size instead of a ratio.
+
+| | Size | Format |
+|---|---|---|
+| App icon | exactly 512x512 | 32-bit PNG **with** alpha |
+| Feature graphic | exactly 1024x500 | JPEG or 24-bit PNG, **no** alpha |
+| Screenshots | 320..3840/side, long <= 2x short | JPEG or 24-bit PNG, **no** alpha |
+
 ## The icon and the feature graphic
 
 Both are built from `docs/site/icon.svg`, rendered through headless Chrome so
