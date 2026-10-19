@@ -162,12 +162,27 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
 
-            // Dev toggle: on a device without a stylus (emulator), let finger
-            // input draw ink so the capture path can be exercised. On the Boox
-            // this stays off — finger keeps page-turn / text-selection duties.
+            // NOT a dev toggle, though it was labelled one until 2026-10-19.
+            // On a phone there is no stylus, so this switch is the ONLY way
+            // to use the working room under an exercise — and a reader who
+            // meets it marked "(dev)" will reasonably leave it alone.
+            //
+            // It is still OFF by default, and defaulting it on for stylus-less
+            // devices was considered and rejected after measuring: the ink
+            // overlay claims the whole touch stream on ACTION_DOWN whenever
+            // this is set, so with it on a swipe DRAWS instead of turning the
+            // page. Verified on the emulator — a left swipe came back as a
+            // stroke. Turning it on silently would hand a phone reader a book
+            // they could not page through.
+            //
+            // So the honest fix is the WORDING: say what it costs, and name
+            // the way out (the volume buttons still turn pages, which is also
+            // verified). Letting a finger draw only inside the working room
+            // would give a phone both, and is the real fix when there is time
+            // to test it.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "Finger draws ink (dev)",
+                    text = "Finger draws ink",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(end = 12.dp),
                 )
@@ -180,7 +195,10 @@ fun SettingsScreen(
                 )
             }
             Text(
-                text = "Off: stylus draws, finger navigates. On: finger draws too (for testing on non-stylus devices).",
+                text = "Off: your finger turns pages; a stylus draws. " +
+                    "On: your finger draws instead of turning pages — use the " +
+                    "volume buttons to turn. Turn this on to write in the space " +
+                    "under an exercise on a device with no stylus.",
                 style = MaterialTheme.typography.bodySmall,
             )
 

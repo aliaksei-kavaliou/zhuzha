@@ -1635,6 +1635,21 @@ yet" note that used to live here was two months stale.
       defaulted true, so the reader is untouched. Walked end to end on the emulator with the
       key deleted: red line absent, button live, dialog reads "Writing a book needs your own
       key" / "Books already on your shelf stay readable".
+- [x] **"Finger draws ink" is not a dev toggle, and must not default on (2026-10-19)** — it
+      was labelled `(dev)`, which is how a phone reader learns to leave alone the ONLY route
+      to the working room under an exercise. Every phone is a device with no stylus.
+      **I proposed defaulting it on for stylus-less devices and measuring killed that.** The
+      ink overlay sets `shouldHandle = isStylus || allowFingerDraw` and claims the pointer
+      stream on ACTION_DOWN, so with the flag on the parent never sees the gesture: a left
+      swipe on the emulator came back as a saved STROKE, not a page turn. Turning it on
+      silently would hand a tester a book they cannot page through. (The volume buttons still
+      turn pages — verified — which is the way out worth printing.)
+      So the honest fix is the WORDING, and it now says what the switch costs and names the
+      escape. **The real fix, when there is time to test it, is to let a finger draw only
+      INSIDE the working room** — the geometry `strokeIsInWorkingRoom` already asks, moved to
+      ACTION_DOWN — which would give a phone both the room and its page turns. Not before a
+      closed test.
+
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there

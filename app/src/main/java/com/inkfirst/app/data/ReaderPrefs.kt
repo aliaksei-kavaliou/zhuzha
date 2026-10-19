@@ -29,10 +29,12 @@ class ReaderPrefs(context: Context) {
         prefs.edit().putString(KEY_TEXT_ALIGN, pref.key).apply()
     }
 
-    // Dev-only escape hatch for testing ink capture without a stylus (the
-    // emulator has no stylus, and the Boox is the only device with one).
-    // When true, finger touches also draw. On the Boox this should stay off
-    // so finger remains available for page-turn and text selection.
+    // Whether a finger draws as well as a stylus. Written as a dev-only
+    // escape hatch; it is the only way to use an exercise's working room on
+    // a device with no stylus, which is every phone. Off by default, because
+    // the ink overlay claims the whole touch stream while it is on and a
+    // swipe then draws instead of turning the page — see SettingsScreen for
+    // the measurement and the way out.
     fun getFingerDraws(): Boolean = prefs.getBoolean(KEY_FINGER_DRAWS, false)
 
     fun setFingerDraws(enabled: Boolean) {
