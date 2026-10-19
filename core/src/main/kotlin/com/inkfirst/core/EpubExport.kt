@@ -205,6 +205,15 @@ private val CONTAINER_XML = """
  * about, at a font size the reader chose, so anything opinionated about size
  * or family fights the person reading it. What is styled is STRUCTURE — a
  * block has to still read as a block once its badge is gone.
+ *
+ * **No block is marked with a SIDE border.** CSS paints a left or right
+ * border on every fragment of a box the reader breaks across pages, so such
+ * a rule runs to the foot of one page and starts hard against the top of the
+ * next; a top or bottom border is painted only at the box's real edges and
+ * splits cleanly. A block is therefore a bordered label band plus the
+ * [BLOCK_END] rule, which is what the reader screen arrived at in October
+ * for the same reason — and a quotation is marked the way print marks one,
+ * by indenting it.
  */
 private val EPUB_CSS = """
 body { margin: 0 1em; line-height: 1.5; }
@@ -213,19 +222,18 @@ p.byline { margin: 0 0 1.5em; font-style: italic; }
 p { margin: 0 0 0.8em; text-align: justify; }
 figure { margin: 1.4em 0; text-align: center; page-break-inside: avoid; }
 figure img { max-width: 100%; height: auto; }
-figcaption { font-size: 0.85em; font-style: italic; margin-top: 0.4em; }
 p.undrawn { font-style: italic; text-align: center; margin: 1.4em 2em; }
 hr { border: 0; border-top: 1px solid currentColor; opacity: 0.25; margin: 1.6em 20%; }
-pre { white-space: pre-wrap; font-size: 0.85em; padding: 0.6em 0.8em; border-left: 3px solid currentColor; }
-aside { margin: 1.4em 0; padding: 0.2em 0 0.2em 1em; border-left: 3px solid currentColor; }
-aside.exercise { border-left-style: solid; }
-aside.recap { border-left-style: double; }
-p.block-label { font-weight: bold; font-size: 0.8em; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 0.4em; }
+pre { white-space: pre-wrap; font-size: 0.85em; padding: 0.6em 0; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; }
+aside { margin: 1.4em 0; }
+aside > p { font-style: italic; }
+p.block-label { font-style: normal; font-weight: bold; font-size: 0.8em; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid currentColor; padding: 0.3em 0.6em; margin: 0 0 0.8em; }
+hr.block-end { border: 0; border-top: 1px solid currentColor; opacity: 1; margin: 0.2em 0 1.4em; }
 p.answer-link { font-style: italic; font-size: 0.9em; margin-bottom: 0.2em; }
 section.answers, section.reader { margin-top: 2.5em; border-top: 1px solid currentColor; }
 div.answer, div.note, div.qa { margin: 1.2em 0; }
 p.answer-n { font-weight: bold; margin-bottom: 0.2em; }
-blockquote { margin: 0 0 0.5em; padding-left: 0.8em; border-left: 2px solid currentColor; font-style: italic; }
+blockquote { margin: 0 0 0.5em; padding-left: 1.2em; font-style: italic; }
 p.q { font-weight: bold; margin-bottom: 0.3em; }
 """.trimStart()
 
@@ -242,7 +250,13 @@ private fun titlePage(
         if (options.includeAnnotations) {
             // Said on the page, not just in a dialog. Whoever opens this file
             // next may not be the person who chose to put their notes in it.
-            append("<p class=\"undrawn\">${esc(labels.t("This copy includes your notes and questions."))}</p>\n")
+            // <em> for the same reason the undrawn brief carries one: the
+            // class only sets it apart in a reader that honours our CSS.
+            append(
+                "<p class=\"undrawn\"><em>" +
+                    esc(labels.t("This copy includes your notes and questions.")) +
+                    "</em></p>\n",
+            )
         }
         append("</section>\n")
     }

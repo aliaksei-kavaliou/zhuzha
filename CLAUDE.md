@@ -921,7 +921,8 @@ yet" note that used to live here was two months stale.
       rule that e-ink has no grey. The frameless block is also why it is not needed: a fill has
       edges, so it would have reinstated exactly the land-whole-or-look-broken problem the frame
       had.
-      The EPUB keeps its boxes deliberately: it is reflowable, so it never had this problem.
+      The EPUB kept its boxes on the argument that "it is reflowable, so it never had this
+      problem" — WRONG, and corrected on 2026-10-16: reflowing is what causes it.
 - [x] **The rule IS the title block and the footer (2026-10-06)** — Aliaksei on the frameless
       version: "for me it lost visual attraction. Maybe we can play with Title block and add
       some footer, to have visual block on the page." He also asked for a UI review, and the
@@ -1539,6 +1540,58 @@ yet" note that used to live here was two months stale.
       written file read back off the device. **NOT exercised: the email intent** (no mail
       client there; it fails closed) **and the Ask-panel entry point** (needs a book with
       existing Q&A). docs/play/ai-content-policy.md.
+
+- [x] **The export printed the drawing brief under every picture (2026-10-16)** — Aliaksei,
+      after reading an exported book in PocketBook and NeoReader: "we show image prompt under
+      the chapter image in exported book". We did. A figure's `alt=` is the ILLUSTRATOR'S
+      BRIEF — "a yeast cell blowing up a balloon" — and `renderChapter` printed it twice, once
+      in `alt=` and again as a `<figcaption>`, so every reader of the file met the prompt.
+      **The reader screen had already made this call** and written the reason down the day
+      pictures were added: a brief "reads oddly as a caption; it stays as the content
+      description instead". The export never followed it, which is the same shape as every
+      other defect in this file where one rule lives in two places. Caption gone, `alt=` kept
+      — which is where a brief actually earns its place, since it is what a screen reader
+      speaks and what shows when the image will not load.
+      Two tests: the brief appears exactly ONCE in the chapter (in the attribute), and no
+      document or stylesheet in the book mentions `figcaption` at all. Unit-verified only —
+      not re-exported through the device.
+      **Not changed: an UNDRAWN slot still prints its brief** as a visible paragraph. There is
+      no picture there, so the brief is all the reader gets, and a silent hole is worse. Worth
+      revisiting if a book ships with many undrawn slots.
+
+- [x] **A side border is painted on every fragment; a top one is not (2026-10-16)** —
+      Aliaksei, same reading: "the vertical line of try this or recap that split between
+      pages goes to the page end and started from very top, that doesn't look really native".
+      The cause is a CSS fragmentation rule worth keeping: when a reader breaks a box across
+      pages, a LEFT or RIGHT border is painted on every fragment, while a TOP or BOTTOM
+      border is painted only at the box's real edges. So `border-left` could not have
+      behaved any other way — it ran to the foot of one page and began hard against the top
+      of the next, with no label to say what it was.
+      Every block is a label BAND plus a closing rule now, which is exactly what the reader
+      screen arrived at on 2026-10-07 after four other treatments, for exactly this reason:
+      both are small boxes that cannot themselves be divided. The closing rule is MARKUP
+      (`<hr class="block-end"/>`) rather than a border or `::after`, so it survives a reader
+      that does its own thing with CSS. `blockquote` loses its rule too and is marked the way
+      print marks a quotation, by indenting it; `pre` swaps its left rule for top and bottom
+      ones. **No side border is left in the stylesheet, and a test asserts that** — it is the
+      rule, not this instance, that must not come back.
+      **CLAUDE.md's claim that "the EPUB keeps its boxes deliberately: it is reflowable, so
+      it never had this problem" was simply wrong**, and had been since the day it was
+      written. Reflowing is what CAUSES the problem; the app only met it later because its
+      own paginator had to be taught to split a block at all.
+      The known weakness is inherited along with the treatment and is written down rather
+      than discovered later: a block spanning three pages marks its first and its last, and
+      the middle page carries neither — the italic body is what says "still inside".
+      **Proved by rendering, not by reasoning.** The exported XHTML was dumped and put
+      through headless Chrome in a two-column layout, which fragments a box the same way a
+      reflowable reader paginates one: the before shot reproduces his report exactly (a
+      double rule starting at the very top of column two, no label), the after shows the body
+      flowing across the break with nothing touching the column edges. NOT yet seen in
+      PocketBook or NeoReader.
+      **One change he did not ask for, easily reversed**: an exercise and a recap body are
+      now ITALIC in the EPUB, as they are in the app, since the band and the rule are the
+      other two signals there. One line of CSS if it reads as too much.
+
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
