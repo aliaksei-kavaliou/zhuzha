@@ -213,6 +213,7 @@ private fun InkFirstApp() {
                         popUpTo(Routes.LIBRARY) { inclusive = false }
                     }
                 },
+                onSettings = { nav.navigate(Routes.SETTINGS) },
             )
         }
         composable(Routes.COURSE_DETAIL) { entry ->

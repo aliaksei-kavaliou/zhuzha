@@ -1617,6 +1617,24 @@ yet" note that used to live here was two months stale.
       actually sits beside, chip present. The test strokes were cleared afterwards — the
       shipped demo book in `assets/` carries no `ink/` folder, so nothing leaked into what a
       tester gets.
+- [x] **New course no longer opens with a refusal (2026-10-19)** — for a new reader "New
+      course" is the first thing they tap, and it greeted them with
+      "No API key set. Go to Settings first." in error red, above a Generate button disabled
+      for want of the same key. A sentence naming a thing you do not have, beside a dead
+      control giving you no way to get it: the app's opening line.
+      `ApiKeyNeededDialog` had said all the right things since it was written — what a key
+      is, that it is yours, that nothing is billed to the developer, where to get one — and
+      was wired ONLY into the reader's compile paths, which you reach after reading two
+      chapters. The one screen that explains itself was the one nobody met first.
+      The red line is gone, the button is live whenever the rest of the form is, and pressing
+      it without a key opens the dialog. That is the rule the dialog's own doc argues for:
+      explain at the moment of asking.
+      **It also had to learn where it is standing.** Written for the reader, it said "writing
+      a CHAPTER" and closed by reassuring you that "the chapters already written in this book
+      stay readable" — both wrong on a screen where no book exists yet. One `inBook` flag,
+      defaulted true, so the reader is untouched. Walked end to end on the emulator with the
+      key deleted: red line absent, button live, dialog reads "Writing a book needs your own
+      key" / "Books already on your shelf stay readable".
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there

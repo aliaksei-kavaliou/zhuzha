@@ -112,12 +112,17 @@ private sealed interface OutlineUiState {
 fun NewCourseScreen(
     onBack: () -> Unit,
     onCourseCreated: (String) -> Unit,
+    onSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     val store = remember { ApiKeyStore(context) }
     val courseStore = rememberCourseStore()
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+
+    // Shown when someone asks for a book without a key, INSTEAD of refusing
+    // on arrival — see the button below for why that is the right moment.
+    var askingForKey by remember { mutableStateOf(false) }
 
     var topic by remember { mutableStateOf("") }
     var dailyMinutes by remember { mutableStateOf("30") }
@@ -335,14 +340,6 @@ fun NewCourseScreen(
                 TextButton(onClick = onBack) { Text("Back") }
             }
 
-            if (apiKey.isNullOrBlank()) {
-                Text(
-                    text = "No API key set. Go to Settings first.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
             (s as? OutlineUiState.Failed)?.let { failed ->
                 Text(
                     text = failed.message,
@@ -427,16 +424,39 @@ fun NewCourseScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            // NOT disabled for want of a key, and the form carries no red
+            // line about one either. Both were there until 2026-10-19, and
+            // together they are the worst pairing available: a refusal that
+            // names a thing you do not have, beside a dead button that gives
+            // you no way to act on it. For a new reader "New course" is the
+            // first thing they open, so that was the app's opening sentence.
+            //
+            // [ApiKeyNeededDialog] already says what a key is, that it is
+            // theirs, what it costs and where to get one. It was wired only
+            // into the reader's compile paths, which you reach after reading
+            // two chapters — so the one screen that explains itself was the
+            // one nobody met first. The dialog fires HERE at the moment of
+            // asking, which is the rule its own doc argues for.
             Button(
-                enabled = !apiKey.isNullOrBlank() &&
-                    topic.isNotBlank() &&
+                enabled = topic.isNotBlank() &&
                     language.isNotBlank() &&
                     (dailyMinutes.toIntOrNull() ?: 0) > 0 &&
                     (style.key != StylePresets.CUSTOM_KEY || styleRequest.isNotBlank()),
-                onClick = { generate() },
+                onClick = { if (apiKey.isNullOrBlank()) askingForKey = true else generate() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Generate outline")
+            }
+
+            if (askingForKey) {
+                ApiKeyNeededDialog(
+                    onOpenSettings = {
+                        askingForKey = false
+                        onSettings()
+                    },
+                    onDismiss = { askingForKey = false },
+                    inBook = false,
+                )
             }
         }
     }
