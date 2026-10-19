@@ -6,6 +6,10 @@ One static page, no build step. Deploy this folder as-is.
 - `privacy.html` — a copy of `../play/privacy-policy.html`, which is the source of
   truth. Play links to this URL, so re-copy it whenever the policy changes:
   `cp docs/play/privacy-policy.html docs/site/privacy.html`
+- `delete.html` — the data-deletion page Play's Data safety form demands a URL
+  for. Served at `/delete`. It is not a form: there is no account and no server,
+  so there is nothing to request — the page says how to delete everything
+  yourself and gives the contact address for anyone who doubts it.
 - `icon.svg` — the launcher mark, also the favicon
 - `zhuzha.svg` — her portrait, in the page body. A DIFFERENT image from the mark
   and from the launcher icon, which are unchanged and stay as they are.
@@ -15,6 +19,10 @@ fallbacks, so the page still reads if that request fails.
 
 Pages serves `privacy.html` at `/privacy` and 308-redirects the `.html` form, so the
 canonical URL — the one to give Google Play — is `https://zhuzha.app/privacy`.
+The same applies to `delete.html` at `https://zhuzha.app/delete`.
+
+**Both URLs are filed with Google Play and must keep resolving.** A privacy
+policy or deletion URL that 404s is an enforcement matter, not a broken link.
 
 Deploy: `npx wrangler pages deploy docs/site --project-name zhuzha --branch main`
 
