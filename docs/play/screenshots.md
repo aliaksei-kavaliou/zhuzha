@@ -1,9 +1,21 @@
 # Store listing assets
 
-Where they are: `~/dev_pers/screenshots/play/` — `phone/` (1080x1920),
-`tablet-7in/` (1264x1680, the Boox Go 7 panel) and `graphics/` (icon and
-feature graphic). The originals stay in `~/dev_pers/screenshots/go7/` and
-`exported book/` untouched.
+**The finished assets are NOT in this repo, deliberately.** They are derived —
+the icon and the feature graphic are rendered from `docs/site/icon.svg` by the
+recipes below, and a screenshot is a capture of one build's UI with one book's
+content, which goes stale the next time a margin moves. A stale screenshot in
+a repo is worse than no screenshot, because someone will believe it. They are
+also 3.5 MB, which git would keep for ever and keep again on every reshoot.
+
+What IS in the repo is the part that is not reproducible from prose:
+`docs/play/feature-graphic/` holds the HTML and CSS the graphic is rendered
+from, which is 8 KB of text that diffs properly. Rendering it reproduces the
+shipped file byte for byte — checked, not assumed.
+
+On this machine the outputs live in `~/dev_pers/screenshots/play/` — `phone/`
+(1080x1920), `tablet-7in/` (1264x1680, the Boox Go 7 panel) and `graphics/`
+(icon and feature graphic). The device originals stay in
+`~/dev_pers/screenshots/go7/` and `exported book/` untouched.
 
 ## The icon and the feature graphic
 
