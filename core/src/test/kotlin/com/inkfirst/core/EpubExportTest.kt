@@ -244,6 +244,76 @@ class EpubExportTest {
     }
 
     /**
+     * The alt text is the drawing BRIEF — the words the illustrator was
+     * handed. It belongs in alt=, which a reader only meets when the picture
+     * cannot be shown; printed as a caption it shows every reader the prompt.
+     * Reported from PocketBook and NeoReader, 2026-10-16.
+     */
+    @Test
+    fun `a drawn figure carries its brief in alt, never as a caption`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp) { _ ->
+            File(tmp, "bread/figures").mkdirs()
+            File(tmp, "bread/figures/01-yeast-1.jpg").writeBytes(byteArrayOf(9, 9, 9))
+        }
+        val ch = text(files, "OEBPS/ch01.xhtml")
+
+        assertFalse(ch.contains("<figcaption"))
+        assertTrue(ch.contains("alt=\"a yeast cell blowing up a balloon\""))
+        // And the brief appears exactly once — in the attribute.
+        assertEquals(1, ch.split("a yeast cell blowing up a balloon").size - 1)
+    }
+
+    /**
+     * A reflowable reader breaks a long block across pages, and CSS paints a
+     * SIDE border on every fragment — so a left rule runs to the foot of one
+     * page and starts hard against the top of the next. A top or bottom
+     * border is painted only at the box's real edges. Reported from
+     * PocketBook, 2026-10-16: "the vertical line ... goes to the page end and
+     * started from very top, that doesn't look really native".
+     */
+    @Test
+    fun `no block is marked with a side border`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp)
+        val css = text(files, "OEBPS/style.css")
+
+        assertFalse(css.contains("border-left"), css)
+        assertFalse(css.contains("border-right"), css)
+    }
+
+    /** What marks a block instead: a label band at the top, a rule at the end. */
+    @Test
+    fun `an exercise and a recap each close with a rule`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp)
+        val ch = text(files, "OEBPS/ch01.xhtml")
+
+        // One per block, and inside the block rather than after it.
+        assertEquals(2, ch.split("class=\"block-end\"").size - 1)
+        val exercise = ch.substringAfter("<aside class=\"exercise\"").substringBefore("</aside>")
+        val recap = ch.substringAfter("<aside class=\"recap\"").substringBefore("</aside>")
+        assertTrue(exercise.contains("class=\"block-end\""), exercise)
+        assertTrue(recap.contains("class=\"block-end\""), recap)
+        // The exercise's rule closes the block, so it follows the answer link.
+        assertTrue(
+            exercise.indexOf("class=\"block-end\"") > exercise.indexOf("class=\"answer-link\""),
+            exercise,
+        )
+    }
+
+    /** The whole book, not just the chapter that happens to be tested. */
+    @Test
+    fun `no document in the book prints a caption`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp) { _ ->
+            File(tmp, "bread/figures").mkdirs()
+            File(tmp, "bread/figures/01-yeast-1.jpg").writeBytes(byteArrayOf(9, 9, 9))
+            File(tmp, "bread/figures/01-yeast-cover.jpg").writeBytes(byteArrayOf(8, 8, 8))
+        }
+
+        files.keys.filter { it.endsWith(".xhtml") || it.endsWith(".css") }.forEach { name ->
+            assertFalse(text(files, name).contains("figcaption"), name)
+        }
+    }
+
+    /**
      * Only pictures a chapter actually uses. A course accumulates figures
      * across rewrites, and shipping the orphans would quietly inflate the file
      * with pictures no page references.

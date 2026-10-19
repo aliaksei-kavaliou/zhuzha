@@ -70,6 +70,24 @@ internal fun blockLabel(kind: String): String? = when (kind) {
     else -> null
 }
 
+/**
+ * The rule that closes a block, as MARKUP rather than as a border.
+ *
+ * A reflowable reader breaks a long block across pages, and CSS paints a
+ * SIDE border on every fragment while painting a top or bottom border only
+ * at the box's real edges. So the left rule these blocks used to carry ran
+ * down to the foot of one page and started again hard against the top of the
+ * next, which reads as a rendering fault rather than as a block. Reported
+ * from PocketBook, 2026-10-16.
+ *
+ * A label band at the top and a rule at the bottom are what the reader screen
+ * settled on in October for the same reason, after four other treatments: both
+ * are small boxes that cannot themselves be divided, so they land where they
+ * are put. The known weakness is shared too — a block spanning three pages
+ * marks its first and its last, and the middle page carries neither.
+ */
+internal const val BLOCK_END = "<hr class=\"block-end\"/>\n"
+
 /** XML-escapes text. `"` is escaped too so the same function serves attributes. */
 internal fun esc(s: String): String = buildString(s.length) {
     s.forEach { c ->
@@ -226,14 +244,33 @@ internal fun renderChapter(
                     val src = block.params["src"]
                     if (src != null && images.containsKey(src)) {
                         used += src
+                        // No caption. The alt text is the DRAWING BRIEF — the
+                        // words an illustrator was handed — so printing it
+                        // under the picture shows a reader the prompt. It
+                        // stays in alt=, where it belongs: that is what a
+                        // screen reader reads and what shows if the image
+                        // fails to load. The reader screen made this same
+                        // call when pictures were added; the export never
+                        // followed it.
                         body.append(
                             "<figure><img src=\"${esc(images.getValue(src))}\" " +
-                                "alt=\"${esc(alt)}\"/><figcaption>${esc(alt)}</figcaption></figure>\n",
+                                "alt=\"${esc(alt)}\"/></figure>\n",
                         )
                     } else if (alt.isNotBlank()) {
-                        // A slot the budget never drew. The alt text is the
-                        // picture's brief and reads as a caption on its own.
-                        body.append("<p class=\"undrawn\">${esc(alt)}</p>\n")
+                        // A slot the budget never drew. There is no picture,
+                        // so the brief is all the reader gets and a silent
+                        // hole would be worse.
+                        //
+                        // Italic by MARKUP, not by the stylesheet. A reader
+                        // lets its user choose a font and a size, and those
+                        // settings OVERRIDE the publisher's typography —
+                        // PocketBook honoured our borders and drew the old
+                        // figcaption at full body size, upright — so an
+                        // unmarked brief reads as a sentence of the book
+                        // rather than as a note about a missing picture.
+                        // Structure survives a reader's font settings;
+                        // font-size and font-style do not.
+                        body.append("<p class=\"undrawn\"><em>${esc(alt)}</em></p>\n")
                     }
                 }
                 block.kind == "tail" -> img(block.params["src"], source.title, "tail")
@@ -254,6 +291,7 @@ internal fun renderChapter(
                                 "${esc(labels.t("Show answer"))}</a></p>\n",
                         )
                     }
+                    body.append(BLOCK_END)
                     body.append("</aside>\n")
                 }
                 isCodeFence(block.kind) ->
@@ -269,6 +307,7 @@ internal fun renderChapter(
                         body.append("<p class=\"block-label\">${esc(labels.t(it))}</p>\n")
                     }
                     body.append(paragraphs(block.body))
+                    body.append(BLOCK_END)
                     body.append("</aside>\n")
                 }
             }

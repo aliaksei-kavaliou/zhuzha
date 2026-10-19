@@ -1,0 +1,20 @@
+@import url('https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+:root{ --serif:"Literata",Georgia,"Times New Roman",serif;
+       --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+       --ink:#111; --dot:#d8d8d8; }
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1024px;height:500px;overflow:hidden;background:#fff}
+.g{position:relative;width:1024px;height:500px;background:#fff;
+   /* the app's own working-room texture, at the app's own ~5mm rhythm */
+   background-image:radial-gradient(var(--dot) 1.6px, transparent 1.6px);
+   background-size:26px 26px; background-position:13px 13px;
+   display:flex;align-items:center;gap:56px;padding:0 96px}
+.head{flex:0 0 auto;width:300px;height:300px;display:block}
+.t{flex:1 1 auto}
+.name{font:600 76px/1 var(--serif);color:var(--ink);letter-spacing:-.5px}
+.line{font:400 italic 30px/1.35 var(--serif);color:var(--ink);margin-top:18px}
+.sub{font:400 15px/1.5 var(--mono);color:#555;margin-top:22px;letter-spacing:.2px}
+/* The artwork carries the launcher's safe-zone padding — same reason the
+   store icon needed scaling up. Crop it rather than live with the margin. */
+.crop{flex:0 0 auto;overflow:hidden;display:block}
+.crop img{display:block;width:100%;height:100%;transform:scale(1.5);transform-origin:center}

@@ -63,5 +63,25 @@ advertising data.
   listing that the app requires one. A reviewer meeting an unexplained
   credential prompt is a rejection risk.
 - Privacy policy URL is mandatory and must be publicly reachable without a
-  login. `docs/play/privacy-policy.md` served via GitHub Pages is sufficient —
-  but the repo is currently private, so it must be published somewhere public.
+  login. **Done:** https://zhuzha.app/privacy is live and returns 200 without a
+  login (checked 2026-10-16). The repo is public now, so the note that used to
+  stand here — "it must be published somewhere public" — is settled.
+
+## Checked against the code, 2026-10-19
+
+Before signing a declaration, the claims above were verified rather than
+recalled:
+
+- **The only endpoint the app contacts is `generativelanguage.googleapis.com`.**
+  Every other URL in the source is an XML namespace or the `aistudio.google.com`
+  link the key dialog offers the reader to tap.
+- **No analytics, crash-reporting or ad SDK is on the dependency list** —
+  nothing matching firebase, crashlytics, analytics, admob, appsflyer, sentry,
+  bugsnag or facebook.
+- **The MERGED release manifest declares INTERNET, ACCESS_NETWORK_STATE and
+  WAKE_LOCK, and nothing else** (plus an AndroidX-generated receiver
+  permission that is not user-visible). The Onyx SDK's ten extra permissions
+  are removed and stay removed — read off
+  `app/build/intermediates/merged_manifest/release/`, which is where the
+  merged set is legible, not off our own manifest, which only shows the
+  removal directives.

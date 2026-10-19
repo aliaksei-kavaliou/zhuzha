@@ -921,7 +921,8 @@ yet" note that used to live here was two months stale.
       rule that e-ink has no grey. The frameless block is also why it is not needed: a fill has
       edges, so it would have reinstated exactly the land-whole-or-look-broken problem the frame
       had.
-      The EPUB keeps its boxes deliberately: it is reflowable, so it never had this problem.
+      The EPUB kept its boxes on the argument that "it is reflowable, so it never had this
+      problem" — WRONG, and corrected on 2026-10-16: reflowing is what causes it.
 - [x] **The rule IS the title block and the footer (2026-10-06)** — Aliaksei on the frameless
       version: "for me it lost visual attraction. Maybe we can play with Title block and add
       some footer, to have visual block on the page." He also asked for a UI review, and the
@@ -1539,6 +1540,115 @@ yet" note that used to live here was two months stale.
       written file read back off the device. **NOT exercised: the email intent** (no mail
       client there; it fails closed) **and the Ask-panel entry point** (needs a book with
       existing Q&A). docs/play/ai-content-policy.md.
+
+- [x] **The export printed the drawing brief under every picture (2026-10-16)** — Aliaksei,
+      after reading an exported book in PocketBook and NeoReader: "we show image prompt under
+      the chapter image in exported book". We did. A figure's `alt=` is the ILLUSTRATOR'S
+      BRIEF — "a yeast cell blowing up a balloon" — and `renderChapter` printed it twice, once
+      in `alt=` and again as a `<figcaption>`, so every reader of the file met the prompt.
+      **The reader screen had already made this call** and written the reason down the day
+      pictures were added: a brief "reads oddly as a caption; it stays as the content
+      description instead". The export never followed it, which is the same shape as every
+      other defect in this file where one rule lives in two places. Caption gone, `alt=` kept
+      — which is where a brief actually earns its place, since it is what a screen reader
+      speaks and what shows when the image will not load.
+      Two tests: the brief appears exactly ONCE in the chapter (in the attribute), and no
+      document or stylesheet in the book mentions `figcaption` at all. Unit-verified only —
+      not re-exported through the device.
+      **Not changed: an UNDRAWN slot still prints its brief** as a visible paragraph. There is
+      no picture there, so the brief is all the reader gets, and a silent hole is worse. Worth
+      revisiting if a book ships with many undrawn slots.
+
+- [x] **A side border is painted on every fragment; a top one is not (2026-10-16)** —
+      Aliaksei, same reading: "the vertical line of try this or recap that split between
+      pages goes to the page end and started from very top, that doesn't look really native".
+      The cause is a CSS fragmentation rule worth keeping: when a reader breaks a box across
+      pages, a LEFT or RIGHT border is painted on every fragment, while a TOP or BOTTOM
+      border is painted only at the box's real edges. So `border-left` could not have
+      behaved any other way — it ran to the foot of one page and began hard against the top
+      of the next, with no label to say what it was.
+      Every block is a label BAND plus a closing rule now, which is exactly what the reader
+      screen arrived at on 2026-10-07 after four other treatments, for exactly this reason:
+      both are small boxes that cannot themselves be divided. The closing rule is MARKUP
+      (`<hr class="block-end"/>`) rather than a border or `::after`, so it survives a reader
+      that does its own thing with CSS. `blockquote` loses its rule too and is marked the way
+      print marks a quotation, by indenting it; `pre` swaps its left rule for top and bottom
+      ones. **No side border is left in the stylesheet, and a test asserts that** — it is the
+      rule, not this instance, that must not come back.
+      **CLAUDE.md's claim that "the EPUB keeps its boxes deliberately: it is reflowable, so
+      it never had this problem" was simply wrong**, and had been since the day it was
+      written. Reflowing is what CAUSES the problem; the app only met it later because its
+      own paginator had to be taught to split a block at all.
+      The known weakness is inherited along with the treatment and is written down rather
+      than discovered later: a block spanning three pages marks its first and its last, and
+      the middle page carries neither — the italic body is what says "still inside".
+      **Proved by rendering, not by reasoning.** The exported XHTML was dumped and put
+      through headless Chrome in a two-column layout, which fragments a box the same way a
+      reflowable reader paginates one: the before shot reproduces his report exactly (a
+      double rule starting at the very top of column two, no label), the after shows the body
+      flowing across the break with nothing touching the column edges. NOT yet seen in
+      PocketBook or NeoReader.
+      **One change he did not ask for, easily reversed**: an exercise and a recap body are
+      now ITALIC in the EPUB, as they are in the app, since the band and the rule are the
+      other two signals there. One line of CSS if it reads as too much.
+
+- [x] **A margin bar could read a page it was not on (2026-10-19)** — opened as Aliaksei's
+      nit "vertical stroke also should not show chip if there is no text", and the standing
+      guess in this file was wrong. It blamed the near-miss fallback; the walk already runs
+      with `allowNearMiss = false`.
+      **Reproduced before anything was changed**, which is what found it: finger-draw on, a
+      bar dragged down the blank half of a chapter's LAST page — a picture and nothing else
+      — came back `text="it is tall. It is compressed. In Chapter"` and raised the chip. The
+      log named the cause in one line: it had walked blocks 18-24, none of which are on that
+      page.
+      `blockTopsInRoot` is `remember(chapterSlug)` — **keyed on the CHAPTER, not the page** —
+      so it accumulates every block the reader walks past and drops none on a page turn.
+      `extractMarkedPassage` walked the whole map, shifted the stroke into each stale block's
+      recorded coordinate space, and found "overlap" with text that is somewhere else. So the
+      real defect is bigger than the symptom: **a margin bar anywhere could quote text from
+      another page**, and the chip over blank paper was just where it showed.
+      The fix is a filter, not a new rule: the walk takes `onPage` (the page's own
+      `inkableIndices`, already computed for the ink overlay) and skips anything outside it;
+      a stroke anchored off-page returns null outright. Note the neighbour three lines down
+      in the same file — `blockVisibleBottomsInRoot` IS `remember(pages, pageIndex)` — which
+      is the shape this one should have had.
+      **Verified both ways on the emulator.** Blank page: 0 blocks walked, `text=<null>`, no
+      chip. Prose page: 5 blocks walked (exactly the page's own 20-24), the passage the bar
+      actually sits beside, chip present. The test strokes were cleared afterwards — the
+      shipped demo book in `assets/` carries no `ink/` folder, so nothing leaked into what a
+      tester gets.
+- [x] **New course no longer opens with a refusal (2026-10-19)** — for a new reader "New
+      course" is the first thing they tap, and it greeted them with
+      "No API key set. Go to Settings first." in error red, above a Generate button disabled
+      for want of the same key. A sentence naming a thing you do not have, beside a dead
+      control giving you no way to get it: the app's opening line.
+      `ApiKeyNeededDialog` had said all the right things since it was written — what a key
+      is, that it is yours, that nothing is billed to the developer, where to get one — and
+      was wired ONLY into the reader's compile paths, which you reach after reading two
+      chapters. The one screen that explains itself was the one nobody met first.
+      The red line is gone, the button is live whenever the rest of the form is, and pressing
+      it without a key opens the dialog. That is the rule the dialog's own doc argues for:
+      explain at the moment of asking.
+      **It also had to learn where it is standing.** Written for the reader, it said "writing
+      a CHAPTER" and closed by reassuring you that "the chapters already written in this book
+      stay readable" — both wrong on a screen where no book exists yet. One `inBook` flag,
+      defaulted true, so the reader is untouched. Walked end to end on the emulator with the
+      key deleted: red line absent, button live, dialog reads "Writing a book needs your own
+      key" / "Books already on your shelf stay readable".
+- [x] **"Finger draws ink" is not a dev toggle, and must not default on (2026-10-19)** — it
+      was labelled `(dev)`, which is how a phone reader learns to leave alone the ONLY route
+      to the working room under an exercise. Every phone is a device with no stylus.
+      **I proposed defaulting it on for stylus-less devices and measuring killed that.** The
+      ink overlay sets `shouldHandle = isStylus || allowFingerDraw` and claims the pointer
+      stream on ACTION_DOWN, so with the flag on the parent never sees the gesture: a left
+      swipe on the emulator came back as a saved STROKE, not a page turn. Turning it on
+      silently would hand a tester a book they cannot page through. (The volume buttons still
+      turn pages — verified — which is the way out worth printing.)
+      So the honest fix is the WORDING, and it now says what the switch costs and names the
+      escape. **The real fix, when there is time to test it, is to let a finger draw only
+      INSIDE the working room** — the geometry `strokeIsInWorkingRoom` already asks, moved to
+      ACTION_DOWN — which would give a phone both the room and its page turns. Not before a
+      closed test.
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there

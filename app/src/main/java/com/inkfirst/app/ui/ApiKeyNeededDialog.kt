@@ -33,10 +33,27 @@ private const val KEY_URL = "https://aistudio.google.com/apikey"
  * they have read the book and know what the key buys.
  */
 @Composable
-internal fun ApiKeyNeededDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
+internal fun ApiKeyNeededDialog(
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+    /**
+     * Whether there is a book around this ask.
+     *
+     * The dialog was written for the reader, where you are adding a chapter to
+     * something you have been reading — so it says "a chapter", and it closes
+     * by reassuring you that what is already written stays readable. Shown
+     * from New course (2026-10-19) both of those are wrong: nothing has been
+     * written yet and there is no book to reassure anyone about.
+     */
+    inBook: Boolean = true,
+) {
     val context = LocalContext.current
     InkDialog(
-        title = "Writing a chapter needs your own key",
+        title = if (inBook) {
+            "Writing a chapter needs your own key"
+        } else {
+            "Writing a book needs your own key"
+        },
         onDismiss = onDismiss,
         confirmLabel = "Open Settings",
         onConfirm = onOpenSettings,
@@ -44,7 +61,7 @@ internal fun ApiKeyNeededDialog(onOpenSettings: () -> Unit, onDismiss: () -> Uni
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Body(
-                "Chapters are written by Google's Gemini, using a key that belongs to you. " +
+                "Books are written by Google's Gemini, using a key that belongs to you. " +
                     "It stays on this device. Nothing passes through the developer, and " +
                     "nothing is billed to anyone but you.",
             )
@@ -71,8 +88,13 @@ internal fun ApiKeyNeededDialog(onOpenSettings: () -> Unit, onDismiss: () -> Uni
                 color = Ink,
             )
             Body(
-                "The chapters already written in this book stay readable without a key — " +
-                    "one is only needed to write more.",
+                if (inBook) {
+                    "The chapters already written in this book stay readable without a key — " +
+                        "one is only needed to write more."
+                } else {
+                    "Books already on your shelf stay readable without a key — " +
+                        "one is only needed to write more."
+                },
             )
         }
     }
