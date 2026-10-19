@@ -52,9 +52,10 @@ Zhuzha inverts that. Say what you want to learn and how many minutes a day you
 have. It writes you a book — an outline first, then chapters one at a time,
 with illustrations, exercises and recaps. Then you read it like a book.
 
-You bring your own Google Gemini API key. It is free to start, it stays on
-your device, and nothing is billed to anyone but you. A demo book ships with
-the app, so you can read a real chapter before you get one.
+The app is free. Writing books uses your own Google Gemini API key —
+Google's free tier is enough to begin, the key stays on your device, and
+nothing is billed to anyone but you. A demo book ships with the app, so you
+can read a real chapter before you get a key.
 
 
 BUILT FOR E-INK FIRST
