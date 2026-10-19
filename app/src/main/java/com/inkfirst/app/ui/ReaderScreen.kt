@@ -2327,7 +2327,8 @@ private fun PagedContent(
                                 // which is what they mean.
                                 val text = if (isVerticalMarkStroke(raw)) {
                                     extractMarkedPassage(
-                                        raw, blocks, blockTopsInRoot, overlayTopInRoot,
+                                        raw, blocks, blockTopsInRoot,
+                                        inkableIndices.toSet(), overlayTopInRoot,
                                         widthPx, measurer, density, fontScale, lineSpacing,
                                         badgeHeightPx,
                                     )
@@ -4635,6 +4636,22 @@ private fun extractMarkedPassage(
     stroke: InkStroke,
     blocks: List<Block>,
     blockTopsInRoot: Map<Int, Float>,
+    /**
+     * The blocks THIS PAGE is showing.
+     *
+     * [blockTopsInRoot] is remembered against the CHAPTER, not the page, so it
+     * accumulates every block the reader has walked past and never drops one
+     * on a page turn. Walking it whole let a bar read text that is not on the
+     * screen: each stale block still carries the top it had when it was last
+     * drawn, the shift below maps the stroke into that space, and a passage
+     * comes back — confident and from somewhere else entirely.
+     *
+     * Reproduced on the emulator 2026-10-16, drawing a bar on the blank half
+     * of a chapter's last page: no text under it anywhere, and it returned
+     * "it is tall. It is compressed. In Chapter" from blocks 19-23, which are
+     * pages earlier. That is what raised the chip with nothing to point at.
+     */
+    onPage: Set<Int>,
     overlayTopInRoot: Float,
     widthPx: Int,
     measurer: TextMeasurer,
@@ -4643,10 +4660,12 @@ private fun extractMarkedPassage(
     lineSpacing: Float,
     badgeHeightPx: (String) -> Float,
 ): String? {
+    if (stroke.blockIndex !in onPage) return null
     val anchorTop = blockTopsInRoot[stroke.blockIndex]?.minus(overlayTopInRoot)
         ?: return null
     val parts = mutableListOf<String>()
     for (index in blockTopsInRoot.keys.sorted()) {
+        if (index !in onPage) continue
         val block = blocks.getOrNull(index) ?: continue
         val top = blockTopsInRoot[index]?.minus(overlayTopInRoot) ?: continue
         // Stroke offsets are relative to their own block's top, so shift them

@@ -1592,6 +1592,31 @@ yet" note that used to live here was two months stale.
       now ITALIC in the EPUB, as they are in the app, since the band and the rule are the
       other two signals there. One line of CSS if it reads as too much.
 
+- [x] **A margin bar could read a page it was not on (2026-10-19)** — opened as Aliaksei's
+      nit "vertical stroke also should not show chip if there is no text", and the standing
+      guess in this file was wrong. It blamed the near-miss fallback; the walk already runs
+      with `allowNearMiss = false`.
+      **Reproduced before anything was changed**, which is what found it: finger-draw on, a
+      bar dragged down the blank half of a chapter's LAST page — a picture and nothing else
+      — came back `text="it is tall. It is compressed. In Chapter"` and raised the chip. The
+      log named the cause in one line: it had walked blocks 18-24, none of which are on that
+      page.
+      `blockTopsInRoot` is `remember(chapterSlug)` — **keyed on the CHAPTER, not the page** —
+      so it accumulates every block the reader walks past and drops none on a page turn.
+      `extractMarkedPassage` walked the whole map, shifted the stroke into each stale block's
+      recorded coordinate space, and found "overlap" with text that is somewhere else. So the
+      real defect is bigger than the symptom: **a margin bar anywhere could quote text from
+      another page**, and the chip over blank paper was just where it showed.
+      The fix is a filter, not a new rule: the walk takes `onPage` (the page's own
+      `inkableIndices`, already computed for the ink overlay) and skips anything outside it;
+      a stroke anchored off-page returns null outright. Note the neighbour three lines down
+      in the same file — `blockVisibleBottomsInRoot` IS `remember(pages, pageIndex)` — which
+      is the shape this one should have had.
+      **Verified both ways on the emulator.** Blank page: 0 blocks walked, `text=<null>`, no
+      chip. Prose page: 5 blocks walked (exactly the page's own 20-24), the passage the bar
+      actually sits beside, chip present. The test strokes were cleared afterwards — the
+      shipped demo book in `assets/` carries no `ink/` folder, so nothing leaked into what a
+      tester gets.
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
