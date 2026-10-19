@@ -1650,7 +1650,6 @@ yet" note that used to live here was two months stale.
       ACTION_DOWN — which would give a phone both the room and its page turns. Not before a
       closed test.
 
-
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force
