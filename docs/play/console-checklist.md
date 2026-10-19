@@ -74,6 +74,14 @@ this repo (see `screenshots.md`).
       was wrong, and wrong in the direction that gets noticed.
       Consistent with `data-safety.md` answering "Committed to Play Families
       Policy: No".
+- [ ] **Tick "prevent access for users who declared they are minors".** Play
+      marks it optional; here it is the measure that answers the second half
+      of the Gemini clause. The 18+ declaration covers "directed toward"; this
+      covers "likely to be accessed by", which asks for something done rather
+      than something stated. It relies on self-reported account age, so it is
+      not a perfect gate — but declining an available safeguard while running
+      on an API that demands one is the awkward combination, and it costs
+      nothing: anyone who may not hold a Gemini key cannot use the app.
 - [ ] **Data safety** — answers drafted in `data-safety.md`, including the one
       genuinely debatable call (shared: YES, collected: NO) with the reasoning
       written out. Re-read Play's current wording before signing; it changes.
