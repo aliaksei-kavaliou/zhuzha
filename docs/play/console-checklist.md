@@ -104,6 +104,30 @@ this repo (see `screenshots.md`).
       hardware and that "Finger draws ink" in Settings is how a phone writes in
       an exercise — and that it takes over page-turning while it is on.
 
+## Where this stood at the end of 2026-10-20
+
+Done: the bundle (signed, from `main`), the listing copy, every Console
+declaration, and 19 store assets that validate. The Console app draft is
+created; what remains there is the closed-testing track itself.
+
+Carried forward, neither blocking the upload:
+
+- **The Boox pass on the margin-bar fix.** It is a pen gesture, so the
+  emulator cannot speak for it. Five minutes: a bar beside a paragraph, a bar
+  across two or three blocks, a bar on a page where a paragraph continues from
+  the previous one, a bar on blank page (must raise NO chip), and one
+  underline and one circle. The risk is the fix being too STRICT — the symptom
+  would be "I can no longer ask about a passage I could before".
+- **PocketBook on the EPUB.** Books.app renders it correctly, but PocketBook
+  is the reader that filed the original report and the one that ignored our
+  CSS. Re-export and re-read there.
+- **Tablet screenshots from the real device**, if the emulator reshoot at Boox
+  geometry is not wanted. The two worth adding are the Teaching style and
+  Language dropdowns on New course.
+
+Rebuild the bundle before uploading if any code lands after this date:
+`./gradlew :app:bundleRelease`, then check `jarsigner -verify`.
+
 ## Known, and fine to ship into a closed test
 
 - The pen chip can ink on the Boox. Stylus-only, so no tester will meet it.
