@@ -4,6 +4,8 @@ import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -54,7 +56,7 @@ import java.time.LocalDate
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun InkOverlay(
+internal fun InkOverlay(
     pageStrokes: List<Stroke>,
     blockTopY: (globalIdx: Int) -> Float?,
     /**
@@ -88,6 +90,23 @@ fun InkOverlay(
      * reader who meets it.
      */
     drawingEnabled: Boolean = true,
+    /**
+     * What one tap MEANS, asked of the same pure function the page's own
+     * detector asks — see [resolveTap] in TapRouting.
+     *
+     * This overlay owns the touch stream whenever [allowFingerDraw] is on, so
+     * without this nothing it swallowed could navigate: edge taps stopped
+     * turning pages and the bottom band stopped opening the menu. The Onyx
+     * overlay has been handed the same two since it was written, for exactly
+     * this reason. Reported 2026-10-20, alongside the menu that would not
+     * close.
+     *
+     * A DRAG is deliberately not routed: with finger-draw on a drag is a
+     * stroke, and you cannot both draw a line and swipe the page away under
+     * it. Taps navigate, drags draw.
+     */
+    resolveTapAt: (x: Float, y: Float, w: Float, h: Float, strokeHit: Stroke?) -> TapAction,
+    onTapAction: (TapAction) -> Unit,
     onStrokeAdded: (Stroke) -> Unit,
     /**
      * Fires on every barrel-button-tap end, whether or not it landed on a
@@ -106,6 +125,9 @@ fun InkOverlay(
     var startX by remember { mutableStateOf(0f) }
     var startY by remember { mutableStateOf(0f) }
     var maxDelta by remember { mutableStateOf(0f) }
+    // resolveTap decides by WHERE in the page a contact landed, so it needs
+    // the page's extent. The Onyx overlay is told; this one has to measure.
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
     // True while we own the current pointer stream. When we don't own it,
     // subsequent MOVE/UP events must be ignored — otherwise a finger event
     // that we didn't claim at DOWN can still reach us via the same modifier
@@ -115,6 +137,7 @@ fun InkOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .onSizeChanged { viewSize = it }
             .pointerInteropFilter { event ->
                 val toolType = event.getToolType(0)
                 val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS ||
@@ -188,10 +211,15 @@ fun InkOverlay(
                             val hit = hitTestStroke(pageStrokes, at.copy(x = at.x - textInsetPx), blockTopY)
                             onStrokeErased(hit)
                         } else if (movedLikeATap) {
-                            // Tap on (or very near) a stroke → chip. Works
-                            // for finger too since we claimed the down above.
+                            // Every tap goes through the one decider, whether
+                            // or not it landed on a stroke. A hit resolves to
+                            // ShowStrokeChip exactly as before; a miss now
+                            // resolves to a page turn or the menu instead of
+                            // being swallowed here.
                             val hit = hitTestStroke(pageStrokes, at.copy(x = at.x - textInsetPx), blockTopY)
-                            if (hit != null) onStrokeTapped(hit)
+                            onTapAction(
+                                resolveTapAt(at.x, at.y, viewSize.width.toFloat(), viewSize.height.toFloat(), hit),
+                            )
                         } else if (shouldHandle && current.size >= 2) {
                             // New stroke — draw mode only; a finger drag over
                             // a stroke without allowFingerDraw ends here silently.

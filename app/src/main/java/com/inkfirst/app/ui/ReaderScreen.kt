@@ -2462,6 +2462,28 @@ private fun PagedContent(
                             allowFingerDraw = fingerDraws,
                             // Same gate the Onyx overlay has always had.
                             drawingEnabled = penEnabled,
+                            // And the same decider: while this overlay owns
+                            // the touch stream, it is the only thing that can
+                            // route a tap to a page turn or the menu.
+                            resolveTapAt = { x, y, w, h, strokeHit ->
+                                val inRoot = Offset(x + overlayLeftInRoot, y + overlayTopInRoot)
+                                val hitMarker = markerRects.values.firstOrNull { (_, r) ->
+                                    r.contains(inRoot)
+                                }?.first
+                                val hitButton = revealRects.entries
+                                    .firstOrNull { (_, r) -> r.contains(inRoot) }?.key
+                                resolveTap(
+                                    x, y, w, h,
+                                    with(density) { MENU_BAND_HEIGHT.toPx() },
+                                    menuOpen = menuOpen,
+                                    chipOpen = chipOpen,
+                                    selectionActive = selectionActive,
+                                    buttonHit = hitButton,
+                                    markerHit = hitMarker,
+                                    strokeHit = strokeHit,
+                                )
+                            },
+                            onTapAction = performTap,
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
                             onStrokeTapped = onStrokeTapped,

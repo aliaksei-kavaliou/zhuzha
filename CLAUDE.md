@@ -1671,6 +1671,21 @@ yet" note that used to live here was two months stale.
       until 2026-10-19 that switch was labelled "(dev)" so nobody did.
       Verified on the emulator both directions — menu closes with finger-draw on, and a drag
       with the menu closed still draws (45 points captured). Test stroke cleared afterwards.
+      **And the same gap had a second half, reported minutes later: "page tap doesn't change
+      the page".** Same cause, same shape of fix. The Onyx overlay is handed `resolveTap`,
+      `resolveSwipe` and `onTapAction`, so even while it owns the touch stream every contact
+      still goes through the ONE decider and the page still turns. `InkOverlay` was handed
+      none of them, so with finger-draw on it swallowed edge taps and the menu band too — a
+      phone reader who turned the switch on got a book they could not page through, which is
+      exactly what the Settings wording warned about and should not have had to.
+      Taps now route through `resolveTap` whether or not they landed on a stroke: a hit still
+      resolves to `ShowStrokeChip`, a miss resolves to a page turn or the menu. A DRAG is
+      deliberately NOT routed — with finger-draw on a drag is a stroke, and you cannot both
+      draw a line and swipe the page out from under it. Taps navigate, drags draw.
+      `InkOverlay` became `internal` to say so, matching `OnyxInkOverlay`: `TapAction` is
+      internal and a public function may not expose it.
+      Measured after: edge taps walk 11 → 12 → next chapter → back, the bottom band opens the
+      menu, a page tap closes it, and a drag still captures a stroke.
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
