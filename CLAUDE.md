@@ -1693,6 +1693,22 @@ yet" note that used to live here was two months stale.
       Measured after: edge taps walk 11 → 12 → next chapter → back, the bottom band opens the
       menu, a page tap closes it, and a drag still captures a stroke.
 
+- [x] **An exported book has a cover (2026-10-20)** — Aliaksei, after importing an export:
+      "it has reader random default cover". It did, because the OPF never declared one. The
+      picture was already in the file — chapter 1's opening illustration, embedded and
+      manifested like any other — and nothing said WHICH image was the book's.
+      Declared twice on purpose. `properties="cover-image"` on the manifest item is the
+      EPUB 3 form; `<meta name="cover" content="…"/>` is EPUB 2's, formally superseded and
+      still the only thing several readers look for — the same reason `toc.ncx` is written
+      beside the EPUB 3 nav document. Both cost a line.
+      The cover is the FIRST chapter's opening picture, and only that one: a later chapter's
+      cover stays an ordinary inline figure. Exactly one item in the manifest carries the
+      property, which is what the spec requires.
+      **Verified against the real book rather than only in tests** — the course pulled off the
+      device and run through the real exporter: `<meta name="cover" content="img4"/>` with
+      `img4` the chapter-1 cover and `properties="cover-image"` on it, one occurrence, OPF
+      still valid XML. A book with no opening picture declares nothing and stays valid.
+
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

@@ -299,6 +299,42 @@ class EpubExportTest {
         )
     }
 
+    /**
+     * Without this the OPF never names a cover, so a reader shows its own
+     * placeholder. Reported 2026-10-20 after importing an export: "it has
+     * reader random default cover".
+     *
+     * Declared twice deliberately — `properties="cover-image"` is EPUB 3,
+     * `<meta name="cover">` is EPUB 2 and is what several readers actually
+     * look for.
+     */
+    @Test
+    fun `the first chapter's opening picture is declared as the book cover`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp) { s ->
+            File(tmp, "bread/figures").mkdirs()
+            File(tmp, "bread/figures/01-yeast-cover.jpg").writeBytes(byteArrayOf(7, 7, 7))
+            File(tmp, "bread/figures/01-yeast-1.jpg").writeBytes(byteArrayOf(9, 9, 9))
+        }
+        val opf = text(files, "OEBPS/content.opf")
+
+        val coverItem = Regex("""<item id="(\w+)" href="images/01-yeast-cover\.jpg"[^>]*>""")
+            .find(opf)
+        assertNotNull(coverItem, opf)
+        val id = coverItem!!.groupValues[1]
+        assertTrue(coverItem.value.contains("""properties="cover-image""""), coverItem.value)
+        assertTrue(opf.contains("""<meta name="cover" content="$id"/>"""), opf)
+    }
+
+    /** A book whose first chapter has no picture must still produce valid XML. */
+    @Test
+    fun `no cover is declared when there is no opening picture`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp)
+        val opf = text(files, "OEBPS/content.opf")
+
+        assertFalse(opf.contains("cover-image"), opf)
+        assertFalse(opf.contains("""<meta name="cover""""), opf)
+    }
+
     /** The whole book, not just the chapter that happens to be tested. */
     @Test
     fun `no document in the book prints a caption`(@TempDir tmp: File) {

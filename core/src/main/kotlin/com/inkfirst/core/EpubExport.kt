@@ -100,7 +100,15 @@ class EpubExport(private val store: CourseStore) {
             zip.text("OEBPS/toc.ncx", ncxDocument(course, docs))
             zip.text(
                 "OEBPS/content.opf",
-                opfDocument(course, docs, usedPictures, hrefs, modified),
+                opfDocument(
+                    course, docs, usedPictures, hrefs, modified,
+                    // The book's cover is the FIRST chapter's opening picture.
+                    // It is already embedded; without this the OPF never says
+                    // which image is the cover, so a reader falls back to its
+                    // own placeholder — reported 2026-10-20 after importing an
+                    // export: "it has reader random default cover".
+                    coverPicture = sources.firstOrNull()?.coverSrc,
+                ),
             )
             usedPictures.sorted().forEach { name ->
                 val file = pictures.getValue(name)
@@ -297,7 +305,18 @@ private fun opfDocument(
     pictures: Set<String>,
     hrefs: Map<String, String>,
     modified: String,
+    /** The picture to declare as the book's cover, if the book has one. */
+    coverPicture: String? = null,
 ): String {
+    val sortedPictures = pictures.sorted()
+    // Declared TWICE on purpose. `properties="cover-image"` is the EPUB 3
+    // form; `<meta name="cover">` is EPUB 2's and is formally superseded,
+    // which has never stopped readers from being the only thing they look
+    // for — the same reason toc.ncx is still written below. Both cost a line.
+    val coverId = coverPicture
+        ?.let { sortedPictures.indexOf(it) }
+        ?.takeIf { it >= 0 }
+        ?.let { "img${it + 1}" }
     val manifest = buildString {
         append("    <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n")
         append("    <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n")
@@ -309,10 +328,12 @@ private fun opfDocument(
                 append("    <item id=\"ans${i + 1}\" href=\"${esc(it)}\" media-type=\"application/xhtml+xml\"/>\n")
             }
         }
-        pictures.sorted().forEachIndexed { i, name ->
+        sortedPictures.forEachIndexed { i, name ->
+            val id = "img${i + 1}"
+            val properties = if (id == coverId) " properties=\"cover-image\"" else ""
             append(
-                "    <item id=\"img${i + 1}\" href=\"${esc(hrefs.getValue(name))}\" " +
-                    "media-type=\"${imageMediaType(name)}\"/>\n",
+                "    <item id=\"$id\" href=\"${esc(hrefs.getValue(name))}\" " +
+                    "media-type=\"${imageMediaType(name)}\"$properties/>\n",
             )
         }
     }
@@ -337,7 +358,7 @@ private fun opfDocument(
     <dc:creator>Zhuzha</dc:creator>
     <dc:date>${esc(course.created)}</dc:date>
     <meta property="dcterms:modified">${esc(modified)}</meta>
-  </metadata>
+${coverId?.let { "    <meta name=\"cover\" content=\"$it\"/>\n" } ?: ""}  </metadata>
   <manifest>
 $manifest  </manifest>
   <spine toc="ncx">
