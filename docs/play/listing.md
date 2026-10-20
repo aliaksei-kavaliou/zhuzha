@@ -44,66 +44,31 @@ Study books written for you, a chapter a day. Built for e-ink. Write on them.
 
 ## Full description (4000 max)
 
-**Paste this exactly — it is HTML, not plain text.** See the formatting note
-below for why.
+**The text lives in `full-description.txt`, not in a fenced block here.**
+Open that file, select all, copy, paste. The fence used to hold it and
+copying out of one flattened the line breaks, which is most of why the first
+paste came out as a slab.
 
-```
-Chat is a bad container for learning. Answers scroll away, nothing paces you, and there is no way to move back and forth through an argument.
+### No HTML. Plain text only.
 
-Zhuzha inverts that. Say what you want to learn and how many minutes a day you have. It writes you a book — an outline first, then chapters one at a time, with illustrations, exercises and recaps. Then you read it like a book.
+Sources say the field takes `<b>`, `<i>`, `<br>` and friends. **The Console
+showed them literally** when pasted on 2026-10-20 — see
+`~/dev_pers/screenshots/Screenshot 2026-10-20 at 13.52.52.png`, where
+`<b>BUILT FOR E-INK FIRST</b>` renders with its angle brackets in the text.
+Whatever the documentation says, that is the field in front of us, so the
+description carries no tags at all.
 
-The app is free. Writing books uses your own Google Gemini API key — Google's free tier is enough to begin, the key stays on your device, and nothing is billed to anyone but you. A demo book ships with the app, so you can read a real chapter before you get a key.
+What does the formatting instead:
 
-<b>BUILT FOR E-INK FIRST</b>
+- **A blank line between every paragraph.** This is the only separator that
+  matters, and the only one that can be lost in a bad copy — which is what
+  happened. If the pasted result runs together, the newlines did not survive;
+  re-copy from the `.txt`.
+- **Section headings in CAPITALS on their own line.** Not real formatting, but
+  it survives anything.
+- **Bullets as the character `•`**, one per line.
 
-No animations. No scrolling. Pages turn with a tap at the edge or a press of a side button, the way they should on a panel that redraws rather than refreshes. Typography, margins and page breaks are tuned for a reflective screen instead of being retrofitted from a phone — pure black on white, no greys to dither.
-
-It runs on any Android phone or tablet. An e-ink reader is what it was made for.
-
-<b>ROOM TO WORK</b>
-
-An exercise leaves you space to answer: a dot grid when the task is something you draw, ruled lines when it is something you write. With a stylus you work straight on the page, and your ink stays with the chapter. Reveal the answer when you are ready and it appears below your own, so you compare rather than copy.
-
-<b>ASK THE BOOK</b>
-
-Mark a passage and ask about it. The question and its answer are kept with that chapter, so what you asked is part of the book the next time you open it. What you asked about also feeds forward into how the next chapter is written.
-
-<b>YOUR KEY, YOUR DEVICE, YOUR FILES</b>
-
-No account. No server. No analytics, no tracking, no ads.
-
-Your books are plain Markdown and JSON in a folder on your device — greppable, backup-able, and readable in ten years even if this app is gone. Back them up to any folder you choose. Export any book as an EPUB and read it in anything else.
-
-<b>ALSO</b>
-
-• Pick a teaching style — conversational, textbook, or hands-on — or describe one in your own words and it will be written that way.<br>• Books can be written in your language.<br>• Typed notes, bookmarks, full-text search across chapters, notes and questions, and per-chapter progress.<br>• Hand-drawn greyscale illustrations, chapter covers, and a per-book mascot.<br>• Rewrite a chapter you did not get on with.
-
-Zhuzha is named after a dog — black with a white chest, which happens to be the entire palette an e-ink screen has.
-
-Open source, GPL-3.0.
-
-<b>WHAT YOU NEED</b>
-
-A free Google Gemini API key, from aistudio.google.com/apikey. It takes about a minute. Generating chapters and pictures uses your own quota; reading what is already written costs nothing and works offline.
-```
-
-### Formatting — why it looks like a wall of text otherwise
-
-The field takes a **limited subset of HTML**, and two of its rules bite:
-
-- **Single line breaks are ignored.** A double break starts a new paragraph.
-  So the draft that lived here until 2026-10-20 — hard-wrapped at 78 columns
-  for readability in this file — collapsed into run-on paragraphs when pasted.
-  Every paragraph above is therefore ONE long line. Do not re-wrap it.
-- **Uppercase alone is not formatting.** Section headings are `<b>…</b>`.
-  `<i>`, `<u>` and `<br>` also work. `<h1>`–`<h3>` are reported to work too,
-  but `<b>` renders consistently everywhere and is the safer bet.
-- **The bullet list is one paragraph** with `<br>` between items, because
-  single breaks would otherwise collapse it into a single run of text. The
-  bullet itself is the character `•`, not a list tag.
-- **HTML counts toward the 4000 limit.**
-
-Source: [Best practices for your store listing](https://support.google.com/googleplay/android-developer/answer/13393723)
+2739 characters.
 
 ## Other Console fields
 
