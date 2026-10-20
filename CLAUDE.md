@@ -1650,6 +1650,28 @@ yet" note that used to live here was two months stale.
       ACTION_DOWN — which would give a phone both the room and its page turns. Not before a
       closed test.
 
+- [x] **The menu would not close while a finger could draw (2026-10-20)** — Aliaksei, with
+      "Finger draws ink" on: "reader menu does not hide on page tap". Tapping the page is the
+      menu's ONLY dismiss target, so the menu became a trap.
+      Reproduced both ways before touching anything: `finger_draws=true`, tap the page, menu
+      stays; flip the pref to false, restart, tap, menu closes. Nothing to do with the
+      morning's fixes — it is the overlay claiming the pointer stream at ACTION_DOWN, the
+      same mechanism measured on 2026-10-19 when the toggle was relabelled.
+      **The finger path never got a rule the pen path has always had.** `OnyxInkOverlay`
+      takes `drawingEnabled = penEnabled` — false while the menu, a dialog or the chat panel
+      is open — because the Onyx driver sits below Android and would otherwise draw straight
+      through a modal. `InkOverlay` took `allowFingerDraw` and NOTHING ELSE, so with
+      finger-draw on it swallowed every contact including the one meant to dismiss the menu.
+      Now it takes the same `drawingEnabled` and, when false, returns false at ACTION_DOWN
+      without claiming anything — not a new stroke and not a tap on an existing one either,
+      since a tap on a drawing while the menu is up should close the menu rather than open a
+      chip.
+      **It is a PHONE defect and needs no stylus**, which is why it survived: the reader who
+      turns finger-draw on to use the working room is exactly the reader who meets it, and
+      until 2026-10-19 that switch was labelled "(dev)" so nobody did.
+      Verified on the emulator both directions — menu closes with finger-draw on, and a drag
+      with the menu closed still draws (45 points captured). Test stroke cleared afterwards.
+
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
       is no chip I still can't draw. Only some lines first appeared but on page back and force

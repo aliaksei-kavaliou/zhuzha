@@ -71,6 +71,23 @@ fun InkOverlay(
     /** See the note on OnyxInkOverlay: strokes are stored relative to the TEXT. */
     textInsetPx: Float = 0f,
     allowFingerDraw: Boolean,
+    /**
+     * False while anything is open over the chapter — the reader menu, a
+     * dialog, the chat panel.
+     *
+     * [OnyxInkOverlay] has taken this since it was written, because the pen
+     * driver sits below Android and would otherwise draw straight through a
+     * modal. This overlay never did, and with [allowFingerDraw] on it claims
+     * the pointer stream at ACTION_DOWN like any other contact — so a tap on
+     * the page with the menu up was swallowed here and never reached the
+     * detector that dismisses it. The menu could not be closed by tapping the
+     * page, which is its only dismiss target.
+     *
+     * Reported 2026-10-20. It needs no stylus, so it is a phone defect: a
+     * reader who turns finger-draw on to use the working room is exactly the
+     * reader who meets it.
+     */
+    drawingEnabled: Boolean = true,
     onStrokeAdded: (Stroke) -> Unit,
     /**
      * Fires on every barrel-button-tap end, whether or not it landed on a
@@ -103,6 +120,15 @@ fun InkOverlay(
                 val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS ||
                     toolType == MotionEvent.TOOL_TYPE_ERASER
                 val shouldHandle = isStylus || allowFingerDraw
+
+                // Nothing is ours while something is open over the page —
+                // not a new stroke, and not a tap on an existing one either.
+                // Returning false leaves the whole gesture to the detector
+                // underneath, which is what closes the menu.
+                if (!drawingEnabled) {
+                    ownsStream = false
+                    return@pointerInteropFilter false
+                }
 
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {

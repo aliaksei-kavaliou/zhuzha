@@ -2460,6 +2460,8 @@ private fun PagedContent(
                             },
                             pageBlockRange = pageBlockRange,
                             allowFingerDraw = fingerDraws,
+                            // Same gate the Onyx overlay has always had.
+                            drawingEnabled = penEnabled,
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
                             onStrokeTapped = onStrokeTapped,
