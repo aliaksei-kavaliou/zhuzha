@@ -108,4 +108,6 @@ this repo (see `screenshots.md`).
 
 - The pen chip can ink on the Boox. Stylus-only, so no tester will meet it.
 - Ink does not reflow when the font size changes. Known and documented.
-- The EPUB fixes of 2026-10-16 have not been re-read in PocketBook.
+- The EPUB fixes of 2026-10-16 render correctly in Books.app (verified 2026-10-20,
+  from a book exported through the app itself). Not yet re-read in PocketBook,
+  which is the reader that reported them.

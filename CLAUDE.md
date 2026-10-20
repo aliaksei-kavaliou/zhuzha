@@ -1586,8 +1586,14 @@ yet" note that used to live here was two months stale.
       through headless Chrome in a two-column layout, which fragments a box the same way a
       reflowable reader paginates one: the before shot reproduces his report exactly (a
       double rule starting at the very top of column two, no label), the after shows the body
-      flowing across the break with nothing touching the column edges. NOT yet seen in
-      PocketBook or NeoReader.
+      flowing across the break with nothing touching the column edges.
+      **Confirmed in a real reader 2026-10-20** — a book exported off the emulator through
+      the app's own Export, pulled to the Mac, opened in Books.app: "looks perfect". That
+      settles the design; it does not fully settle the original report, because Books.app is
+      WebKit and honours the stylesheet while PocketBook is the reader that IGNORED it. The
+      fixes avoid CSS deliberately — no caption rather than a restyled one, `<hr>` markup
+      rather than a border, `<em>` rather than `font-style` — so they should hold there too.
+      Still unseen in PocketBook or NeoReader.
       **One change he did not ask for, easily reversed**: an exercise and a recap body are
       now ITALIC in the EPUB, as they are in the app, since the band and the rule are the
       other two signals there. One line of CSS if it reads as too much.
