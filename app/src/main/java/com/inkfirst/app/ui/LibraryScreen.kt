@@ -37,8 +37,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
@@ -93,6 +96,8 @@ fun LibraryScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            ZhuzhaMark(size = 40.dp)
+            Spacer(Modifier.width(10.dp))
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onSettings) { Text("Settings") }
@@ -307,4 +312,48 @@ private fun describeLoss(store: CourseStore, slug: String): String {
         1 -> parts.first()
         else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
     }
+}
+
+/**
+ * How much of the launcher foreground's 108 viewport the head actually
+ * occupies.
+ *
+ * The drawable is sized for a LAUNCHER: every point of ink is kept within
+ * radius 35 of the centre so no mask can cut her ear tips, which leaves about
+ * a quarter of the box empty on each side. That padding is right under a
+ * launcher's mask and wrong beside a word — drawn at face value she sits in a
+ * pool of whitespace with the wordmark pushed away from her.
+ *
+ * The number is the drawable's own, written in its header: the head measures
+ * 52.8 across that 108 viewport. Scaling by its reciprocal fills the box with
+ * the head and leaves the one copy of the path the one copy of the path.
+ */
+private const val LAUNCHER_HEAD_FILL = 52.8f / 108f
+
+/**
+ * Her head, beside the wordmark, on the one screen that is the APP rather
+ * than a book.
+ *
+ * "Zhuzha" is a coined word and remembers nothing on its own, which is why
+ * the name and the icon were chosen together — the face is what carries the
+ * recognition. The shelf is where the app signs its own name; a book's own
+ * pages stay the book's.
+ *
+ * No description: the app's name is the Text sitting right beside it, and a
+ * screen reader saying "Zhuzha Zhuzha" is worse than it saying it once.
+ *
+ * Flat black on white, so there is nothing here for e-ink to dither.
+ */
+@Composable
+private fun ZhuzhaMark(size: Dp, modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.drawable.ic_launcher_foreground),
+        contentDescription = null,
+        modifier = modifier
+            .size(size)
+            // Scale rather than crop: the viewport around her is transparent,
+            // so enlarging it past the box draws nothing extra — the head
+            // alone grows to fill the space the box reserved.
+            .scale(1f / LAUNCHER_HEAD_FILL),
+    )
 }
