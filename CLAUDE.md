@@ -71,1643 +71,195 @@ accounts/sync/backend (never, unless this becomes a product).
 - Keep `docs/design.md` updated when architecture actually changes; keep this file updated when *decisions* change.
 - Dogfooding is the success metric: "Aliaksei reads a generated chapter on the Boox in the evening" beats any feature. Bias toward getting the read-loop working end-to-end early, even ugly.
 
-## Where things stand (2026-09-15)
+## Where things stand (2026-10-21)
 
-The app is **built and in daily use on the Boox Go 7**. MVP items 1–7 all ship; several
-post-MVP slices ship on top. Treat the list below as the current truth — the "nothing built
-yet" note that used to live here was two months stale.
+The app is **built and in daily use on the Boox Go 7**. MVP items 1–7 all ship, and a long
+run of post-MVP slices ship on top: figures, badges, chapter covers, Onyx handwriting with
+erase, selection precision, reader signals, search, rewrite, backup/restore, themed palette,
+figure budgets, described styles, EPUB export, request screening, in-app reporting, and a
+reader typography pass that occupied most of October.
 
-- [x] MVP 1–7: scaffold, course creation, chapter generation with cross-chapter memory,
-      paginated reader, selection-anchored chat, progress tracking, notes.
-- [x] **Phase 3 figures** — hand-drawn chapter illustrations, device-verified (see design.md §7).
-- [x] **Badges** — a per-course mascot marking exercise / recap / answer / code blocks (§9).
-- [x] **Chapter covers** — an opening picture of the problem each chapter solves (§10).
-- [x] **Phase 2 handwriting** — the Onyx raw-ink path works: drawing with no lag, stroke
-      persistence, tap-on-stroke chip, delete, page navigation (§11).
-- [x] **Erase by sweep** — device-verified 2026-09-17, along with a long chain of panel
-      fixes found while testing it: the Onyx driver keeps its own ink layer below Android's
-      framebuffer, and EPD repaints had been aimed at the transparent ink SurfaceView rather
-      than the view actually showing the page. Read `docs/onyx-pen-thread.md` §T7 before
-      touching anything about repainting, ghosting, or tap handling — it is the session log
-      and it records what was measured rather than assumed.
-- [x] **Selection precision** — a pen mark now selects what it points at: whole words with
-      clipped ends kept only if half-covered, an underline marking exactly one line (this was
-      the "Ask AI returns the line below" defect), a circle marking the line it encloses, and
-      strokes anchoring by their middle rather than by wherever the pen landed. A margin bar
-      is a passage-marking gesture that reads across blocks, and asking leaves a `?` marker
-      in the margin so a question is visible on the page.
-- [x] **Reader signals (§13)** — `reader.md` per course records how each chapter was READ
-      (questions asked and the passages they were asked about, passages marked without a
-      question, notes written), and feeds forward into the next chapter's prompt under
-      explicit bounds. Assembled from stored data, so no API call and covered by unit tests.
-      Not yet surfaced in the UI: the file is inspectable at
-      `<courses-root>/<slug>/reader.md` and is meant to be editable by hand.
-- [x] **One rule for touch.** `app/.../ui/TapRouting.kt` owns what a contact means —
-      `resolveTap` for taps, `resolveSwipe` for drags — with no Compose in it, so it
-      unit-tests. The two DETECTORS still cannot merge (the SDK owns the host view's touch
-      stream, so the overlay has to observe its own contacts), but neither decides anything.
-      Anything a finger can hit that is not a page — a margin marker, a "Show answer"
-      button — has to be hit-tested and passed IN as a rung, because on the pen path a
-      Compose `clickable` under the overlay never runs.
-- [x] **Side buttons are taken at the Activity's door** (`MainActivity.dispatchKeyEvent` +
-      `ui/PageKeys.kt`), not by a Compose `onKeyEvent`. A Compose key handler only fires
-      while its subtree holds focus, and on the pen path focus moves constantly — so the
-      buttons kept reverting to raising Android's volume slider. Screens claim the keys
-      with `PageKeys.register`; last registration wins, which is how the Ask panel takes
-      them from the reader underneath it.
-- [x] **Pen reaches the whole page (2026-09-21).** The ink overlay used to sit inside the
-      reader's padded column, so margins were not drawable, a line's last word could not be
-      underlined, and a stroke running off the surface turned a page. The inset is on the
-      text now, not the page; stroke coordinates stay TEXT-relative so the on-disk format
-      and existing ink are unchanged. See `docs/onyx-pen-thread.md` §T8.
-- [x] **Repaint scoping is a QUEUE, not a rect (2026-09-21).** It failed merged (bounding
-      box of two far-apart regions blinks half the page) and it failed as two slots (one
-      writer displaces another, ink left on the glass). Every region gets its own
-      invalidate. Do not try to express N regions in one field a third time. §T8.
-- [x] **First line of a page not drawable — closed 2026-09-21, did not reproduce.** The
-      symptom named the cause and the standing suspicion (anchor maths) was wrong: "takes a
-      page" is a page turn, and the overlay used to resolve a finger contact on its
-      ACTION_DOWN. Fixed as a side effect of making swipes work. Evidence and the remaining
-      latent risk are in `docs/onyx-pen-thread.md` §T7.
-- [x] **Delete, search, rewrite (2026-09-21)** — the three gaps that read as "unfinished"
-      to anyone who is not Aliaksei, named on 2026-09-15 and built together. Deleting a
-      course is the only destructive op in `:core` and refuses anything that is not a
-      course directory directly under the root. Search runs over parsed BLOCKS, so a hit
-      opens at the right page whatever the font size; it searches chapters, notes and the
-      passages that were asked about. Rewriting a chapter archives the old body as
-      `<slug>.previous.md` and its Q&A as `<slug>.previous.qa.md` — one generation deep,
-      because a numbered chain promises a version history nothing can navigate — then
-      starts the chapter over:
-      annotations, bookmarks, ink, inline figures, the transcript and that chapter's
-      reader.md section all go. Only the cover and closing pictures stay, because they
-      come from the outline. A first attempt at keeping "records" while dropping
-      "pointers" was wrong — the transcript quotes passages, and the question history is
-      split across two files, so keeping one left half a record behind. See design.md §1.
-- [x] **Questions have their own section in the Contents (2026-09-21)** — they used to
-      render under "Notes" with the write-glyph and an empty body, because an ask carries
-      no note text. The split is about volume, not taxonomy: a question is one gesture and
-      a note is typed, so merged lists drown the scarcer thing.
-- [x] **Orphaned bookmarks (2026-09-21)** — a bookmark was SET as a page's first-beginning
-      block and RESOLVED by containment, and those two relations part company as soon as
-      the margin or font changes. It opened its page and showed no ribbon there, offering
-      "Bookmark this page" for a page that already was. `bookmarkOnPage` now asks the
-      question the same way the jump asks it. Stored indices are never rewritten to heal —
-      silently editing a saved position on a font change is worse than the bug.
-- [x] **Backup and restore (2026-09-22)** — `CourseBackup` in `:core` had been sitting with
-      no UI; it has one now. A folder chosen through Android's document picker, remembered
-      with a persistable grant, "Back up everything" in one button, restore per book behind a
-      confirm. The trap worth knowing: `createDocument` treats the mime type as authoritative
-      and the filename as a suggestion, so a name whose extension disagrees with the type
-      comes back with the provider's extension appended — and filenames ARE the app's index.
-      Derive the type from the extension. See design.md §15 — and §15.1, which replaced the
-      file-by-file copy with one zip per book. **Proved end to end on the
-      emulator, no device needed**: 23 files copied byte-identical, a second run copied
-      nothing, a chapter deleted from the device came back with its original md5 and opened.
-- [x] **One palette, in one place (2026-09-22)** — the app had no theme: `MaterialTheme { }`
-      with no scheme, so Library, Settings, New course and Backup rendered in M3's purple,
-      and the five colours the book screens use were declared privately in seven files.
-      `ui/InkTheme.kt` owns both now. The purple reached further than the obvious buttons —
-      the text-field focus ring, the `Switch`, and the text-selection handles in the READER,
-      which is how a passage gets asked about. Watch `surfaceTint`: it defaults to `primary`,
-      so a black primary greys every elevated surface unless it is pointed at white. See
-      design.md §16.
-- [x] **Pictures have a budget (2026-09-22)** — there was no limit on them at all: the
-      illustrator drew every slot the model wrote, and a chapter that asked for twelve
-      pictures spent ~36¢ without saying so. `FigurePolicy` is now a per-course setting in
-      `course.json` (as needed / generous / on request / none), the ceiling is ENFORCED in
-      `illustrate` rather than requested in the prompt, and every row that spends names its
-      price. The overflow costs nothing: an undrawn slot renders its alt text and the menu
-      still offers to draw it. Same commit teaches the chapter model what this panel can
-      carry — shape and arrangement, never colour or browning — because nothing did, and
-      "the finished risotto, creamy and golden" is a brief no illustrator can fill here.
-      design.md §7.
-- [x] **A style you describe rather than pick (2026-09-24)** — the fourth choice is a
-      sentence, expanded into a system instruction once and stored beside the wish that
-      produced it, so the two can be compared. Three fields because three consumers need
-      three things: the wish (never sent, kept so the expansion is reviewable), the prompt,
-      and a mascot line, since badges branch on the style KEY and a described style matches
-      no arm. The expansion runs before the outline so chapter titles land in the style too,
-      and once per WISH rather than per attempt — re-expanding on "Try again" would mean
-      approving an outline in one style while a differently-worded one got stored. Two rules
-      in its prompt are load-bearing: it must not touch language, chapter length, Markdown or
-      pictures (it lands in the SYSTEM channel and would outrank them), and a named series
-      becomes its pedagogy, never its name — same trademark handling as Head First, applied
-      at the one place a user-typed brand name could reach an illustrator. It THROWS where
-      `LabelGenerator` swallows, and `StylePresets.CUSTOM` is deliberately absent from `ALL`
-      so `byKey` can never hand back a preset with an empty system prompt. design.md §3.
+**The closed record moved to `docs/worklog.md` on 2026-10-20** — 95 entries, verbatim, with
+the measurements kept. It had grown to ~146 KB of this ~153 KB file, and this file is loaded
+in full at the start of every session. Go there when a fixed defect comes back, when a rule
+below looks arbitrary and you want the case that produced it, or before re-litigating a
+decision: a good number of those entries record an approach that was tried, measured and
+REJECTED, and the reason is usually the valuable half.
 
-- [x] **Export (2026-09-24)** — a book leaves the app as an EPUB, from the Contents screen.
-      EPUB rather than PDF because it reflows and is already the shape of what is stored; a PDF
-      means owning pagination against a bare canvas, and the reader's paginator does not
-      transfer (it paginates to a SCREEN). Answers move to the back of each chapter, numbered
-      and linked both ways, because a reflowable book has no "next page" to hide one on.
-      Annotations are opt-in and default OFF: export is irreversible, and a file handed to
-      someone carries whatever is in it. Ink never travels at all — strokes are anchored to
-      block indices — and the screen says so rather than letting it be discovered. The four
-      things that bite (mimetype first + STORED, XHTML is XML so `&` must be escaped, xml:lang
-      needs a CODE not a language name, extension must agree with the picker's mime type) are
-      each a test. Verified by exporting every real book off the emulator and validating the
-      files, then again end to end through the picker. design.md §18.
-- [x] **Labels are topped up, not skipped (2026-09-24)** — `ensureLabels` asked "has this
-      language been translated?", so every string added to `BOOK_CHROME_STRINGS` after a
-      language's first translation stayed English in that book forever, silently. It now asks
-      which strings are MISSING and translates only those; anything that comes back unusable is
-      stored as itself, because `keepUsable`'s rejections are deterministic and retrying costs a
-      call per app open. Found while checking a Russian EPUB.
+What stays here is what still binds: the rules below, and the open items after them.
 
-- [x] **Requests are screened before anything is written (2026-09-24)** — one cheap call at
-      course creation, ahead of the outline. It IS the protection, not just a nicer failure
-      mode: the first write-up claimed the chapter model refuses the genuinely harmful anyway,
-      and Aliaksei disproved that the same day — walking past the gate produced chapters with
-      real instructions. It also buys the failure mode (a sentence when you typed it, rather
-      than a broken chapter three chapters and several pictures in).
-      The line is OPERATIONAL INSTRUCTIONS, never subjects, and the prompt names the legitimate
-      ones (toxicology, military history, lock-picking, offensive security, harm reduction…)
-      because a false refusal is the failure nothing downstream catches. It is explicitly not
-      an age rating, a taste filter, a quality check or a legality check. Three verdicts:
-      refuse stops on the form, ask gets a page with "Write it anyway", allow is everything
-      else. It FAILS OPEN on any error — a gate that blocks on a dropped connection gets
-      resented and routed around. **The refuse criterion must stay a PRINCIPLE followed by
-      examples**: written first as a bare list of five categories, the model read the list as
-      the definition, and "how to kill people quickly" matched none of them (no named victim,
-      no named method) so it came back as a walk-past `ask`. A request can be more obviously
-      harmful and LESS specific at once, and an enumeration inverts exactly that case. Probed
-      live after the rewrite: "how to kill people quickly" and an untabled "undetectable ways
-      to hurt someone" both refuse; explosives chemistry, SQL injection, car-door opening and
-      self-defence all still allow. **The verdict was also a COIN TOSS** until 2026-09-24:
-      nothing set a temperature anywhere, so the judging call ran at the model's default (~1.0)
-      and "how to rubber the bank" was allowed on Aliaksei's run and refused on the identical
-      input here. `JUDGING_TEMPERATURE = 0.0` now pins it (4/4 identical after). The same
-      report widened the principle — robbery is a serious crime that is not primarily about
-      injuring someone, so it sat outside "harm to people" as written — and added a SECOND
-      GATE on the outline, which is the model's own reading of the request and far more
-      concrete than the sentence that produced it. A THIRD GATE screens the generated
-      chapter before it is saved — the only one that reads actual text — with a deliberately
-      narrower question (the subject is already settled; has this text become a working
-      procedure?), sitting ABOVE the rewrite teardown so a refusal leaves the book untouched.
-      Verified both ways on device: a real explosives-chemistry chapter compiles and saves; a
-      forced refusal shows its reason and leaves the chapter `pending` with nothing on disk.
-      design.md §19.
-- [x] **Export says "Done" rather than closing itself (2026-09-24)** — the result line is the
-      only evidence the save happened, and popping on success is the "generate did nothing"
-      defect in another costume. Exporting twice (clean copy to send, annotated copy to keep)
-      is also a real errand worth one toggle rather than a re-navigation.
+## Standing rules
 
-- [x] **`CompilePrompt` scrolls its front matter (2026-09-24)** — found while testing the
-      chapter gate: it was a `Column(fillMaxSize())`, so on a 320x640 emulator a chapter with
-      several objectives pushed "Compile chapter" off-screen and the chapter could not be
-      written at all. I first filed it as the same class as the menu below and deferred it;
-      that was wrong — `isPending` does `return@Column` before the ink overlay and TapRouting
-      exist, so there was no gesture-path blocker, only a swipe detector on the same Column.
-      Fixed the way `OutlineReviewPage` already solves this: content scrolls, action is pinned.
-      The detector now ignores a drag a child consumed, or scrolling the objectives also turned
-      the chapter. **Vertical-swipe navigation is gone from this screen** as a result — a
-      vertical drag is the scroll now; edge taps, horizontal swipes and the side buttons all
-      still navigate, and each was checked on device rather than assumed.
+Each of these was paid for by a defect. The story is in `docs/worklog.md` under the date
+given; what follows is only the rule.
 
-- [x] **A book is one file in the backup (2026-09-24)** — loose files were the shape §1
-      argues for and the wrong one for the device: the Boox indexes shared storage, so 96
-      backup files turned up in its Images and Documents libraries, one tidy-up away from
-      the bin. Each book now travels as `<slug>.zip` (plus `_shelf.zip` for `last_read.json`
-      and `labels/`, which belong to no book). The grain of a decision moved from a file to a
-      BOOK — a zip cannot be written half-way — so an evening's reading repacks that book
-      rather than copying a few kilobytes; books were already the unit of restore. Two rules
-      pay for that: an archive is judged by what is INSIDE it rather than by its timestamp (a
-      run interrupted mid-book leaves a zip NEWER than the book and holding half of it, which
-      a stamp cannot see and a listing cannot miss), and every archive written is READ BACK
-      past a CRC before the run says it worked. Both reuse `CourseBackup.plan`, so "up to
-      date" and "arrived intact" are one rule asked twice. Restoring puts the archive's
-      timestamps back, or the next backup would repack everything it just restored. Older
-      loose backups still restore, and the screen says which folders are now redundant —
-      nothing at the far end is ever deleted by the app. Device-verified on the real shelf.
-      design.md §15.1.
-- [x] **The old loose copies can be swept (2026-09-25)** — §15.1 named the redundant folders
-      and left the reader to delete them with a file manager, on the device where that is
-      worst, for a mess the app made. One row now does it. **It is the only place the app
-      deletes at the far end**, so the fence is the feature: it RE-READS the folder rather
-      than trusting the screen's listing, opens each archive `deep` so every byte goes past a
-      CRC before the other copy stops existing, and deletes a group only when the archive
-      holds every path in it. The comparison is BY PATH and deliberately not `plan` — every
-      other check in the backup asks "is the destination as new as the source", which here
-      refuses every real case, because the archive is the newer copy while the loose files
-      carry the moment they were COPIED. Root by root rather than group by group, so a stray
-      file the reader put in the folder is kept and named without stranding `last_read.json`
-      beside it. A loose folder with no archive is still never offered — it is a book that
-      has left the device. Device-verified both ways: refused a book for one orphan chapter
-      and named it, then swept clean once that file went; all four archives byte-identical
-      and CRC-clean after. design.md §15.2.
-- [x] **A slug keeps words in any script (2026-09-25)** — `courseSlug` and `chapterSlug` both
-      kebab-cased with `[^a-z0-9]+`, which deletes every character outside ASCII. A title with
-      no Latin in it reduced to the empty string and took the fallback, so **every Russian book
-      was called `course`** (then `course-2`) and its chapters came out as `01-chapter`,
-      `03-c`, `04-am`, `06-f` — the index, plus whichever chord names happened to be spelled in
-      Latin. The slug is the folder name, the backup's filename and the name inside an exported
-      EPUB, so a reader whose language is not written in Latin met this on their first book.
-      Found from Aliaksei asking why the backup folder's names were confusing: the backup was
-      reporting the defect, not causing it. Both now share ONE `kebabOf`, because the rule had
-      already drifted into two copies and would otherwise be fixed twice again; the class is
-      letters + digits + MARKS, since a Devanagari or Thai vowel sign is part of the word
-      rather than punctuation. ASCII titles are untouched, so nothing existing moved.
-      `chapterSlug` is called only by `OutlineGenerator` at the moment an outline is first
-      written, so no existing chapter is renamed — a rewrite reuses the slug from
-      `course.json`. **Device-verified rather than assumed**: per the ICU lesson, the pattern
-      was run on the Boox under `app_process` from a dex, not just in a JVM test, and gave
-      identical results. The one book that existed was migrated by hand (directory + the
-      `slug` field + a repack); its old `course.zip` was checked file-by-file against the new
-      archive before being removed. **Existing Russian chapter slugs were NOT migrated** —
-      figures, ink, notes and bookmarks are all addressed by chapter slug, so that is a real
-      data migration and not a rename.
-- [x] **An exported answer can be found (2026-09-25)** — reported from PocketBook: "show
-      answer" on page 11 jumped to page 13 showing a DIFFERENT exercise. The anchors were all
-      CORRECT, and the export was still wrong — the answers section began two paragraphs after
-      the last exercise, so the landing page's visible top was that exercise's question. The
-      link worked; the landing was unreadable. **Fixed twice**: first with a CSS page break,
-      which Aliaksei reported still jumped two pages — a reader rendering in its own typeface
-      (what happens once you change the font size) need not apply the publisher's stylesheet
-      at all. **A fix that depends on the reader honouring CSS is not a fix.** The answers are
-      now their OWN DOCUMENT in the spine (`ch02-answers.xhtml`), which is a page boundary
-      nothing can ignore. An answer is just its number and the answer — reprinting the
-      question above it was tried and read as bloat, correctly, since the separate document
-      had already solved what the reprint was for. Every anchor carries its chapter
-      (`c2-ans1`)
-      because the exercise counter restarts per chapter and a reader that flattens the spine
-      would send every "show answer" in the book to chapter one — latent, not the reported
-      bug. Recap and exercise blocks now print their own name too: they were distinguished
-      only by `border-left-style: double` against `solid`, which most readers render alike.
-      Font size is deliberately still unset — that belongs to the reader. design.md §18.1.
-- [x] **A letter that is not the letter it looks like (2026-09-25)** — the Russian answers
-      heading was stored as `Οтветы`, first letter GREEK OMICRON. Invisible on the page, which
-      is how it survived; it breaks in-book search and text-to-speech. `keepUsable` now
-      REPAIRS rather than rejects — rejecting falls back to English, which is visibly worse
-      than a word that looks right — translating minority letters into whichever of
-      Latin/Greek/Cyrillic the rest of the word uses, and refusing only a word with no
-      majority. Those three scripts only: Japanese and Chinese mix scripts inside a word
-      normally. **It also runs on READ**, because `ensureLabels` only asks for MISSING strings,
-      so a label already on disk is never re-examined and would stay broken for ever.
-      design.md §18.2.
-- [x] **Pictures: what is in front hides what is behind (2026-09-25)** — the most visible
-      defect in a `show` figure, named by Aliaksei. A right-hand strumming figure had the
-      ukulele's strings drawn straight ACROSS the thumb, so the hand read as sunk inside the
-      instrument. Added to the shared house style as a rule rather than a dial, with the
-      failure named. The same picture also ignored the brief's "remaining fingers in a relaxed
-      fist" and drew an open hand, so `SHOW_STYLE` gained a second rule: the pose in the brief
-      is the subject, not a suggestion. **Verified on real output the same day**: the ukulele
-      strumming figure redrawn with the new rules came back with the strings correctly hidden
-      behind the hand, and with the brief's relaxed fist actually drawn — one finger extended
-      to the string, the rest curled. Both rules earned their place.
-      **Two gaps found while running that test.** The first is now FIXED (see below). The
-      second stands: "drawn" is judged from the markdown's `src=` attribute while RENDERING is
-      judged from the file, so deleting a figure file leaves the menu insisting everything is
-      drawn while the page shows alt text.
-- [x] **A figure can be redrawn (2026-09-25)** — `Иллюстрации` reported "all N drawn" and did
-      nothing, so a picture that came back wrong was permanent short of rewriting the chapter,
-      which deliberately KEEPS its pictures. Opening and Closing got a redraw on 2026-09-23 and
-      the figures did not; nobody noticed until the house style improved and there was no way
-      to apply it. The row now also offers `Перерисовать`, opening a PICKER — a chapter has
-      several figures and they are told apart by their briefs, so a yes/no confirm is the wrong
-      shape. `ChapterIllustrator.illustrate` takes `only: Set<Int>?`, which selects by ordinal
-      regardless of `isPending` and ignores the per-chapter ceiling: both of those govern what
-      the app spends on its own initiative, and this is a row the reader tapped with the price
-      on it. The picker lives in a DIALOG rather than in the menu sheet, which is what lets it
-      scroll — a dialog is its own window and does not meet `TapRouting`'s CloseMenu the way
-      the sheet does. `pictureVersion++` on completion, or the reader draws the old bytes from
-      cache under the same file name. **Unit-tested; NOT device-verified — the Boox was
-      unplugged before it could be driven.**
-- [x] **The reader speaks the book's language too (2026-09-25)** — the block labels were
-      hardcoded, so **every exercise in a Russian book said "TRY THIS"**, every recap "RECAP",
-      every undrawn figure "FIGURE", and the reader's own "Show answer" button stayed English
-      while the EPUB's said «Показать ответ». Three of those were never in
-      `BOOK_CHROME_STRINGS` at all — the one piece of book chrome nobody thought of as chrome,
-      because it is drawn as part of the page rather than as a control. Three more ("Ask about
-      this", "Add note", "Cancel") WERE declared and simply never wired to `labels`, in nine
-      places. Found by cross-referencing every `Text("…")` literal in `ReaderScreen` against
-      the declared set — worth re-running after any UI work. `labels` now threads through
-      `PagedContent` → `RenderBlock` → the block composables.
-      **A counted string must also JOIN cleanly**: "figures: {n}" composed into
-      "создать: рис.: 1", two labels stuck together, so counts are written "×{n}".
-      And note the trigger: `ensureLabels` runs from the CONTENTS screen only, so a reader who
-      always cold-starts into the reader never gets newly added strings translated.
-- [x] **"Drawn" and "rendered" now ask the same question (2026-09-25)** — pending-ness was read
-      from the Markdown's `src=` while RENDERING was read from the file, so deleting a picture
-      left the menu insisting everything was drawn while the page showed alt text, with no way
-      back. A slot is outstanding when it has no `src=` OR the file that `src=` names is
-      missing, and the draw row hands those exact ordinals to `illustrate` via `only` — the row
-      draws precisely what it counted. Device-verified by deleting a figure: the row changed
-      from «всего 4» to «Создать: 1 · ~3¢».
-- [x] **Which hand it is, is part of the instruction (2026-09-25)** — Aliaksei: the strumming
-      figure shows a LEFT hand where the brief says «правая рука», and most people are
-      right-handed. Seen from the back with the fingers pointing left, a right hand's thumb is
-      on the LOWER side; that drawing has it upper. A mirrored hand teaches the posture
-      backwards and on an instrument swaps the two hands' jobs. Added to `SHOW_STYLE` with the
-      thumb check written out, plus "assume a right-handed person unless the brief says
-      otherwise". **Not yet verified against output.**
-- [x] **The cover draws the chapter's own opening (2026-09-28)** — reported from the
-      neural-networks book: chapter 4 opened with a woman tasting cookies and adjusting the
-      recipe, and one page later the chapter itself opened with a paper plane thrown, bent
-      and thrown again. Both are good pictures of training a model; together they are two
-      books. Structural rather than a bad generation — the cover brief was written from the
-      title and objectives, so two models invented two metaphors for one idea, and a chapter
-      model taught concrete-before-abstract will ALWAYS have invented one already. Nothing
-      had to be generated to fix it, only PASSED: pictures are drawn after the prose is
-      saved in every flow, so the chapter's opening was already on disk each time the cover
-      was briefed. Two details are the fix rather than decoration — the old "invent a
-      metaphor" paragraph is REPLACED when an opening is present rather than stacked under
-      the new rule (a contradiction gets resolved however the model likes, which is the
-      behaviour being fixed), and the chapter's own figure briefs ride along under "do not
-      describe one of these again", because anchoring the cover to the opening parks it
-      beside the chapter's first inline figure. The closing picture inherits it free, being
-      a rewrite of the cover's brief — and the Closing row now says `no longer matches the
-      opening` when the cover has been redrawn under it, read off file timestamps rather
-      than stored. **Unit-tested and the built prompt read back in full; NOT verified
-      against drawn output — that needs an API call on a real chapter.** design.md §10.1.
-- [x] **A chapter title is its name, not its number (2026-09-29)** — a live outline came
-      back with every chapter titled "Chapter 1: Letting Go of the Fear…", so the Contents
-      read `1. Chapter 1: Letting Go…`. The rule existed in the CHAPTER prompt, where it
-      stops the h1 repeating the number, and had never been said to the OUTLINE model — so
-      whether a book got prefixed titles was luck, and the existing books happened to come
-      back clean. Fixed twice, like the figure ceiling: the prompt asks, and
-      `withoutChapterNumber` enforces in `withDerivedSlugs`, because an outline is written
-      once and then names the folder, the header, the Contents and the EPUB for the life of
-      the book. The strip is deliberately NARROW and tested — `1984`, `10 Ways to Draw a
-      Cat` and `Chapter and Verse` all survive untouched, and a strip that would empty a
-      title keeps the original instead.
-- [x] **The Contents is a contents again (2026-09-29)** — Aliaksei: "TOC goes after search,
-      progress and export, so on the emulator it is not even visible". He was right, and the
-      screen's own doc contained the argument against itself: it calls itself the book's
-      FRONT MATTER, and in a book the front matter is the title page and then the contents —
-      the apparatus goes at the BACK. Chapters now follow the title immediately, then the
-      reader's own notes, questions and bookmarks, then Search / reading record / Export
-      last. The rule is: everything that points INTO the book first, everything you do TO it
-      last. Search loses least by moving, since it is also in the reader's own menu under
-      "Go to", which is where you want it mid-paragraph.
-      **The bigger half is that it now opens at the chapter you are READING.** Every route
-      into a book lands here — the Library row has no continue-reading path of its own — so
-      resuming a book four chapters in cost three actions: turn a page, find the chapter,
-      tap it. It jumps ONCE, not on every rebuild of the pages, or deleting a note would
-      drag you back; and a book with nothing read has no current chapter, so it stays on the
-      title page, which is the right opening for a book you have not started.
-- [x] **A chapter entry is measured at the width it actually gets (2026-09-29)** — Aliaksei:
-      "TOC has 6. but no title". The Contents paginator measured a chapter title against
-      `contentWidth − 24dp`, but the renderer gives the title `weight(1f)` in a Row that also
-      carries the ▸ marker, the "Day 3–4" label and the ✎ glyph, each with its own 8dp gap —
-      so it measured against getting on for TWICE the width the title has. The estimate said
-      two lines where the page drew five, the entry overflowed the budget, and the last one
-      on a page was clipped to its number. Not caused by the reorder above, but exposed by
-      it: moving the apparatus changed which entry lands at a page boundary, and the longest
-      title shows it first. It measures the marker, the day label and the glyph for real
-      now, at their WIDE forms even when the blank one is drawn — erring wide makes the
-      title narrower, hence taller, hence more conservative, which is the safe direction for
-      a budget whose only failure mode is clipping.
-- [x] **A chapter opens on a title page (2026-09-29)** — Aliaksei: page 1 of chapter 2, the
-      last line sliced in half by the footer. Instrumenting the paginator gave it in four
-      lines: the byline's keep-with-next check asked "will the heading fit beside me?" (369
-      of a 410 budget — yes) and placed itself on that promise, but the HEADING runs its own
-      check when its turn comes and demands room for the paragraph too. That fails, it opens
-      a new page, and the byline is left alone — so `mergeLonelyOpeners` glues the two back
-      together AFTER layout, where there is no budget left to check against. The sting:
-      **the title costs 306px at the top of a page and 346px once something sits above it**,
-      because it regains its 40dp top spacer. The merge added 40px nobody measured. 452
-      against 410. Three changes and they only work together: a cover-bearing heading is not
-      a "lonely opener" (a title page is content — design.md §10); while a page holds
-      nothing but openers the next block is FORCED onto it, so the byline is never stranded
-      and everything after re-flows; and a forced paragraph gives up the lines that fit
-      rather than being placed whole, which is what makes the force safe.
-- [x] **A bordered block can be cut across a page (2026-09-29)** — Aliaksei: chapter 2's
-      "try this" ran off the page and was not continued, "so it just corrupted". The
-      paginator could split a PARAGRAPH but not a FENCE, so one taller than a whole page hit
-      the oversize branch — placed anyway, clipped by the page — and the end of the task
-      plus its "Show answer" button were unreachable. Real content loss, in the block a
-      study book leans on most, on exactly the small screens the testers will use.
-      `splitFence` handles exercise and recap only: a figure is a picture and cannot be cut,
-      and an unknown kind might be anything. The answer travels with the final piece WHOLE,
-      because it is reserved space even while hidden. Head and tail keep the same block
-      index, the pattern `splitParagraph` already set, so annotations, bookmarks and ink stay
-      anchored. **The `!atTop` guard is gone** — refusing to split at the top of a page is
-      what sent an oversized block to the branch that clips it.
-      Rendering follows the print convention plus one concession to the medium: the box is
-      left OPEN at the break (square corners there, since a rounded corner on a box that does
-      not end reads as an ending), and the continuation is NAMED — "TRY THIS (continued)",
-      no mascot — because on a one-page-at-a-time reader you never see the spread, so the
-      open edge alone is a weaker signal than it is on paper.
-      **Continuation is TWO independent bits, not a head/tail flag.** A long block splits
-      more than twice and the middle piece is both a continuation and continues; with one
-      flag the second split overwrote it and the middle piece introduced itself as a fresh
-      exercise, mascot and all.
-- [x] **The top of the page was a fifth of the page (2026-09-29)** — Aliaksei measured it by
-      eye and was exactly right: the first line of text started at y=144 on a 640px screen.
-      Broken down, the largest slice was not ours at all — **the Android status bar, ~5% of
-      every page given to a clock**. The reader hides it now and restores it on the way out,
-      so Library and Settings keep theirs; the NAVIGATION bar stays, because hiding both
-      would take the system back gesture away from a screen whose own back affordance is one
-      "≡ Contents". Also: the header's `TextButton` was an unrestyled M3 default carrying a
-      40dp minimum height for a 20px label, in an app whose rule is to restyle every one of
-      them, and the 36dp gap below the header went to 24dp — the separation argument survives
-      at 24, what does not survive is paying for it twice. **First text now starts at y=100:
-      22.5% → 15.6%.** `INK_TOP_MARGIN` (28dp) was deliberately left alone — it is the room
-      the pen needs to stroke ABOVE the first line.
-      **Then a second pass, which found the principle the first one missed: the header's
-      bottom gap and `INK_TOP_MARGIN` are the SAME GAP.** Both are white space between the
-      running head and the first line; they were argued for separately — one to detach the
-      header, one to give the pen room to start a stroke above the first line — so they
-      stacked, 24 + 28, for one visual job. The ink margin is the one that cannot shrink, so
-      it does the separating and the header's gap drops to 8dp (and 4dp above it, since with
-      the status bar gone there is nothing up there to be separated from). First text lands
-      at y=80: **22.5% → 12.5%**, and chapter 2 went 24 pages → 22 → 21 on the same content.
-- [x] **An exercise has somewhere to write the answer (2026-09-29)** — from Aliaksei
-      describing his own loop: "I use stylus to mark answer, or write on the page then open
-      and compare". That reframed what looked like a defect — the blank area under an
-      exercise is not dead space, it is the WORKING AREA, and it had simply never been drawn.
-      DOTTED lines under the task now, sized from the answer the book is holding, which is
-      something a paper workbook cannot do. **They earn their place with no stylus too**:
-      Head First prints these knowing most readers never fill them in, because they mark a
-      beat to stop and think, break the wall of text, and set the page's mode to workbook.
-      **The answer reveals BELOW the lines, never into them** — ink is anchored to a block
-      and does not reflow, so printed text landing where someone wrote would bury their
-      handwriting; after the tap the two sit one above the other, which is the entire point
-      of writing first. The lines stay drawn after the reveal for the same reason. Height is
-      defined ONCE (`answerSpaceLineCount` + `ANSWER_RULE_SPACING`) and used by both the
-      renderer and the paginator, because an estimate that computes independently of its
-      renderer is the bug this file produced twice on 2026-09-29 alone.
-      **Found immediately on the sketching book**: a task that says "draw the outline of the
-      mug in one unbroken line" gets ruled lines, which is wrong — a DO task wants blank
-      space, only a SAY task wants rules. **Fixed the same day**: the chapter model marks a
-      making-task as ```exercise space="blank"```, the same way it already picks
-      `kind="show"` for a figure — it wrote both the task and the answer, so it is the one
-      that knows. Same reserved height either way, only the treatment differs. Ruled is the
-      default because most answers are written AND because it is the milder failure: blank
-      space under a question still reads as somewhere to answer, where rules across a
-      drawing read as a mistake. Verified by hand-editing the fence on the device rather
-      than paying for a regeneration. **Dotted rather than solid** (Aliaksei's call): the box
-      already has solid hairline borders, so solid rules inside it read as table rows —
-      structure rather than an invitation — while a dotted rule is the established "fill this
-      in" mark and cannot be mistaken for the frame. Defined in dp, so it scales to the
-      Boox's panel; verified at 1x on the emulator only.
-      **Sizing from the answer only works when the answer is what you would WRITE** (Aliaksei:
-      "probably not all tasks has an answer like this one"). A making-task's stored answer
-      describes what success looks like — "a continuous, messy, but remarkably accurate line
-      drawing" — and its character count says nothing about the room a drawing of a mug
-      needs; deriving from it gave four lines because the sentence happened to be 150
-      characters. A blank space is sized flat and generously instead. And an exercise with NO
-      answer draws no space and no reveal button, but was still reserving 48dp plus a badge
-      for a control that never appears.
-      **A making-task usually needs no `answer:` at all**, and the prompt now says so. Chapter
-      1 offered "draw a line that wanders as much as it wants" and then an answer reading "a
-      long, meandering, delightfully crooked line that zig-zags down the page" — describing
-      the reader's own artefact back at them, which they are looking at. An answer earns its
-      place on a making-task only when it says what to CHECK, what a common mistake looks
-      like, or how to tell a good result from a plausible-looking bad one.
-      **The classification does not have to be perfect, because the failure is asymmetric**:
-      you can write on a dot grid, but you cannot comfortably draw on writing lines. So the
-      default is INVERTED (2026-09-30, Aliaksei's call) — the room is a dot grid unless the
-      model writes `space="lines"`, with `space="none"` for a task that produces nothing.
-      Forgetting to mark a fence now lands on the harmless side. The param is read at RENDER
-      time, so this restyles every exercise in every book already on disk; the SIZE is still
-      taken from the answer whenever there is one, so nothing repaginates — only the marks
-      change. Verified on a chapter written months before any of this: same three rows, now
-      a grid.
-      **A making-task gets a DOT GRID, not empty space** (Aliaksei: "still better then empty
-      space", and "some editors uses grids to make hand drawing easier"). It is what a
-      sketchbook actually uses — dots give proportion and alignment to work against without
-      lines cutting through the drawing — and for this book's subject it is a genuine drawing
-      aid rather than only a mark of intent. Steps by the same measure as the dotted rules,
-      so the two treatments share a vertical rhythm; that step is also about 5mm, which is
-      what dot-grid paper uses.
-- [x] **A split cuts at a sentence, not a line (2026-09-30)** — Aliaksei on page 17: "still
-      has 4 sentensies looks quite silly". The last piece read "about mistakes; just keep
-      the ink flowing." — a fragment. I first diagnosed it as a GREEDY split and wrote
-      balancing code; that was wrong and the code was reverted. **The last piece is
-      inherently short**: it shares its page with the writing space, the reveal button and
-      the room reserved for the answer, so it holds a line or two of task whatever the
-      earlier cuts do. Its length was never the problem — starting mid-sentence was. The cut
-      now backs up to the last sentence boundary, capped at two lines' worth so a long
-      sentence straddling the break stays the ordinary case. Same page, same length, reads
-      as a whole thought.
-- [x] **A box should prefer to move, not split (2026-09-30)** — the other half of the
-      `!atTop` removal. Prose SPLITS; a bordered box that would fit on a FRESH page belongs
-      there whole, and only one exceeding a whole page is cut. Removing the guard was
-      necessary for the oversize case and took that distinction with it; it is restored on
-      the thing that actually matters — whether the box fits a fresh page — rather than on
-      where the layout happens to be standing when it meets one. `splitFence` is now the
-      LAST resort instead of the first.
-      It cannot loop, and `!atTop` is what makes that true: `newPage()` appends
-      unconditionally, so moving a box off an already-empty page would spin. The other half
-      is that a fence's estimate does not depend on `atPageTop` (only a heading's does, for
-      its top spacer), so a box measuring within budget measures the same on the empty page
-      and is placed there by the fit branch.
-      **Measured on the emulator at 320x640 rather than reasoned about** — a temporary
-      `Log.d` in the loop, which is the method note earning its place again. Budget 468.
-      The chapter's `recap` (h=454, met at height=131) now MOVES; under the old code it was
-      cut and put a `RECAP (continued)` overleaf. The two `exercise` boxes measure 762 and
-      622 — genuinely bigger than a whole page — so they still split, three pieces and two,
-      which is the carve-out this item asked for. Confirmed on the glass: page 20 draws the
-      recap whole, rounded top and bottom, one label.
-      **The cost is visible and was accepted**: the page before a moved box loses its tail,
-      and page 19 is four lines then two-thirds blank. Unavoidable here rather than a flaw —
-      a 454 box against a 468 budget needs essentially a whole page, so the only alternative
-      was the split we just rejected. Print does the same with an unbreakable box.
-      **Those exercises are oversized largely BECAUSE of their stale answers**: an answer
-      present means space reserved and sized from it, and both are making-tasks that should
-      carry none under today's rules. Regenerating the chapter will likely drop them under
-      the budget, at which point this fix moves them whole too — the demo regeneration and
-      this change compound rather than merely queueing.
-- [x] **The running head lines up with the text (2026-09-30)** — Aliaksei, from the Boox:
-      "top and bottom status bars has bigger margin then a content". Measured off a
-      screenshot rather than eyeballed: header 53.9dp from the edge against the body's
-      40.5dp, right margin 50.1 against 41.1. The footer was already aligned (1dp, glyph
-      side-bearing). Cause was touch padding doing double duty — the `≡ Contents` Box adds
-      12dp horizontal for its tap target and the chapter counter 8dp at the end, on top of
-      the margin the parent column already applies. Both are cancelled with an equal
-      `offset` rather than removed, because the tap target is the point of them; the target
-      now extends INTO the margin, which is the easiest place to hit a header. The counter's
-      end padding became conditional — it is a separator from the bookmark ribbon, so it
-      exists only when the ribbon does.
-- [x] **E-ink has no grey (2026-09-30)** — Aliaksei, on the dot grid: "almost invisible on
-      device". They were 0.75dp of `Hairline` (0xFF888888), which at the Boox's 300dpi is a
-      disc ~2.8px across with NO fully covered pixel — an antialiased mid-grey smudge. An
-      LCD draws that as a faint dot; the panel thresholds and dithers, so it can resolve to
-      nothing. Now `Ink`, never smaller than a whole pixel. **The reason it escaped is worth
-      more than the fix**: it was "verified at 1x on the emulator only", and 1x is precisely
-      where it could not show up — at density 160 a 0.75dp radius is SUB-PIXEL, so the
-      emulator was not a weaker test of the same thing, it was a test of something else.
-      Generalise: a dp-defined hairline or dot is not verified until it has been seen on the
-      panel, because greys and sub-pixel geometry are exactly what e-ink does not reproduce.
-      A dot grid on PAPER is light grey because ink reproduces greys; the equivalent
-      perceptual weight here is a small BLACK dot, ~0.3mm, which is what dot-grid paper uses.
-      Confirmed on the device.
-- [x] **"No working room" is not the same as "not on this page" (2026-10-01)** — Aliaksei,
-      reading chapter 1 on the device: "check task on page 10, isn't it require a space to
-      draw?" It was marked ```exercise space="none"``` — a ten-second warm-up scribble with
-      no working area at all — and the page CONTRADICTED ITSELF: the very next line under the
-      box read "Look at what you just made." The book pointed at an artefact the layout had
-      decided did not exist.
-      The prompt's criterion was "needs no working room at all, because nothing is produced",
-      which silently asks TWO questions — is anything made, and does it belong on this page.
-      The task says "on your paper", so the model answered the second and withheld the room.
-      Same chapter, the circles task says "on your page" and got a grid: one rule, two
-      answers, which is the signature of an ambiguous principle rather than a bad generation.
-      Same shape as the screener's `refuse` criterion — the examples were fine, the PRINCIPLE
-      was the problem.
-      Now: `space="none"` is only for a task that leaves NO MARK ANYWHERE, and the prompt
-      says explicitly that work on the reader's own paper still earns room, because on a
-      stylus device many will work on the page — plus the asymmetry, since an unused grid
-      costs a little blank space while a missing one leaves a reader with nowhere to work.
-      Unit-tested. The demo chapter was HAND-EDITED rather than regenerated: the same
-      generation got the answer discrimination, the figures and the cover match right, and
-      re-rolling all of that to fix one param is a bad trade.
-      **Device-verified**: the task now carries a grid, and the box exceeds a page so it
-      splits — "TRY THIS (continued)" then the grid, then "Look at what you just made". Note
-      the interaction with the open item below: a BIGGER drawing area makes this split more
-      common, and an oversized box is the one case that no longer moves whole.
-- [x] **The working room is sized from the TASK, and the page can take it back
-      (2026-10-01)** — Aliaksei's idea from 2026-09-30, built after he found the defect it
-      predicted. `answerSpaceLineCount` sized the room from the ANSWER whatever the
-      treatment. That is right for something you WRITE — a printed workbook guesses how many
-      lines to rule and this one knows — and says nothing about the room a drawing needs: a
-      mug takes more page than a sentence about a mug does. Seen on the Boox: a reader drew
-      eleven circles across a grid sized by a 180-character sentence, and the revealed answer
-      printed straight over the bottom row of them, breaking the one rule the feature was
-      built on.
-      Two measures now. Ruled lines keep sizing from the answer, clamped 2..6. A grid gets a
-      flat `GRID_ROWS = 8`, deliberately generous — **and generosity is only safe because the
-      page is allowed to take it back.**
-      **A LADDER OF COURTESIES.** When a box will not fit a page, what yields is what the
-      reader loses least by: the room to work in first (all the way to nothing — a phone has
-      no stylus, and a box with no room still asks its question and shows its answer, where a
-      clipped one does neither), then the answer's mascot, because a 72dp badge sits BESIDE
-      the answer text and on a 320dp page takes nearly a quarter of the line from it, turning
-      a seven-line answer into twelve. The task and the answer never yield. Carried as
-      `FENCE_SPACE_ROWS` / `FENCE_PLAIN_ANSWER`, pagination-written params the model never
-      writes and the file never holds — the pattern `FENCE_CONT_FROM` already set. Both
-      honoured by the estimate AND the renderer, which is this file's standing rule.
-      **And when even the ladder cannot make it fit, the oversize branch places the RELAXED
-      box, not the original.** Getting that wrong was the bug twice over in one sitting:
-      having given up the room and the mascot, the code fell through and clipped the
-      full-sized box, so the reader lost the same words AND kept the decoration that cost
-      them. Least-clipped beats most-clipped.
-      **Device-verified on the emulator at 320x640**: the answer that was sliced in half now
-      renders complete, ", you did it right." and the bottom border included; the exercise
-      that fits keeps its full 8-row grid untouched. **NOT re-verified on the Boox** — it
-      came off the cable before the build went over. Expect the ladder never to fire there:
-      the box already fit with room to spare at the old size.
+**Pagination — the single richest source of regressions in this project.**
 
-- [x] **A mark in the working room is an answer, not a selection (2026-10-02)** — Aliaksei,
-      doing the ten-circles exercise on the Boox: "I got chip appeared all the time". Every
-      circle he drew AS THE ANSWER popped the Ask/Add-note chip. The gesture test already
-      required a shape AND text — `(enclosing || verticalMark) && !annotatedText.isNullOrBlank()`
-      — and the text half was passing, because a circle in the grid is anchored to the
-      exercise block and the near-miss fallback let it claim the question's last line; a
-      vertical mark did worse, reading ACROSS blocks and quoting a confident, wrong passage
-      from a neighbour. So the guard was there and the thing it guarded against was not
-      "no text" but "text the reader never pointed at".
-      `strokeIsInWorkingRoom` is the third test: a mark whose vertical CENTRE is below the
-      question text of a box that offers room is the reader working. Asked GEOMETRICALLY
-      rather than from the `space` param, because the room is offered whatever the treatment
-      — writing an answer on ruled lines is not a selection either. Centre rather than top,
-      so a circle drawn AROUND the last line still marks it while one in the first grid row
-      does not. Decided at the dispatch site rather than inside the extractors, since it
-      disqualifies the gesture whatever shape it had.
-      **Verified on the emulator by injecting stylus events**: a vertical mark in the grid
-      produces `workingRoom=true` and no chip (the log shows it still resolved text, which
-      is exactly the trap), and a margin bar on a prose page still produces `workingRoom=false`
-      and its chip.
-      **Confirmed on the Boox with the real pen, 2026-10-02**: drawing the ten circles as the
-      ANSWER raises no chip. That is the reported defect closed on the path that matters —
-      the emulator could not have shown it, since injected stylus events mis-anchor (seen
-      picking block 15 while the page showed 10-11).
-      **Still unconfirmed: a deliberate underline or circle INSIDE an exercise's question**,
-      which must still raise the chip. If the centre test is too eager the symptom is "I can
-      no longer ask about exercise text", and the fix is loosening it.
-- [x] **The shelf is the shelf and the book is the book (2026-10-02)** — Aliaksei: "when I
-      read a Russian book on Kindle or iOS Books, they do not translate the app interface by
-      a book." He is right and that is the convention everywhere; InkFirst had the whole
-      interface following whichever book you opened, so the menu changed language per book.
-      **The line is now what gets TYPESET, not what is a control.** A string is the book's
-      when a printed copy would carry it, or when the exported EPUB does — there is no app
-      around an EPUB, so whatever it prints has to be the book's own language. That leaves 17
-      strings: the block labels (TRY THIS / RECAP / FIGURE / "(continued)" / Show answer), the
-      chapter byline (Chapter {n} · ~{n} min · Day {n}), and the words the EPUB carries
-      (Exercise, Recap, Answers, Answer {n}, Your notes, Your questions, Contents). It had
-      been 98.
-      The other ~80 moved to `res/values/strings.xml`, following the DEVICE language like
-      every reader app. That is better engineering on its own: deterministic,
-      free, offline, reviewable before it ships — the Greek-omicron bug was in the runtime
-      path, and a silent homoglyph in a menu is worse than in a heading — and plural-aware if
-      we ever need it. Runtime translation stays for the book's 17 because **the set of BOOK
-      languages is open-ended and the set of UI languages is not**: someone will ask for a
-      Spanish book tomorrow, and we can ship UI for the languages we choose.
-      **The UI is ENGLISH ONLY, and that is a decision rather than an omission.** A
-      `values-ru` was written and deleted the same day, Aliaksei's call: he is a native
-      Russian speaker who runs his devices in English, the testers are English-speaking, and
-      the reason worth keeping is that **Russian labels run long and Cyrillic sits poorly in a
-      cramped interface**. I had argued the opposite an hour earlier — that moving the line
-      without a Russian UI would be a regression, since the old design gave him a Russian
-      interface for Russian books by accident. He was better placed to judge it, and the
-      accident was never something he wanted. A book written in Russian is still Russian; it
-      is the SHELF that stays English. Another language later is one `values-xx` folder, and
-      the Russian that existed is recoverable from the commit that removed it.
-      **Device-verified on the emulator at three points.** With `values-ru` present and the
-      app forced to Russian via `adb shell cmd locale set-app-locales com.inkfirst --locales
-      ru`, the chrome read `≡ Содержание` / `Гл. 1/7` / `Стр. 9 / 20` while the English book's
-      prose AND its `TRY THIS` label stayed English — proving the split works in both
-      directions, which is the Kindle model. After deleting `values-ru`, the same forced-ru
-      run comes back `Contents` / `Ch 1/7` / `Page 9 of 20`: the English fallback is real and
-      not merely the absence of an alternative.
-      `BookChromeLiteralsTest` now guards both halves: no bare literal in a book screen (it
-      must be `t(…)` or `stringResource`), nothing declared for per-book translation that no
-      book prints, and every `values-*` translation complete with matching placeholders — a
-      missing one falls back to English silently, which is the same failure the runtime
-      translator had and which resources do not fix by themselves.
-      **`ExportScreen` is English and that is now CORRECT, not a gap.** It had been carried
-      as unfinished work since the morning; the new line resolves it without a line of code.
-      It is a screen you operate — a switch, a save button, a result line — and none of its
-      words are typeset into anything. What the EXPORT itself prints goes through `labels`
-      and is in the book's 17. Do not "finish" it.
-- [x] **A rewrite redraws the chapter's own two pictures (2026-10-02)** — open since
-      2026-09-28 and closed by DELETING A SPECIAL CASE rather than adding a rule. §1 kept the
-      cover and the closing picture through a rewrite because both came from the OUTLINE,
-      which a rewrite does not change. That stopped being true the day the cover started
-      being briefed from the chapter's own opening (§10.1) and the closing from the cover:
-      both now describe prose that a rewrite is explicitly told to replace with different
-      metaphors, so keeping them reinstates the very "two books" defect §10.1 was written to
-      fix.
-      **The money objection turned out to be weaker than it looked.** It had been parked as
-      "~6¢ nobody asked for" — but a rewrite ALREADY drops and redraws every inline figure,
-      9¢ on a three-figure chapter, without asking. The cover and closing are now in exactly
-      the same position, so keeping them was the inconsistency, not the economy.
-      Aliaksei's framing, and it is the right one: "you normally won't redraw a chapter
-      constantly, but you have an option and you know what it costs."
-      **The other half is therefore the PRICE.** This app's rule is that every row which
-      spends names its cost, and rewriting was the one place that spent silently — the dialog
-      even promised "the chapter's pictures are kept", which had been false since 09-28. It
-      now reads "Its pictures are drawn again from the new text — about 5, ~15¢", counted as
-      inline slots + 2 and suppressed entirely for a book whose figure policy does not draw
-      on its own. An estimate, since the rewritten chapter may ask for a different number of
-      figures, which is what the "~" is for.
-      **The idea Aliaksei rejected is worth keeping**: passing the old cover's description
-      INTO the rewrite so the new prose keeps the metaphor. It inverts the dependency — the
-      cover serves the chapter — and fights the rewrite prompt, which asks for a different
-      route. "When we say rewrite we suppose content to be changed."
-      Verified on the emulator by opening the dialog and reading it back; the teardown itself
-      is NOT yet exercised, since running it costs a real generation.
-- [x] **The reader menu scrolls (2026-09-28)** — open since 2026-09-22 and closed because
-      430 colleagues are about to open this app on phones. It sized to its content, so below
-      ~700px everything after "Chapter" was off-screen and unreachable — Rewrite, Figures,
-      Opening, Closing, Badges — invisible on the Boox, which is tall enough. `MenuSheet` is
-      now the one container all three panes share (they were three identical `Column` headers
-      drifting apart), and **the cap and the scroll are ONE fix**: a scroll with no cap fills
-      the screen and takes the dismiss target with it, since tapping the page is the only way
-      out of the root pane; a cap with no scroll is the bug again with a shorter sheet.
-      The gesture half is NOT in `TapRouting`, deliberately. `verticalScroll` CONSUMES the
-      drag, so the page's detector now drops any gesture a child consumed — a `consumedByChild`
-      flag rather than the old check on the final change, because **a scrolling child consumes
-      the deltas as they arrive and has nothing left to consume on release**. That was why a
-      scroll container alone would not have worked: scrolling arrived at the page as a bare
-      swipe and resolved to `CloseMenu`. The DECISION stays in TapRouting; the detector deals
-      with its own transport, which is what its own doc already said its job was.
-      **Device-verified on the emulator at 320x640 and 320x480**, all five: every row reachable;
-      a drag inside the menu no longer closes it; a drag on the PAGE still closes it and does
-      not also turn; swipe-to-turn still works with the menu closed; and the content genuinely
-      scrolls once it overflows.
-- [x] **The window is edge-to-edge, so the bars can OVERLAY (2026-10-02)** — Aliaksei: "can
-      we overlay it instead of recalculating the pages, same as we do with our menu?" Yes,
-      and that one question named the whole problem. The menu can float because it is OURS,
-      drawn inside our window; the system bar is drawn above it, and whether our window
-      SHRINKS for it is `decorFitsSystemWindows`. It was the default `true`, so showing the
-      bar took the top 24dp away from the paginator.
-      **Measured before deciding, which is what settled it.** With the bar forced on, chapter
-      1 went 20 pages → 22, and the capture showed the content pushed DOWN rather than
-      covered. So tying the bar to the menu would have repaginated on every open and again on
-      every close. I had reasoned that correctly at first, then talked myself out of it after
-      the swipe test — a TRANSIENT bar (the top-edge swipe) overlays and does not reflow,
-      while a persistent `bars.show()` resizes. Two different things with one name.
-      `WindowCompat.setDecorFitsSystemWindows(window, false)` once, then the space is given
-      back PER ROUTE in the one place that already owns the bars: everything but the reader
-      pads for `systemBars`, the reader pads for `navigationBars` only. Net heights are
-      unchanged — a non-reader screen had screen − status − nav and still does, the reader had
-      screen − nav and still does — so **the migration itself repaginates nothing**, which was
-      the property to protect.
-      The menu now shows the clock, battery and wifi, which is what every reader app does:
-      opening the menu means you have stopped reading and started operating. **The running
-      head stands down while it is up** (`alpha`, not a conditional, so the row keeps its
-      height and nothing below it moves) — one strip, one owner at a time. Without that the
-      bar cut through the glyphs of "≡ Contents", which reads as a bug rather than a choice.
-      **Device-verified on both.** Emulator: menu closed 20 pages, menu open, closed again 20
-      pages; Library and Settings sit correctly inside the bars; the Contents screen's own
-      pagination stayed "Page 2 of 4". Boox: clock/wifi/80% appear with the menu, prose does
-      not move, and closing it brings the header back at "Page 13 of 15".
-      Worth knowing it was coming anyway: `targetSdk 35` makes edge-to-edge mandatory on
-      Android 15+, so this is the posture Google enforces shortly regardless.
-      Also learned: on Onyx a top-edge swipe does NOT peek at the status bar — it opens the
-      whole Control Center (wifi, Bluetooth, Front Light sliders). So before this change the
-      only way to check the time mid-chapter was to summon a settings panel over the page.
-- [x] **A box flows part by part, not word by word (2026-10-06)** — Aliaksei, reading on the
-      Boox with the font turned up because he had no glasses: a `try this` box "was splitted
-      into 3 ugly 5 lines each pages", and the question behind it — "why does our text flow
-      naturally from page to page but this block can't? I thought a block is just an extra
-      style for the text same as on html" — is the right one, and names the gap exactly.
-      **The text was never what overflowed.** Measured at his geometry (1264x1680 @300dpi,
-      font 1.3) rather than reasoned about: the task is six lines, all six FIT, and what does
-      not is the furniture — an eight-row dot grid (~580px at that size) plus the reserved
-      answer. But cutting text was the only tool `splitFence` had, and the rule that it must
-      leave two lines for the tail turned a 1207px page into a 467px one. Three times over.
-      **The rule that would have helped was unreachable.** The 2026-10-01 ladder — the room to
-      write yields first, then the mascot, never the task or the answer — sat BELOW the split
-      in the loop, and the split's own `continue` meant it only ever ran on whatever the
-      scissors had left. A box overflowing by one row of dots was cut in half rather than
-      giving up the row.
-      Two changes, and they only work together. The ladder is **hoisted above** the move/split
-      decision, so the courtesy yields before anything is cut — but only down to
-      `MIN_WORKING_ROWS`, because a box that fits a page ONLY by losing every row of room is
-      better served by the second change. That second change is that `splitFence` now **cuts
-      between the PARTS before cutting the words**: if the task fits where it stands, the task
-      is not what moves — the head keeps every word plus as many rows of room as the page will
-      take, and the tail carries the rest of the room and the answer. The renderer learned to
-      draw working room on a HEAD (it never draws a reveal button there) and to skip its text
-      when a piece has none. A piece's explicit row count now outranks `showsReveal` in BOTH
-      the estimate and the renderer, which is this file's standing rule.
-      **Measured before and after, same chapter, same geometry, at three font sizes.** At 1.3:
-      page 12 went from 462/1207 — four lines and 62% white — to 1137, and the first exercise
-      is not split at all (it keeps 7 rows of room where the old code left it 3). At 1.5 the
-      page count is unchanged at 20, both pages of the split box are ~95% full, and the room
-      survives as 5 rows + 3 where the old code deleted it entirely (`spaceRows=0`). At 1.0
-      the chapter gains ONE page, because the second exercise is now placed whole instead of
-      cut — and the page that used to hold its tail was 1228/1207, over budget. A chapter of
-      the neural-networks book splits nothing at all now; both its exercises land whole.
-      Verified on the glass as well as in the numbers: the head draws task + 7 rows with its
-      foot open, the tail reads `TRY THIS (continued)` + Show answer, and revealing prints the
-      answer complete with the following paragraph still on the page.
-      **The cost, visible and accepted:** a box that moves whole leaves the page before it
-      short — 252/1207 in one case. That is the same trade 2026-09-30 took for the recap, and
-      the alternative is the cut this item exists to remove. The other thing worth knowing is
-      that at 1.5 the dot grid itself now spans a page break (5 rows then 3), which is right
-      for a written answer and of little use for a drawing — if that ever grates, the fix is
-      to keep the room with whichever piece holds the answer rather than filling the head.
-- [x] **A try-this block has no frame any more (2026-10-06)** — the same day's part-split fix
-      made the big screen right and the small one only better: at 320x640 and font 1.3, the mug
-      task still came out as a one-line piece under a mascot, then four lines, then eight ending
-      mid-sentence. Aliaksei's call, and it goes past the paginator entirely: **"we leave icon,
-      title, then put text as Italic. So no frame should be no problem."**
-      He is right, and the frame was the whole problem rather than the decoration. A bordered
-      box is a UNIT — it must land whole, leave an edge open when it cannot, and reintroduce
-      itself overleaf, paying its label, its mascot and two lots of padding on every piece
-      (~150px a time on that screen, charged three times). Italic marks a task as well as a
-      border does and costs the page nothing, because styled text flows. `FlowBlock` replaces
-      `BorderedBlock` for exercise and recap: mascot and name drawn ONCE by the opening piece,
-      body in italic, full page width, and a continuation says nothing at all. Code listings and
-      undrawn-figure placeholders keep their box — a boxed listing is a convention, and the
-      figure box is a placeholder rather than something to read.
-      **Three real bugs surfaced in `sentenceCutAtOrBefore` while chasing this**, all visible on
-      that one page. It required whitespace IMMEDIATELY after the full stop, so a sentence ending
-      inside quotes — `connects to the cylinder." Now, trace…`, which this book does constantly —
-      was invisible to it and the page broke four words into the next sentence. Its backup budget
-      was `3 * 42` CHARACTERS, "three lines' worth" at an assumed 42 per line; at 22 chars a line
-      that is six lines, and the head gave up a third of its page hunting for a stop. And it had
-      no floor, so it stranded a ONE-LINE piece under a 94px mascot at the foot of page 9. The
-      budget is now measured off the layout (back up no further than two lines, never below
-      `MIN_SPLIT_LINES`), and closers `"'’”)]»` may stand between the stop and the space.
-      **The part split needed a rule it did not have: the room to write belongs WITH the task.**
-      First cut of it put every word of a two-page task on the second page and left the eight-row
-      grid alone on a third — a page opening with nothing but dots, and the reader writing two
-      pages away from the question. It now runs only when the head keeps usable room AND there is
-      an answer to send over the leaf; everything else falls through to the text cut, which keeps
-      the last words of the task on the same page as the grid.
-      Device-verified on the emulator at 320x640 / font 1.3, the exact case reported: pages 9-11
-      were "one line + white", "four lines + white", "eight lines, cut mid-sentence"; they are now
-      opener + first lines, a full page of italic, and the last two lines sitting above their dot
-      grid. **Chapter 2 went 31 pages to 28.**
-      **A grey background was raised and dropped, with the better reason coming from Aliaksei:
-      "we won't be able to draw on it."** The working room is written on with the stylus, and ink
-      on a dithered grey is both a poor writing surface and poor contrast — on top of the standing
-      rule that e-ink has no grey. The frameless block is also why it is not needed: a fill has
-      edges, so it would have reinstated exactly the land-whole-or-look-broken problem the frame
-      had.
-      The EPUB kept its boxes on the argument that "it is reflowable, so it never had this
-      problem" — WRONG, and corrected on 2026-10-16: reflowing is what causes it.
-- [x] **The rule IS the title block and the footer (2026-10-06)** — Aliaksei on the frameless
-      version: "for me it lost visual attraction. Maybe we can play with Title block and add
-      some footer, to have visual block on the page." He also asked for a UI review, and the
-      review found the flaw in that plan before a line of it was written: **a header appears
-      once at the start and a footer once at the end, so the MIDDLE page of a block spanning
-      three pages gets neither** — and the middle page is exactly the orphaned one. The device
-      has to be continuous ALONG the block, not attached to its ends.
-      A marginal rule is, and it subsumes what he asked for: **its top is the header and its
-      foot is the footer**, and because it sits beside the text it costs zero vertical space on
-      every page it touches — the resource this whole redesign was fighting for. 2dp black,
-      inside the text column with the content stepped in 14dp (the change bar of technical
-      setting, plus the set-off extract). **The foot turns right 14dp only on the piece where
-      the block ends**, so "no foot" means "carries on over the leaf": one bit of information,
-      carried by geometry, costing no words and no height. Inside the text column rather than
-      the page margin deliberately — the outer margin is where a pen mark MEANS something here,
-      and a printed rule out there invites tracing.
-      RECAP gets the same instrument with a DASHED stroke: a different speech act (the book
-      summarising itself, nothing to make, nothing to reveal) deserves a lighter claim, and
-      dashed rather than dotted because dots already mean "write here" in this app.
-      The block label went from `Muted` to black: the frame used to carry the block and the
-      label could afford to be quiet, but it is half the signal now — and grey is the one thing
-      this panel cannot render.
-      **The indent narrows the measure, so `FLOW_INDENT_DP` is duplicated in the paginator with
-      a comment saying it must agree** — an estimate that measures at one width while the
-      renderer draws at another is this file's recurring bug.
-- [x] **The dot grid is centred, and the answer says which word is the label (2026-10-06)** —
-      both from Aliaksei reading the frameless version. The grid's columns started one step in
-      from the left and stopped wherever the last one fell short of the right edge, so the
-      margins were a full step on one side and the remainder on the other, under text that is
-      flush to both. Rows had the same bias. It takes as many columns as fit now and shares the
-      remainder equally, both ways.
-      "Answer label probably needs to be bold" — it is, and the fix uncovered a localisation
-      bug beside it: the prefix was a hardcoded English `"Answer: "`, so **a Russian book
-      revealed its answers in English while its own EPUB printed them in Russian**. It is a
-      book-chrome string now (`"Answer:"`, colon included, since French wants a space before it
-      and some scripts want none), threaded into the paginator too — the estimate measures the
-      revealed answer, so it needs the same word the renderer draws. With no frame, the bold
-      label is also what marks where the answer starts: a run of italic that merely continues
-      reads as more task.
-- [x] **A recap is washed, a task is ruled (2026-10-06) — THE WASH IS GONE, see below** — Aliaksei, looking at the ruled
-      version: "I would do recap without a border but with light gray background. As for try
-      this section just a vertical line will be enough probably, maybe the labels for the
-      blocks could be bigger."
-      **The recap is the one block a wash is safe on, and the reason is his own earlier one:
-      nothing is ever written on top of it.** He rejected a grey background that morning with
-      "we won't be able to draw on it" — true of an exercise, which offers working room, and
-      not true of a recap, which offers none. So the two blocks now differ by instrument rather
-      than by stroke: TRY THIS keeps the marginal rule, RECAP gets a `Wash` fill with 10dp of
-      air and corners rounded only where the block actually begins and ends, so a recap cut
-      across a page runs off the edge and reads as "carries on" instead of as a broken border.
-      Labels go 11sp → 13sp: they were sized when a frame did the signalling and they are half
-      the signal now.
-      **`Wash` (0xFFE8E8E8) is the one grey in the app and it is ON PROBATION.** E-ink
-      thresholds and dithers — that is why a grey dot had to become a black one in September —
-      but a large FILL is a different case in theory, since the Go 7 has 16 levels and a light
-      wash may land on a real one. In theory. **The emulator renders it perfectly either way,
-      so the emulator cannot answer this**; it needs the panel. If it dithers into noise the
-      fallback is the dashed marginal rule it replaced, which is one line and known to work.
-- [x] **Nothing is reserved for a closed answer any more (2026-10-06)** — Aliaksei: "why do
-      we need to reserve space? In case block fits the page with a text, on answer open text
-      just flows lower, I assume it can change pagination." It can, and it does now.
-      A two-state block was measured in its TALLER state always, so the page carried the whole
-      revealed answer as white from the moment it was laid out — on a 320px screen at font 1.3
-      that is a page holding one "Show answer" button and nothing else, which is what he saw
-      and asked about. `paginate` takes `isRevealed(blockIndex)`: closed measures to the
-      button, open measures to the answer, and opening one REPAGINATES from there.
-      **The rule it replaces was written to protect handwriting, and re-reading it, it never
-      did.** The argument was that revealing must not reflow the page under the reader's thumb
-      — but the working room sits ABOVE the answer and does not move either way, so what
-      reflows is the text after it. That is what "flows lower" means, and it is what the
-      reader asked for. What the reservation genuinely bought was that nothing could be pushed
-      off a page with no scrollbar; repaginating buys the same thing without the white.
-      The subtle half is the Compose one: the reveal map is read during composition as a
-      sorted KEY rather than passed as a lambda over the map. A lambda would close over the
-      right values and never re-run, because `remember` cannot subscribe to a snapshot it only
-      reads inside its own calculation.
-- [x] **The foot is gone, the mascot is multiplied (2026-10-06)** — two more from the same
-      reading. The marginal rule's L-foot carried a real bit (no foot = carries on over the
-      leaf) and Aliaksei read it as clutter: "I don't like |_ at the bottom." His call — the
-      vertical line marks the span, and where a block ends is already obvious from the text
-      stopping.
-      And the recap's mascot sat on **an opaque white card** punched through the new wash. The
-      badges are black line art on white, which is invisible on a white page and was never
-      noticed. Drawn with `BlendMode.Multiply` now — white × anything is that thing, so the
-      field disappears and the lines stay black — which costs nothing and needs no change to
-      the PNGs every existing book has already paid an API call for.
-- [x] **The answer was measured twice (2026-10-06)** — and it had been since the day
-      exercises got an answer at all. The renderer splits a fence with `splitExerciseBody` and
-      draws the QUESTION only, handing the answer to the reveal below it. The estimate
-      measured `block.body` — the whole fence, the `answer:` line included — and then added
-      the answer's height AGAIN as the reveal's reservation. **Every exercise has been
-      carrying a phantom second copy of its own answer**: six to eight lines of page that
-      nothing draws.
-      Found the way everything in this file gets found. Aliaksei turned the font DOWN and
-      asked why a page broke early with a hand's width of white under it: at 0.85 the answer
-      runs to the most lines it ever will, so the phantom is at its biggest. It explains the
-      stubborn gap at the foot of every page an exercise shares — and a good deal of the
-      splitting this file spent the day tuning around, since a box measured several lines too
-      tall is a box that does not fit when it should.
-      One line: measure `splitExerciseBody(block.body).first` for an exercise. The demo
-      chapter at 0.85 now puts the whole ten-circles exercise — task, five-row grid and Show
-      answer — on ONE page, where it had been cut across two with a gap under the second.
-      The chapter went 16 pages to 17, which is the expected direction and not a regression: a
-      box that used to be CUT now fits a page of its own and MOVES there whole, and the page
-      before it loses its tail. That trade was taken deliberately on 2026-09-30.
-- [x] **A flow block no longer earns a page of its own (2026-10-06)** — Aliaksei: "now check
-      page 12, do you think it's good?" It was not: one line of prose, "Let us practice this
-      right now.", above nine tenths of a blank sheet.
-      **The rule had outlived its reason.** "A box would rather move than be cut"
-      (2026-09-30) was argued from what a cut COST: a frame to leave open, a name and a mascot
-      to reintroduce, two lots of padding, on every piece. A flow block has none of those — a
-      cut costs what a cut paragraph costs, which is nothing — so the box was still claiming a
-      fresh page by a right it no longer had, and the page before it paid. The move is now
-      kept only for the kinds that still cannot be cut cheaply: a figure, because a picture
-      cannot be cut at all, and a code fence, because it is still boxed.
-      The result is better than a split page, as it happens: with the exercise no longer
-      reserving itself a page, the one-line paragraph packs back onto the page above and the
-      exercise opens page 12 whole — task, five-row grid and Show answer together. **The
-      chapter went 17 pages to 15**, and the page before it now ends with an ordinary four
-      lines of white rather than being one.
-      Worth noting the shape of the day: the frame came off at noon, and three of the
-      afternoon's fixes were rules that had been written to pay for it. A rule argued from a
-      cost should be re-read when the cost goes.
-- [x] **The foot of the text block stands still (2026-10-06)** — Aliaksei: "why is this
-      bottom gap so inconsistent... one page shorter than another, usually readers have stable
-      page view especially with prose at the top and in the bottom." Right, and that is what a
-      printed text block does: prose splits freely, so every page should end on the same line.
-      **Measured rather than tuned.** Instrumented the estimate against the DRAWN height of
-      every block in a chapter (`coords.size.height` from the renderer's own
-      `onGloballyPositioned`, logged beside `estimateHeight`). The result overturned the
-      comment that had justified the budget for a year: **every paragraph, figure and fence
-      matches its estimate to within 3px.** "TextMeasurer under-counts by roughly a half-line
-      per block" was stale. So the 10% haircut — a line and a half withheld from every page —
-      was paying for nothing, and because it is a FRACTION it moved the foot of the block
-      around with the page's content. Now 2%, which is what covers the asymmetry: a page that
-      over-fills clips its last line, one that under-fills by a few pixels is invisible.
-      **Three kinds really did under-count, and the margin had been hiding them.** A heading
-      draws one line more than it measures (the chapter title measured 3 lines and drew 4) and
-      so does the byline; both get an explicit one-line allowance, erring tall. The third was
-      a REAL BUG and a real clip: **a list item is a hanging indent, not a paragraph that
-      starts with a bullet.** The renderer puts the marker in its own column of a `Row` and
-      gives the body what is left, so every line after the first is narrower by the marker —
-      but the estimate measured `"• " + text` as one run at full width. A three-item list drew
-      528px into 520px of page: a clipped last line, invisible while the 10% was absorbing it.
-      Measured at the marker's real width now, plus a line of allowance for a residual the
-      cause of which is still unexplained.
-      **Result at font 0.85:** prose pages end within ~16px of each other where the spread had
-      been 50-120px; the chapter went 15 pages to 14; the ten-circles exercise gained two rows
-      of working room, since the room is sized by what fits. The gaps that remain are
-      structural and also true of print — a figure and a list item cannot be split, so a page
-      that ends before one is genuinely short.
-      **Verified by eye on the tightest pages**, because the per-page harness becomes
-      unreliable once blocks split (one block index, two drawn heights, two pages).
-- [x] **A zero step is an infinite grid (2026-10-06)** — Aliaksei: "check the emulator, app
-      stacked." It had: 103% CPU, an ANR, main thread wedged. **Mine, from the grid-centring
-      change the same afternoon.**
-      `AnswerSpace` centres its dots by dividing the width by the row step to get a column
-      count. The step is `height / lines`, so a layout pass that hands the Canvas NO height
-      makes it zero — and a Float divided by zero is `Infinity`, whose `toInt()` is
-      `Int.MAX_VALUE`. The draw phase then tries to put two billion dots in every row. Diagnosed
-      from the ANR trace rather than by reading: `kill -3`, and the main thread's stack is
-      sitting in `AnswerSpace` → `drawCircle`, which named the function in one step.
-      **The old uncentred loop had the same hole by a different route** — `while (x < width) { x
-      += step }` with a zero step never terminates either — which is presumably why neither was
-      caught: the condition is rare, and both versions hang when it happens, so it never looked
-      like a regression from anything. Guarded now (`step <= 0.5f` draws nothing) and the column
-      count is clamped as well, belt and braces on the one loop in the file whose bound comes
-      out of a division.
-      Verified by stress rather than by a single run: the chapter walked twice with every
-      answer revealed, then opened at all four font scales — 0 ANRs, CPU back to idle.
-      **Method note worth keeping: an app that spins is a stack trace, not a bisect.**
-      `adb shell kill -3 <pid>` dumps `/data/anr/`, and the main thread's frames name the
-      culprit immediately — much faster than reverting changes one at a time.
-- [x] **A merged style is not the style you measured (2026-10-06)** — Aliaksei: "recap on
-      page 14 doesn't fit the block, last line half cut." The paginator sized that head at 13
-      lines and the renderer drew 15 of the same 428 characters at the same 268px width, which
-      should be impossible — and is the single best bug of the day, because it had been quietly
-      paying for three separate workarounds.
-      **`Text(fontSize = …, fontFamily = …)` MERGES onto the ambient `LocalTextStyle` and keeps
-      everything else it carries — Material's `letterSpacing = 0.5sp` included.
-      `Text(style = TextStyle(…))` REPLACES it.** The paginator measures a bare `TextStyle`, so
-      every block drawn with merged parameters fitted about two characters fewer per line than
-      the estimate believed. Half a point per character is ~15px a line: a 268px measure
-      behaving like 248.
-      It also answers the question left open that afternoon — why paragraphs measured to the
-      pixel while headings, the byline and list items each came out a line short.
-      **`ParagraphBlock` has always passed a whole style; nothing else did.** The list item's
-      "one line of allowance for a residual whose cause is unexplained" was this, and it is
-      deleted rather than tuned: the hanging-indent measurement plus a real style is exact.
-      Exercise, recap, the revealed answer and both halves of a list item now take their style
-      from `flowBodyStyle` / `answerBodyStyle` / `listItemStyle`, which are the same objects the
-      measurer could construct. **Proved rather than eyeballed**: with the paginator and the
-      renderer both logging, `fitting=13 of 15` now meets `drewLines=13`, where it had met 15.
-      Headings and the byline still merge, and still carry their one-line allowance — safe, and
-      a line per heading is the price. Converting them is the obvious follow-up.
-      **The rule to keep: anything the paginator measures must be drawn from a style the
-      paginator can reproduce exactly. Pass the whole `TextStyle`, never the parts.**
-- [x] **Revealing an answer no longer moves the reader (2026-10-06)** — Aliaksei: "show answer
-      on page 14 opens answer but changes the page." Opening an answer repaginates, and
-      `pageIndex` is remembered against `pages`, so it was re-derived from the anchor — the
-      page's FIRST block, which after the reflow can sit elsewhere. The reveal names its own
-      target now and the page follows it.
-      Two details earned their place. The target is the PIECE that carries the answer, not the
-      block: a split exercise puts its task on one page and its reveal on another and both
-      share the block index, so following the index alone landed on the task, one page back —
-      which is exactly what the first attempt did. And the correction is keyed on `pageIndex`
-      as well as `pages`, clearing only once the page it asked for is the page being shown:
-      one shot was not enough, because the index is re-initialised again on the next rebuild.
-- [x] **No working room on a head the task runs past (2026-10-06)** — Aliaksei: "page 6-7
-      ch2 :( dots and text". Three rows of dot grid in the MIDDLE of a sentence — "…with your
-      eyes, very", then the grid, then the rest of the task overleaf.
-      `splitFence`'s text-cut path copied `block.params` onto the head, and those params can
-      already carry a row count: the ladder writes one, and since this morning the split works
-      on the RELAXED form, so the count is usually there. The renderer draws room on a head
-      whenever it has an explicit count — which is the rule the part split needs — so the head
-      drew room it had no business having. A text-cut head now carries an explicit nil. The
-      part split stays the one case that gives a head room, and it only does so when the whole
-      task fits above it.
-      Verified on the reported pages: 6 ends with the task, 7 carries its last lines, then the
-      grid, then the prose.
-- [x] **The model sizes the working room, as a percentage of a page (2026-10-06)** —
-      Aliaksei's idea and his unit: "if it's about drawing the mug the whole page can be a
-      room, but if it's just an answer yes/no, one line is enough." Both halves are right, and
-      the old sizing could express neither: a making-task got a flat eight rows and a written
-      one got a count derived from **the length of the stored answer**, which says nothing
-      about the room the reader needs — the defect he already caught once in October.
-      **A percentage of a page is the only honest unit.** A row is a font size: it means a
-      different amount of page on the Boox than on a phone, and a different amount again at
-      each font setting. A percentage is what the reader actually sees, unchanged across all
-      of them. `room="100%"` is a drawing page, `room="5%"` is one line for a yes.
-      Pagination converts it once (`roomRowsFor`) into `FENCE_SPACE_ROWS`, so the renderer,
-      the splitter and the ladder all keep their single unit and none of them learns a second.
-      Two rules keep a request from being quietly overruled. The polite shrink rung REFUSES to
-      touch a room the model asked for — it sized it to what the task produces, so trimming it
-      to win a tidy page defeats the point — though the last-resort rung may still take it,
-      because the alternative there is a clipped page. And the part split gained an arm for
-      exactly this case: a requested room that will not fit beside its task is given the next
-      page WHOLE rather than shrunk, which is how a full-page drawing area is supposed to
-      behave. Without an explicit request the old rule stands, because a tail of nothing but
-      dots explains nothing.
-      Unit-tested (the conversion, the one-line floor, the page cap), and **proved end to end
-      on the emulator by hand-editing a fence to `room="100%"` rather than paying for a
-      generation**: the task ended page 13 and page 14 was a full page of grid with Show
-      answer beneath it. The demo chapter was restored afterwards.
-      **Not yet seen from the model** — no chapter has been generated since the prompt learned
-      the param, so what it actually asks for on a real task is unverified. Existing books are
-      unaffected: no `room`, no change.
-- [x] **A list item is prose with a marker, and it splits like prose (2026-10-07)** —
-      Aliaksei: "p11 half empty, list item can start on 1 page and go to another, no need to
-      jump to another page." Correct: nothing about a bullet makes it indivisible, and
-      `splitParagraph` only ever accepted `Block.Paragraph`, so an item that would not fit
-      jumped whole and left the room it had behind.
-      The marker belongs to the FIRST piece only — a repeated "•" reads as a second bullet and
-      a repeated "3." as a second item three — but the continuation keeps the hanging indent,
-      which is what print does. `cont` on `BulletItem`/`OrderedItem` carries that, defaulted
-      false and never set by the parser (a file on disk has no page breaks in it), and the
-      renderer draws the marker in `Color.Transparent` rather than skipping it: the surest way
-      to reserve exactly the marker's width is the marker itself.
-      Measured at the body's own width, the same hanging indent `measureListItem` accounts for.
-- [x] **The stray vertical lines were INK (2026-10-07)** — Aliaksei: "some vertical lines left,
-      probably you put them for testing... ch1 p8-9." They were: five strokes in the demo
-      book's ink file, dated 2026-10-02 09:30, left behind by the injected-stylus runs that
-      verified the working-room gesture. Not a rendering artefact — real saved handwriting,
-      which is why they sat across the grid AND the prose. Removed from the emulator (backed
-      up first). **Worth a check before the demo ships**: any emulator session that injects
-      stylus events writes into the book it is reading, and `ink/<chapter>.ink.json` is where
-      it lands.
-- [x] **The grey wash lasted one evening (2026-10-07)** — Aliaksei, the morning after, on
-      the Boox: "recap now is blinking on page change." It was, and the mechanism is a harder
-      reason than the one the app already had for avoiding grey.
-      **E-INK'S FAST UPDATE MODES ARE 1-BIT.** A page turn is drawn with a black/white
-      waveform; grey cannot be expressed in one, so the controller escalates the WHOLE PAGE to
-      a full greyscale refresh — a visible flash every time the reader turns onto a page with
-      a recap on it. The standing rule was "e-ink has no grey", meaning greys dither and may
-      vanish. The second half is that grey also changes HOW THE PANEL REFRESHES AROUND IT, and
-      that cost is paid on every turn rather than once.
-      Recap is back to the marginal rule, dashed, and `Wash` is out of the palette with the
-      reason in its place. The app has no greys again.
-      **It cost one evening and that was the cheapest possible outcome**, which is worth
-      noticing: the wash shipped with a written warning that the emulator could not judge it
-      and the panel had to, and the panel answered within a day of being asked. The
-      alternative — shipping it to testers and hearing "the screen flickers sometimes" — would
-      have cost a week and been much harder to attribute.
-- [x] **A requested room is never divided; an INKED block never moves (2026-10-07) — THE
-      INK HALF IS GONE, see the answer-piece item below** — two
-      questions from Aliaksei while reading, both finding a gap in the morning's work.
-      "Will it move the drawing zone to the next page if the model says 100%?" Nearly: the
-      explicit room was already safe from both shrink rungs, but the part split would have
-      DIVIDED it — some rows beside the task, the rest overleaf, which is no use to anyone
-      drawing a mug. A requested room is now all-or-nothing: it fits beside the task or it
-      takes the next page whole. A room nobody asked for is still a courtesy and may be shared
-      out, which is what fills the head's page.
-      "Answer shown — won't it be overlapped with ink?" The answer itself cannot land on
-      handwriting: the renderer draws the working room first and the answer below it, always.
-      One step out, though, he is right — opening an answer repaginates, a repagination can
-      cut the block somewhere else, and a stroke is anchored to a block index, so a room that
-      moves pages takes the reader's marks somewhere they do not belong. **The old reservation
-      guarded that by making EVERY exercise as tall as its revealed state, forever, which is
-      what left a page holding one button.** The guard is only needed where handwriting
-      exists, so that is where it now applies: a block with ink is measured revealed from the
-      start, so revealing it changes nothing and the page under the reader's hand is stable.
-      Every other block stays dense.
-- [x] **A picture must not invent data (2026-10-07)** — Aliaksei: "check the image on page 6,
-      why 842, it's not synced with the context." A scoreboard reading **842** beside a
-      paragraph about a 50,000 against 500,000 euro house and a 450,000-euro gap. The number
-      appears nowhere in the chapter.
-      **The illustrator drew exactly what it was asked for** — the brief itself says "a high
-      score of 842" — so the invention happened in the CHAPTER model, which writes the prose
-      and the brief and had no rule against putting data in a picture that its own text does
-      not use. A specific number reads as information, so the reader stops and tries to
-      reconcile it. The prompt now forbids a number, label, price, date or measurement in a
-      brief unless that exact value is in the prose beside it, and asks for the SHAPE of a
-      quantity instead — a dial at its limit, a bar running off its scale.
-      Same chapter, same reading: **the apple exercise's answer had 400 − 150 = 255**. Fixed by
-      hand in the book on the device (backup beside it); it is a generation error, not a code
-      one, and worth knowing the model gets arithmetic wrong inside an answer where nothing
-      checks it.
-      Also from that fence: the model wrote `space="dotgrid"`, which is not a value the app
-      knows. It falls through to the default grid — right by luck. The accepted values are
-      `lines` and `none`.
-- [x] **The arithmetic a chapter states about itself is checked (2026-10-07)** — Aliaksei,
-      after the apple answer was patched by hand: "regarding the apple bug we need to fix how
-      the model made it, not a result." Quite right, and the instance was the cheap half.
-      The chapter said "the gap between the guess (400) and the truth (150) — which is 255
-      grams". It is 250, and it was inside an ANSWER, which is the worst place for it: the
-      reader does the sum, gets a different figure, and has no way to tell which of them is
-      wrong. Nothing downstream looks at a number.
-      Fixed twice, the pattern this file keeps arriving at. **The prompt asks for the
-      operation to be WRITTEN OUT** — "400 − 150 = 250", never a bare result — because an
-      explicit sum is both the form a model is less likely to get wrong and the only form that
-      can be checked without understanding the sentence around it. **`ArithmeticCheck` then
-      checks every one**, free and local: all four operators, every dash and times sign a
-      model writes, thousands separators, and a rounding tolerance of half the last digit
-      shown so "1 / 3 = 0.333" is right rather than wrong. Code fences are skipped — a listing
-      is a program, not a claim — while exercise and recap fences are prose and are read.
-      **It only ever REPORTS, and that is deliberate**: correcting the text would be trivial
-      for the operands given and wrong, because a study book prints arithmetic that is wrong
-      ON PURPOSE — "the network guessed 2 + 2 = 5, and the loss function measures how badly".
-      No rule here can tell that from a slip, so the author decides.
-      Unit-tested against the real sentence that prompted it. **Wired into the compile path as
-      a log line only** — the surface for "the book may be wrong here" does not exist yet. The
-      obvious shape is a line on the compile result, beside where a refusal already shows its
-      reason.
-- [x] **A widow costs less than a hole (2026-10-07) — and the floor went to ONE, see below** — Aliaksei, twice:
-      "I don't get why pages have unfixed line count... why can it not have 2 more lines or
-      even 3 to be the same fit as the previous one?" Measured on the page he named, which is
-      the only way this question gets a real answer.
-      **Page 7 was 1242 of 1410, and the next paragraph was THREE LINES.** Splitting it means
-      two lines there and ONE ALONE AT THE TOP of page 8 — the widow typesetters avoid
-      hardest — so `splitParagraph` refuses anything shorter than four lines and the whole
-      paragraph moves. Orthodox, and invisible as a reason while it looks like a ragged page.
-      The floor is a COMPARISON now rather than a rule: when the hole left behind exceeds two
-      lines, a one-line tail is the cheaper of the two, because a reader of a single column
-      with no facing page meets the hole every time and barely registers the widow — a short
-      line at the top of a page reads as the end of a paragraph, which is what it is. Under
-      two lines the floor stands.
-      **And the honest part: that did not fix page 7, because the hole there is 1.7 lines.**
-      Two lines do not fit at all. The only thing that would fill it is a single line of the
-      next paragraph stranded at the FOOT — an orphan, the widow's twin — which needs
-      `MIN_SPLIT_LINES = 1`, a different decision and his to make.
-      What the measurements settle is where the variance actually comes from. Across the
-      chapter: 62px, 742px, 11px, 138px, 308px, 143px. **The big ones are all unsplittable
-      blocks** — a 742px hole before a figure, 308px before an exercise — which he had already
-      said he understands. The prose-to-prose gaps are one or two lines, and those are the
-      floors.
-- [x] **A blank line under the closing rule (2026-10-07)** — his note, and right: the rule
-      says the block has ended, and without air beneath it the next paragraph starts hard
-      against the rule and reads as being inside what just finished.
-- [x] **One line is enough to carry (2026-10-07)** — Aliaksei, cutting through an hour of
-      my typographic hedging: "nothing bad to put 1 line of paragraph to the next page. Paper
-      books do this." They do, constantly. The widow-and-orphan floor of two lines is the
-      typesetter's IDEAL, and a press keeps it by adjusting spacing across a whole spread —
-      which this reader does not have and never will.
-      What it does have, and a printed book does not, is the hole: one column, no facing
-      page, every short page met on its own. Measured on his chapter, the two-line floors
-      were costing one to two lines a page and producing exactly the ragged bottom edge he
-      kept asking about. `MIN_SPLIT_LINES = 1`.
-      **Measured before and after on the Boox, same chapter.** Free space per page was 62,
-      742, 11, 138, 308, 143; it is now 22, 74, -13, 50, 824, 11, 44, 48, -1, 308, 11, 24,
-      23, 44. Every prose page is inside ~50px — under one line — and the three that are not
-      are the unsplittable blocks he already said he understood: 824px before a figure, 308px
-      before an exercise, and the last page of the chapter.
-      **A heading keeps the stricter floor** (`MIN_LINES_UNDER_HEADING = 2`): a heading alone
-      above a single line is not a short page, it is a heading detached from what it
-      introduces, which is a different defect and the reason keep-with-next exists.
-- [x] **The block is a header band, an italic body and a closing rule (2026-10-07)** — the
-      third try, and Aliaksei's design: "what if we put a frame around the block header only,
-      then italic and a line at the bottom", then "frame should be page wide", then, on the
-      panel, **"block in frame looks really nice"**. Settled, and the trial switch is gone
-      along with the marginal-rule path it was there to compare against — one treatment, one
-      set of measurements, which is the whole lesson of the day's clipping bugs.
-      A band around two words costs no page height and reads as a LABEL rather than as a
-      container, so there is no edge to leave open when the block is divided; running it to
-      the full measure makes it line up with the closing rule, so the two bracket the body
-      instead of being unrelated marks.
-      The weakness is accepted and written down: a MIDDLE page carries neither the band nor
-      the rule, so a block spanning three pages marks only its first and last — the italic is
-      what says "still inside". The marginal rule is the alternative if that ever grates,
-      being the only device that marks every page a block touches.
-      His verdict on the wash, worth keeping beside it: **"recap with background was nice, but
-      blinking is too high a price for that."** That is the trade exactly — it was the
-      best-looking of the four and it cost a full-panel refresh on every page turn.
-- [x] **A listing gets the band too, and splits at a line end (2026-10-07)** — Aliaksei,
-      checking the emulator: "we need the same fix for the code block. Title block + bottom
-      line. No other option." A code fence was the last block still in a box, and a box is a
-      unit — `splitFence` refused every kind but exercise and recap, so **a listing taller
-      than a page went to the oversize branch and was CLIPPED**. Code is the worst content to
-      lose the end of, because the missing part cannot be guessed from the rest.
-      Two things were wrong and the second had been wrong for much longer. The box is now the
-      same header band, body and closing rule as the other blocks. And **the estimate had
-      been measuring a listing as 17sp SERIF prose while the renderer drew it at 14sp
-      MONOSPACE** — a mismatch in both directions at once, which is why code blocks
-      paginated oddly long before any of them could be split.
-      `splitCode` cuts between SOURCE LINES, never inside one: everything else in the
-      paginator divides by wrapped line, because prose has no other structure, but a listing
-      does, and a line broken in the middle is a different program to read. It measures the
-      first n lines AS WRAPPED — a long line occupies two rows and must count as two — and
-      refuses a listing under four lines or a piece under two.
-      Verified on the emulator with a 28-line listing spliced into a real chapter: band and
-      lines 1-5 on one page, 6-13 continuing on the next with no band and no rule, nothing
-      clipped. The chapter was restored afterwards.
-- [x] **A written answer is sized by the answer, whatever the model asks (2026-10-07)** —
-      Aliaksei, on a chapter generated with the new param: "I see 2 lines for 1 digit answer."
-      **The plumbing was working** — that chapter carries `room="20%"` and `room="30%"`, the
-      first real output to use it — so this is the model's judgement, not dead wiring. It
-      asked 20% of a page for an exercise whose own answer is `6.0`, against its own
-      instruction that a number is 5%.
-      Fixed on both sides, and the division of labour is the interesting part. **For a GRID
-      the model's request stands**: nothing in the code can tell a mug from a yes, which is
-      the whole reason the percentage exists. **For RULED LINES the code holds the better
-      evidence** — it has the answer itself, and a reader writing "6.0" needs one line however
-      generous the brief felt. So a request may SHRINK a written answer's room and never
-      inflate it.
-      The floor also came down from two lines to one. It was two from when this was the only
-      sizing there was and a lone rule looked like a mistake on an empty page; with a header
-      band above and a closing rule below, one ruled line reads as exactly what it is. The
-      prompt gained the sharper form of the rule too: if your own answer is that short, 5% is
-      the answer whatever the question's wording suggested.
-      Verified on the generated chapter: page 23 now draws one line and the reveal under it.
-- [x] **NOTHING A READER DOES MAY REPAGINATE (2026-10-07)** — the worst regression of the
-      day, mine, and it lasted about an hour. Aliaksei, drawing on the Boox: "I tried to draw
-      a mug but it changes the page in the middle and draws on the prev one. Now it's a mess."
-      When he asked whether a revealed answer could overlap ink, I made an inked block reserve
-      its revealed height — and wired it to the LIVE stroke list. So the moment the first
-      stroke saved, the block grew, the page re-flowed, and the page changed under the nib
-      mid-stroke. The ink file showed it exactly: a 938-point stroke and a 189-point stroke on
-      block 10, another on block 11, three of them carrying `annotated_text` because once the
-      page moved the gesture test read them as marking a passage.
-      The inked set is read ONCE, when the chapter opens. A block inked today reserves from
-      the next open, which is soon enough — the risk it guards is a reveal moving handwriting
-      that is minutes old and still on the screen.
-      **The rule is bigger than this bug and belongs at the top of the paginator's contract:
-      pagination may depend on the chapter, the font, the page size and the reveal state, and
-      on NOTHING THE READER IS DOING RIGHT NOW.** A reader drawing, selecting or marking must
-      never be able to move the page under their own hand.
-- [x] **A requested room may share a nearly empty page (2026-10-07)** — Aliaksei: "page 5 is
-      empty, guess room is 100%... if we see some content less than 1/3 we can use the same
-      page." `room="100%"` means "this needs a lot of room", not "a page to itself whatever
-      that costs" — and taken literally it can never fit beside its own task, so the task was
-      left alone on a sheet that was mostly white.
-      The threshold is on what sits ABOVE the room: the page so far plus the block without its
-      room. Under a third of the page, the room takes everything left and nothing moves. The
-      reader gains twice — two thirds of a page is a generous place to draw, and the TASK IS
-      STILL VISIBLE while they draw, which it is not from the page before.
-      Verified on the rewritten demo book: the task that had a bare page 5 and a grid on 6 now
-      carries both on page 5, and the chapter went 12 pages to 11.
-- [x] **Two mugs — the first attempt was not enough, see the item below (2026-10-07)** — Aliaksei: "I drew the mug, pressed show answer, page rearranged. Now I
-      have 2 mugs on p5 and 6." Two faults, and they had to meet to produce that.
-      **The overlay only tested one end.** `belongsToThisPage` keeps a stroke off a
-      CONTINUATION whose lines it was not drawn on, and nothing kept it off the HEAD when it
-      belonged to a piece further on — so both pieces of a split block drew every stroke the
-      block owned. A stroke's middle below this piece's bottom now disqualifies it, where the
-      bottom is the next block's top or the foot of the page. The hit test uses the same
-      bounds, because ink that is not DRAWN on a page must not be tappable or erasable there
-      either.
-      **And the room was being divided.** The part split handed the head whatever rows fitted
-      and the rest to the tail, so a reader who had drawn in those rows found their drawing
-      cut in two. It is all or nothing now: the whole room fits beside the task or it goes
-      over the leaf whole. What makes that affordable is that the room can always be SHRUNK
-      instead, which the rungs above do first — you cannot draw across a page break, so half a
-      grid is worth nothing to anybody.
-      Note what the two faults say together: the reveal repaginating is SAFE only while every
-      other rule holds. It was the trigger here, not the cause.
-- [x] **Ink makes a block ATOMIC, and a slice ends where its box ends (2026-10-07) — THE
-      ATOMIC HALF IS GONE, see below; the slice bound stands** — "you
-      didn't fix an issue... same 2 mugs, same empty page 5." Both were still there, and both
-      first attempts had been aimed one step short of the cause.
-      **The ownership test used the wrong bottom.** I had given it "the next block's top, or
-      the page's" — but a head whose block continues overleaf is usually the LAST item on its
-      page, so the fallback was the foot of the page and every stroke passed. The renderer
-      knows the real answer and was not being asked: a slice ends where its own box ends.
-      `blockVisibleBottom` reports it from the same `onGloballyPositioned` that already
-      reports the top, and the hit test uses it too, so ink that is not drawn on a page cannot
-      be tapped or erased there either.
-      **And reserving the revealed height for an inked block did the opposite of its job.** It
-      made the block taller, so it no longer fitted, so it split — and the room the reader had
-      drawn in moved to the next page without them. That is what emptied page 5 twice. What
-      ink actually needs is for the block NOT TO BE DIVIDED: `hasInk` now refuses the split
-      outright, and the block moves whole or gives up room, which the rungs above already know
-      how to do.
-      **The lesson is about the shape of the fix, not the bug.** Both first attempts added
-      something (height, a bound) where the right move was to take a decision AWAY — do not
-      split this, ask the thing that knows. Verified on the Boox: page 5 now carries the band,
-      the whole task, the grid, Show answer, the closing rule and ONE mug, drawn where he drew
-      it; page 6 carries prose and no ink at all.
-- [x] **The answer is a piece of its own, and a stray pen contact is not handwriting
-      (2026-10-07)** — Aliaksei, two reports an hour apart that turned out to be the same
-      mistake. First: "why grid zone now so small? Model asked 100... but now the task is
-      almost 50% so draw grid must go to the next page." Then, after pressing the button:
-      "show answer is broken feature, might have no option and have to create answers page.
-      Because it looks like our block split never ending issue."
-      **Both measured on the Boox before anything was changed.** The grid was five rows where
-      the chapter asked for 80% of a page; clearing one stroke from the ink file and
-      reopening drew fifteen. And tapping Show answer took the chapter 11 pages → 12 and left
-      the page he was on holding four lines of task and NOTHING ELSE — no grid, no button, no
-      answer. Both are the same cause wearing two costumes: **the answer was part of the
-      exercise BLOCK**, so opening it changed the block's height, which changed how the block
-      was divided, which moved the task, the working room and the reader's handwriting.
-      Every rule written to contain that was paying for the same structural mistake — reserve
-      the revealed height (a page holding one button), measure an inked block revealed (the
-      page moved under the nib mid-stroke), never divide an inked block (this morning's
-      five-row grid). Three fixes, three new defects, one week.
-      **His fix, and it is the right one: "it a separate element and can go next page alone",
-      "it can even be splitted up to 1 line if needed."** A pre-pass in `paginate` splits a
-      revealed exercise into a HEAD — band, task, working room, measured and placed exactly as
-      the closed block was — and a TAIL that is the answer and the rule closing the block. The
-      tail is an ordinary piece: it fills what is left of the page, moves to the next one when
-      it does not fit, and `splitAnswer` cuts it like prose when it is longer than a page.
-      Both carry the SOURCE block's index so bookmarks, search and the page-follow still work;
-      the tail does not report its bounds to the ink overlay, because two pieces of one block
-      reporting one top is how a reader gets two copies of one drawing.
-      **`hasInk` is deleted rather than fixed.** Its whole job was stopping a reveal from
-      re-dividing an inked block, and a reveal can no longer divide anything. What it DID do
-      was send an inked block to the last-resort rung, which strips working room — and the
-      "ink" that triggered it was a two-point, zero-extent pen contact with a pressure of
-      0.0015. A tap. **A stray touch was silently rewriting the page**, and with a real drawing
-      it would have printed the answer over it.
-      **Device-verified on the Boox**, which is the only place the first half could be seen:
-      the grid is back to the full request, and revealing leaves the task and the top of the
-      grid at exactly the same pixel (the room GROWS downward by three rows, since the head no
-      longer reserves the button — dots are added below, so nothing already drawn moves).
-      **And on the emulator at 320x640 with a deliberately long answer**: it opens under the
-      grid, runs across four pages with no label repeated and nothing clipped, and the closing
-      rule lands under its last line with the next paragraph beside it.
-      **Not built, and Aliaksei talked himself out of it in the same breath:** auto-opening an
-      answer that lands on a later page, since hiding it there achieves nothing — "if answer
-      naturally goes next page it can be opened at once", then "but it probably creates extra
-      rule extra room for the bug". He is right. It is implementable (paginate with every
-      answer open, close the ones that land on their head's page, iterate — monotone, so it
-      terminates) and it is a second pagination pass whose outcome feeds the first, in the one
-      file that produced three regressions today.
-      **Noticed while testing, pre-existing, NOT fixed:** a revealed answer closes itself after
-      a few page turns. `revealed` is `remember(blocks)` and `blocks` is keyed on the `course`
-      object, which progress-writing reloads — so the page count flips 12 → 11 mid-chapter.
+- **NOTHING A READER DOES MAY REPAGINATE.** Pagination may depend on the chapter, the font,
+  the page size and the reveal state, and on nothing the reader is doing right now. A reader
+  drawing, selecting or marking must never move the page under their own hand. (2026-10-07)
+- **Anything the paginator measures must be drawn from a style the paginator can reproduce
+  exactly — pass the whole `TextStyle`, never the parts.** `Text(fontSize = …)` MERGES onto
+  the ambient `LocalTextStyle` and keeps what it carries, Material's `letterSpacing = 0.5sp`
+  included; `Text(style = …)` replaces it. Half a point per character is ~15px a line.
+  (2026-10-06)
+- **An estimate that computes independently of its renderer is this file's recurring bug.**
+  Any value that affects height is defined ONCE and honoured by both — `FENCE_SPACE_ROWS`,
+  `FENCE_PLAIN_ANSWER`, `FLOW_INDENT_DP`, the answer-space line count. A piece's explicit row
+  count outranks `showsReveal` in the estimate AND the renderer. (2026-09-29, 2026-10-06)
+- **The ladder of courtesies.** When a block will not fit, what yields is what the reader
+  loses least by: working room first (to `MIN_WORKING_ROWS`), then the answer's mascot; the
+  task and the answer never yield. A room the MODEL asked for is never taken by the polite
+  rung, only by the last resort. The ladder runs ABOVE the move/split decision. When even it
+  fails, the oversize branch places the RELAXED box, not the original — least-clipped beats
+  most-clipped. (2026-10-01, 2026-10-06)
+- **A requested room is all-or-nothing** — it fits beside its task or takes the next page
+  whole. You cannot draw across a page break, so half a grid is worth nothing. (2026-10-07)
+- **`MIN_SPLIT_LINES = 1`** — one line carries; paper books do this, and the hole costs more
+  than the widow on a single column with no facing page. A heading keeps the stricter
+  `MIN_LINES_UNDER_HEADING = 2`. (2026-10-07)
+- **Prose splits; a figure and a code fence move whole.** A flow block (exercise, recap) has
+  no frame, label or padding to pay again, so it splits freely and must not claim a fresh
+  page. Cuts land on a sentence boundary, with the backup budget measured off the layout, and
+  closers `"'’”)]»` may stand between the stop and the space. (2026-09-30, 2026-10-06)
+- **The answer is its own page piece**, carrying the source block's index, and it does not
+  report bounds to the ink overlay — two pieces of one block reporting one top is how a
+  reader gets two copies of one drawing. (2026-10-07)
+- **A slice ends where its own box ends.** Ink ownership and hit-testing use the renderer's
+  `blockVisibleBottom`, never the next block's top. (2026-10-07)
+- **A zero step is an infinite grid.** Guard any loop whose bound comes out of a division —
+  `Float / 0` is `Infinity` and `Infinity.toInt()` is `Int.MAX_VALUE`. (2026-10-06)
 
-- [x] **The reveal survived the page; it did not survive the PROGRESS WRITE (2026-10-07)** —
-      two defects found within the hour by Aliaksei reading the build above, and they share
-      nothing except that both were invisible until the answer became its own piece.
-      **"check page 11 :( it happen after show answer press."** He pressed Show answer on the
-      last exercise and landed on the closing picture, with the answer nowhere and the chapter
-      back to 11 pages. `blocks` is `remember(markdown, chapter, course)` — and the COURSE IS
-      REWRITTEN WHILE YOU READ: reaching the last block flips the chapter to DONE, which saves
-      `course.json`, which replaces the `course` object, which rebuilds `blocks`, because the
-      byline prints the chapter's status. That reset `revealed` AND `revealTarget`, so the
-      answer's page stopped existing between the tap and the correction meant to follow it.
-      I had seen the same thing in my own session an hour earlier — a page count flicking 12
-      → 11 — and filed it as cosmetic. It was the whole bug. The reveal map is indexed by the
-      PARSE, so it keys on the markdown now (threaded in as `parseKey`, since `markdown` is
-      not in scope where the map lives). A byline that says "read" instead of "reading" is not
-      a reason to forget which answers are open.
-      **"go back and force. mug stays on the answer page."** His mug, drawn in a full-page
-      grid, rendered on the ANSWER page as well. Mine, from the same morning.
-      `pageBlockRange` was `firstBlockIndex until firstBlockIndex + itemCount` — true only
-      while one item means one index, which the answer piece broke the day it was introduced,
-      since it carries its exercise's index. A page opening with an answer piece therefore
-      claimed one index too many, the exercise's own, and handed its strokes to the overlay on
-      a page where the exercise is not drawn — against whatever top the bounds map was holding
-      from the page before, because an answer piece deliberately reports none. The range is
-      taken from the page's own items now, with answer pieces excluded outright.
-      **Device-verified on the Boox with his actual mug**: reveal from page 10 lands on page
-      11 showing the answer, the count holds at 11 across the DONE transition, page 10 keeps
-      the mug exactly where he drew it, and the answer page stays clean through repeated
-      back-and-forth.
+**E-ink.**
 
-- [x] **A reader can report what the model wrote (2026-10-09)** — built because Google Play
-      requires it: an app that generates content with AI must carry an IN-APP way to report
-      or flag offensive output, usable without leaving the app. InkFirst had no report
-      affordance anywhere, which is a release blocker rather than a gap. The other half of
-      that policy — PREVENT restricted content — was already built and is a better story than
-      most apps can tell (the three gates, §19).
-      **Two entry points, one dialog.** Reader menu → Chapter → "Report this page", next to
-      Rewrite, because those are the two answers to the same discovery: rewrite is what you do
-      about YOUR copy, report is what you do about the model. And under any answer in the Ask
-      panel — Aliaksei's suggestion, and right about WHEN people report, since a fresh answer
-      is the likeliest thing to be offensive. It is the second entry point rather than the
-      only one: the chapters are the bulk of what the app generates.
-      **The ordering IS the design.** There is no backend and will not be one, and the
-      requirement is about the reporting SURFACE being in-app rather than where the report
-      lands. So the report is WRITTEN FIRST and sending is offered afterwards; declining to
-      send still leaves a complete record. A report that only exists if an email client opens
-      is not an in-app report.
-      **`reports.md` sits at the courses ROOT, not in the book** — a report must outlive what
-      it complains about, and one file is what you can send. The backup's shelf archive
-      already sweeps the root, so it is backed up without teaching the backup anything.
-      **And a report QUOTES the passage**, because "chapter 2 page 9" is a dangling pointer
-      within one tap of being made: a rewrite replaces every word and repaginates. It records
-      which of the three outputs it was — page, answer or picture — since that decides whether
-      the fix is the chapter prompt, `QaGenerator` or the illustrator.
-      Promoting `Block.plainText()` into `:core` on the way: the same flatten-to-text rule was
-      about to exist in three copies (search, the report quote, and a private one in
-      `ReaderScreen`), which is the `kebabOf` lesson exactly.
-      Ten unit tests, including the one that matters — every line of a multi-paragraph
-      passage stays inside the block quote, or the rest renders as the reader's own note and
-      puts words in their mouth. **Walked end to end on the emulator at 320x640** and the
-      written file read back off the device. **NOT exercised: the email intent** (no mail
-      client there; it fails closed) **and the Ask-panel entry point** (needs a book with
-      existing Q&A). docs/play/ai-content-policy.md.
+- **E-ink has no grey, and it bites twice.** Greys dither and can vanish; worse, a grey FILL
+  forces the controller to escalate a page turn to a full greyscale refresh, because fast
+  update modes are 1-bit — a visible flash on every turn. The app has no greys. `Wash` was
+  built, shipped for one evening and removed. (2026-09-30, 2026-10-07)
+- **A dp-defined hairline or dot is not verified until it has been seen on the panel.** At
+  density 160 a sub-pixel radius is not a weaker test of the same thing, it is a test of
+  something else. (2026-09-30)
+- **`adb exec-out screencap -p` is a differential test on the Boox, not just a screenshot.**
+  It captures Android's framebuffer, which the pen driver bypasses — so an artefact visible
+  in the capture is real app state, and one visible on the glass but absent from the capture
+  is driver ink or EPD residue. That distinction has resolved several "ghost" reports in
+  minutes.
+- No animations, no scrolling in the reading UI. Paginated everything.
 
-- [x] **The export printed the drawing brief under every picture (2026-10-16)** — Aliaksei,
-      after reading an exported book in PocketBook and NeoReader: "we show image prompt under
-      the chapter image in exported book". We did. A figure's `alt=` is the ILLUSTRATOR'S
-      BRIEF — "a yeast cell blowing up a balloon" — and `renderChapter` printed it twice, once
-      in `alt=` and again as a `<figcaption>`, so every reader of the file met the prompt.
-      **The reader screen had already made this call** and written the reason down the day
-      pictures were added: a brief "reads oddly as a caption; it stays as the content
-      description instead". The export never followed it, which is the same shape as every
-      other defect in this file where one rule lives in two places. Caption gone, `alt=` kept
-      — which is where a brief actually earns its place, since it is what a screen reader
-      speaks and what shows when the image will not load.
-      Two tests: the brief appears exactly ONCE in the chapter (in the attribute), and no
-      document or stylesheet in the book mentions `figcaption` at all. Unit-verified only —
-      not re-exported through the device.
-      **Not changed: an UNDRAWN slot still prints its brief** as a visible paragraph. There is
-      no picture there, so the brief is all the reader gets, and a silent hole is worse. Worth
-      revisiting if a book ships with many undrawn slots.
+**Pen and touch.** Read `docs/onyx-pen-thread.md` §T7–§T10 before changing `OnyxInkOverlay.kt`.
 
-- [x] **A side border is painted on every fragment; a top one is not (2026-10-16)** —
-      Aliaksei, same reading: "the vertical line of try this or recap that split between
-      pages goes to the page end and started from very top, that doesn't look really native".
-      The cause is a CSS fragmentation rule worth keeping: when a reader breaks a box across
-      pages, a LEFT or RIGHT border is painted on every fragment, while a TOP or BOTTOM
-      border is painted only at the box's real edges. So `border-left` could not have
-      behaved any other way — it ran to the foot of one page and began hard against the top
-      of the next, with no label to say what it was.
-      Every block is a label BAND plus a closing rule now, which is exactly what the reader
-      screen arrived at on 2026-10-07 after four other treatments, for exactly this reason:
-      both are small boxes that cannot themselves be divided. The closing rule is MARKUP
-      (`<hr class="block-end"/>`) rather than a border or `::after`, so it survives a reader
-      that does its own thing with CSS. `blockquote` loses its rule too and is marked the way
-      print marks a quotation, by indenting it; `pre` swaps its left rule for top and bottom
-      ones. **No side border is left in the stylesheet, and a test asserts that** — it is the
-      rule, not this instance, that must not come back.
-      **CLAUDE.md's claim that "the EPUB keeps its boxes deliberately: it is reflowable, so
-      it never had this problem" was simply wrong**, and had been since the day it was
-      written. Reflowing is what CAUSES the problem; the app only met it later because its
-      own paginator had to be taught to split a block at all.
-      The known weakness is inherited along with the treatment and is written down rather
-      than discovered later: a block spanning three pages marks its first and its last, and
-      the middle page carries neither — the italic body is what says "still inside".
-      **Proved by rendering, not by reasoning.** The exported XHTML was dumped and put
-      through headless Chrome in a two-column layout, which fragments a box the same way a
-      reflowable reader paginates one: the before shot reproduces his report exactly (a
-      double rule starting at the very top of column two, no label), the after shows the body
-      flowing across the break with nothing touching the column edges.
-      **Confirmed in a real reader 2026-10-20** — a book exported off the emulator through
-      the app's own Export, pulled to the Mac, opened in Books.app: "looks perfect". That
-      settles the design; it does not fully settle the original report, because Books.app is
-      WebKit and honours the stylesheet while PocketBook is the reader that IGNORED it. The
-      fixes avoid CSS deliberately — no caption rather than a restyled one, `<hr>` markup
-      rather than a border, `<em>` rather than `font-style` — so they should hold there too.
-      Still unseen in PocketBook or NeoReader.
-      **One change he did not ask for, easily reversed**: an exercise and a recap body are
-      now ITALIC in the EPUB, as they are in the app, since the band and the rule are the
-      other two signals there. One line of CSS if it reads as too much.
+- **Repaint scoping is a QUEUE, not a rect.** Every region gets its own invalidate. It failed
+  merged (a bounding box blinks half the page) and it failed as two slots (one writer
+  displaces another). Do not try to express N regions in one field a third time. (2026-09-21)
+- **`setLimitRect`'s second argument is a list of HOLES** — floating UI must be excluded or
+  the pen inks on it. Never hand it an EMPTY array: the firmware appears to read zero-length
+  as "nothing to do" rather than "clear what you have". (2026-10-05)
+- **Logging that we ASKED is not evidence it happened.** `holes=[]` printed faithfully and
+  truthfully every time while the request was dropped a layer below anything we can log.
+- **One rule for touch.** `ui/TapRouting.kt` decides what a contact MEANS — `resolveTap`,
+  `resolveSwipe` — with no Compose in it. The two detectors cannot merge (the SDK owns the
+  host view's touch stream) but neither decides. Anything a finger can hit that is not a page
+  must be hit-tested and passed IN as a rung: on the pen path a Compose `clickable` under the
+  overlay never runs. A detector drops any gesture a child consumed — checked as the deltas
+  arrive, since a scrolling child has nothing left to consume on release.
+- **Side buttons are taken at the Activity's door** (`MainActivity.dispatchKeyEvent` +
+  `ui/PageKeys.kt`). A Compose key handler only fires while its subtree holds focus, and on
+  the pen path focus moves constantly. Screens claim the keys with `PageKeys.register`; last
+  registration wins.
+- **Both overlays take `drawingEnabled`** and stand down for a menu, dialog or panel. An
+  overlay that can claim the pointer stream must also be able to let it go, or the only
+  dismiss target on the screen stops working. **Taps navigate, drags draw.** (2026-10-20)
+- A mark whose vertical CENTRE is in an exercise's working room is the reader answering, not
+  selecting. Decided at the dispatch site, geometrically, whatever shape the stroke had.
+  (2026-10-02)
 
-- [x] **A margin bar could read a page it was not on (2026-10-19)** — opened as Aliaksei's
-      nit "vertical stroke also should not show chip if there is no text", and the standing
-      guess in this file was wrong. It blamed the near-miss fallback; the walk already runs
-      with `allowNearMiss = false`.
-      **Reproduced before anything was changed**, which is what found it: finger-draw on, a
-      bar dragged down the blank half of a chapter's LAST page — a picture and nothing else
-      — came back `text="it is tall. It is compressed. In Chapter"` and raised the chip. The
-      log named the cause in one line: it had walked blocks 18-24, none of which are on that
-      page.
-      `blockTopsInRoot` is `remember(chapterSlug)` — **keyed on the CHAPTER, not the page** —
-      so it accumulates every block the reader walks past and drops none on a page turn.
-      `extractMarkedPassage` walked the whole map, shifted the stroke into each stale block's
-      recorded coordinate space, and found "overlap" with text that is somewhere else. So the
-      real defect is bigger than the symptom: **a margin bar anywhere could quote text from
-      another page**, and the chip over blank paper was just where it showed.
-      The fix is a filter, not a new rule: the walk takes `onPage` (the page's own
-      `inkableIndices`, already computed for the ink overlay) and skips anything outside it;
-      a stroke anchored off-page returns null outright. Note the neighbour three lines down
-      in the same file — `blockVisibleBottomsInRoot` IS `remember(pages, pageIndex)` — which
-      is the shape this one should have had.
-      **Verified both ways on the emulator.** Blank page: 0 blocks walked, `text=<null>`, no
-      chip. Prose page: 5 blocks walked (exactly the page's own 20-24), the passage the bar
-      actually sits beside, chip present. The test strokes were cleared afterwards — the
-      shipped demo book in `assets/` carries no `ink/` folder, so nothing leaked into what a
-      tester gets.
-- [x] **New course no longer opens with a refusal (2026-10-19)** — for a new reader "New
-      course" is the first thing they tap, and it greeted them with
-      "No API key set. Go to Settings first." in error red, above a Generate button disabled
-      for want of the same key. A sentence naming a thing you do not have, beside a dead
-      control giving you no way to get it: the app's opening line.
-      `ApiKeyNeededDialog` had said all the right things since it was written — what a key
-      is, that it is yours, that nothing is billed to the developer, where to get one — and
-      was wired ONLY into the reader's compile paths, which you reach after reading two
-      chapters. The one screen that explains itself was the one nobody met first.
-      The red line is gone, the button is live whenever the rest of the form is, and pressing
-      it without a key opens the dialog. That is the rule the dialog's own doc argues for:
-      explain at the moment of asking.
-      **It also had to learn where it is standing.** Written for the reader, it said "writing
-      a CHAPTER" and closed by reassuring you that "the chapters already written in this book
-      stay readable" — both wrong on a screen where no book exists yet. One `inBook` flag,
-      defaulted true, so the reader is untouched. Walked end to end on the emulator with the
-      key deleted: red line absent, button live, dialog reads "Writing a book needs your own
-      key" / "Books already on your shelf stay readable".
-- [x] **"Finger draws ink" is not a dev toggle, and must not default on (2026-10-19)** — it
-      was labelled `(dev)`, which is how a phone reader learns to leave alone the ONLY route
-      to the working room under an exercise. Every phone is a device with no stylus.
-      **I proposed defaulting it on for stylus-less devices and measuring killed that.** The
-      ink overlay sets `shouldHandle = isStylus || allowFingerDraw` and claims the pointer
-      stream on ACTION_DOWN, so with the flag on the parent never sees the gesture: a left
-      swipe on the emulator came back as a saved STROKE, not a page turn. Turning it on
-      silently would hand a tester a book they cannot page through. (The volume buttons still
-      turn pages — verified — which is the way out worth printing.)
-      So the honest fix is the WORDING, and it now says what the switch costs and names the
-      escape. **The real fix, when there is time to test it, is to let a finger draw only
-      INSIDE the working room** — the geometry `strokeIsInWorkingRoom` already asks, moved to
-      ACTION_DOWN — which would give a phone both the room and its page turns. Not before a
-      closed test.
+**Generation and prompts.**
 
-- [x] **The menu would not close while a finger could draw (2026-10-20)** — Aliaksei, with
-      "Finger draws ink" on: "reader menu does not hide on page tap". Tapping the page is the
-      menu's ONLY dismiss target, so the menu became a trap.
-      Reproduced both ways before touching anything: `finger_draws=true`, tap the page, menu
-      stays; flip the pref to false, restart, tap, menu closes. Nothing to do with the
-      morning's fixes — it is the overlay claiming the pointer stream at ACTION_DOWN, the
-      same mechanism measured on 2026-10-19 when the toggle was relabelled.
-      **The finger path never got a rule the pen path has always had.** `OnyxInkOverlay`
-      takes `drawingEnabled = penEnabled` — false while the menu, a dialog or the chat panel
-      is open — because the Onyx driver sits below Android and would otherwise draw straight
-      through a modal. `InkOverlay` took `allowFingerDraw` and NOTHING ELSE, so with
-      finger-draw on it swallowed every contact including the one meant to dismiss the menu.
-      Now it takes the same `drawingEnabled` and, when false, returns false at ACTION_DOWN
-      without claiming anything — not a new stroke and not a tap on an existing one either,
-      since a tap on a drawing while the menu is up should close the menu rather than open a
-      chip.
-      **It is a PHONE defect and needs no stylus**, which is why it survived: the reader who
-      turns finger-draw on to use the working room is exactly the reader who meets it, and
-      until 2026-10-19 that switch was labelled "(dev)" so nobody did.
-      Verified on the emulator both directions — menu closes with finger-draw on, and a drag
-      with the menu closed still draws (45 points captured). Test stroke cleared afterwards.
-      **And the same gap had a second half, reported minutes later: "page tap doesn't change
-      the page".** Same cause, same shape of fix. The Onyx overlay is handed `resolveTap`,
-      `resolveSwipe` and `onTapAction`, so even while it owns the touch stream every contact
-      still goes through the ONE decider and the page still turns. `InkOverlay` was handed
-      none of them, so with finger-draw on it swallowed edge taps and the menu band too — a
-      phone reader who turned the switch on got a book they could not page through, which is
-      exactly what the Settings wording warned about and should not have had to.
-      Taps now route through `resolveTap` whether or not they landed on a stroke: a hit still
-      resolves to `ShowStrokeChip`, a miss resolves to a page turn or the menu. A DRAG is
-      deliberately NOT routed — with finger-draw on a drag is a stroke, and you cannot both
-      draw a line and swipe the page out from under it. Taps navigate, drags draw.
-      `InkOverlay` became `internal` to say so, matching `OnyxInkOverlay`: `TapAction` is
-      internal and a public function may not expose it.
-      Measured after: edge taps walk 11 → 12 → next chapter → back, the bottom band opens the
-      menu, a page tap closes it, and a drag still captures a stroke.
+- **Any call that JUDGES must pin `temperature = 0`.** Left at the default the same input
+  came back allowed on one run and refused on another. (`JUDGING_TEMPERATURE = 0.0`)
+- **A refuse criterion must be a PRINCIPLE followed by examples, never an enumeration.** A
+  request can be more obviously harmful and LESS specific at once, and a list inverts exactly
+  that case. The same shape bit the `space="none"` criterion: a rule that silently asks two
+  questions gets whichever answer the model likes.
+- **Three gates — request, outline, chapter — and all of them FAIL OPEN.** A gate that blocks
+  on a dropped connection gets resented and routed around. The line is operational
+  instructions, never subjects; it is not an age rating, a taste filter or a legality check.
+- **Fixed twice: the prompt asks and the code enforces.** The figure ceiling, the chapter-
+  number strip, the slug. A prompt is a request, not a guarantee.
+- **A picture must not invent data.** No number, label, price, date or measurement in a brief
+  unless that exact value is in the prose beside it; ask for the SHAPE of a quantity instead.
+- **Arithmetic is written out as an operation** ("400 − 150 = 250", never a bare result) and
+  `ArithmeticCheck` reads every one. It only ever REPORTS — a study book prints wrong
+  arithmetic on purpose, and no rule here can tell that from a slip.
+- **Generation settings are per COURSE, not per device.** `language` and `units` live in
+  `course.json`, chosen at creation and fixed for the life of the book. Left unsaid, the model
+  writes US customary units.
+- **Every row that spends names its price**, and an estimate says "~".
 
-- [x] **An exported book has a cover (2026-10-20)** — Aliaksei, after importing an export:
-      "it has reader random default cover". It did, because the OPF never declared one. The
-      picture was already in the file — chapter 1's opening illustration, embedded and
-      manifested like any other — and nothing said WHICH image was the book's.
-      Declared twice on purpose. `properties="cover-image"` on the manifest item is the
-      EPUB 3 form; `<meta name="cover" content="…"/>` is EPUB 2's, formally superseded and
-      still the only thing several readers look for — the same reason `toc.ncx` is written
-      beside the EPUB 3 nav document. Both cost a line.
-      The cover is the FIRST chapter's opening picture, and only that one: a later chapter's
-      cover stays an ordinary inline figure. Exactly one item in the manifest carries the
-      property, which is what the spec requires.
-      **Verified against the real book rather than only in tests** — the course pulled off the
-      device and run through the real exporter: `<meta name="cover" content="img4"/>` with
-      `img4` the chapter-1 cover and `properties="cover-image"` on it, one occurrence, OPF
-      still valid XML. A book with no opening picture declares nothing and stays valid.
+**Localisation.**
+
+- **The line is what gets TYPESET, not what is a control.** 17 book-chrome strings follow the
+  BOOK (block labels, byline, the words the EPUB prints); everything else is
+  `res/values/strings.xml` and follows the DEVICE. The shelf is the shelf and the book is the
+  book — that is what Kindle and Books do. (2026-10-02)
+- **The UI is English only, and that is a decision, not an omission.** Another language is one
+  `values-xx` folder. `BookChromeLiteralsTest` guards both halves.
+- A counted string must not inflect AND must join cleanly — write `×{n}`.
+- `keepUsable` REPAIRS homoglyphs rather than rejecting, and runs on READ: `ensureLabels` only
+  asks for MISSING strings, so a label already on disk is never re-examined.
+
+**Files and data.**
+
+- **One rule, one place.** `kebabOf` and `Block.plainText()` both exist because the same rule
+  had drifted into copies and would otherwise be fixed twice again.
+- **A slug is the folder name, the backup filename and the name inside the EPUB.** Letters,
+  digits and MARKS — a Devanagari or Thai vowel sign is part of the word.
+- **Backup: a book is one zip, judged by what is INSIDE it, and read back past a CRC** before
+  the run says it worked. A timestamp cannot see a run interrupted mid-book. The loose-copy
+  sweep is the ONLY place the app deletes at the far end: it re-reads the folder rather than
+  trusting the screen, and deletes a group only when the archive holds every path in it.
+- **Stored indices are never rewritten to heal.** Silently editing a saved position on a font
+  change is worse than the bug.
+- Deleting a course is the only destructive op in `:core`, and it refuses anything that is not
+  a course directory directly under the root.
+
+**EPUB export.** (`docs/design.md` §18)
+
+- **No side border, ever, and a test asserts it.** When a reader fragments a box, a LEFT or
+  RIGHT border is painted on every fragment while a TOP or BOTTOM one is painted only at the
+  real edges. Every block is a label band plus an `<hr class="block-end"/>`. (2026-10-16)
+- **A fix that depends on the reader honouring CSS is not a fix.** A reader rendering in its
+  own typeface need not apply the publisher's stylesheet at all — which is why the answers are
+  their own spine document rather than a CSS page break, and why the closing rule is markup.
+- **Every anchor carries its chapter** (`c2-ans1`): the exercise counter restarts per chapter,
+  and a reader that flattens the spine would send every "show answer" to chapter one.
+- **An anchor exists only where something points at it, and it sits on a `<p>`.** An
+  unanswered exercise takes no id: a reader was pairing the Nth link into a document with the
+  Nth anchor IN it, which is right by coincidence until one exercise has no answer. `<aside>`
+  is an HTML5 element an older engine may skip, id and all. (2026-10-21)
+- **The cover is a DOCUMENT, not a declaration.** `cover-image` in the OPF is the shelf
+  thumbnail and buys nothing else; `cover.xhtml` is what a reader opens. The book's name is
+  printed ABOVE the picture, because a reader that does not scale the illustration pushes
+  everything under it to page two. (2026-10-21)
+- The four that break a file, each a test: mimetype first and STORED; XHTML is XML so `&` must
+  be escaped; `xml:lang` needs a CODE; the extension must agree with the picker's mime type.
+- **A figure's `alt=` is the illustrator's BRIEF** — it belongs in the attribute, never as a
+  visible caption. (An UNDRAWN slot still prints its brief: a silent hole is worse.)
+
+**Method.**
+
+- **Measure before deciding, and verify the claim where it can actually be seen.** The
+  emulator cannot judge greys, sub-pixel geometry, or anything the pen driver draws; the panel
+  cannot be reached from a unit test. Say what was PROVED and what was inferred.
+- **An app that spins is a stack trace, not a bisect.** `adb shell kill -3 <pid>` dumps
+  `/data/anr/` and the main thread's frames name the culprit in one step.
+- **A rule argued from a cost should be re-read when the cost goes.** The frame came off the
+  blocks at noon one day, and three of that afternoon's fixes were rules written to pay for it.
+- **When a fix wants to ADD something, check whether the right move is taking a decision
+  away.** Twice in one sitting the answer was "do not split this" and "ask the thing that
+  knows", not a new height or a new bound.
+
+## Open items
 
 - [ ] **Chip ghost: diagnosed, the first cure REVERTED (2026-10-05)** — Aliaksei, after a
       weekend of reading: "now you block the whole space where it can appear... but when there
@@ -1741,35 +293,21 @@ yet" note that used to live here was two months stale.
       the device.**
       **Still latent from §T9:** every `scheduleUnlock` cancels the last, so a pen event inside
       the 200ms leaves a repaint armed but unperformed. Real, not this symptom.
-- [ ] **A vertical mark with nothing to point at still raises the chip (2026-10-09)** —
-      Aliaksei, as a nit while testing something else: "vertical stroke also should not show
-      chip if there is no text."
-      The guard already looks like it covers this — the dispatch requires
-      `(enclosing || verticalMark) && !annotatedText.isNullOrBlank()` — and the text half
-      passes anyway, because a margin bar is a passage-marking gesture that reads ACROSS
-      blocks, so the near-miss fallback hands it a confident and wrong passage rather than
-      nothing. **Exactly the shape of the working-room fix of 2026-10-02**: the guard was
-      present and what it actually guards against is not "no text" but "text the reader never
-      pointed at".
-      So the fix is likely geometric for the same reason that one was — a vertical mark whose
-      span overlaps no laid-out text line has nothing to ask about, whatever the extractor
-      managed to resolve — and it belongs at the dispatch site, since it disqualifies the
-      gesture whatever shape it had. Cheap, and it removes a chip that appears over blank
-      page, which reads as the app misfiring.
 - [ ] **Ink does not follow a font-size change** — strokes are anchored to a block, text
       reflows, the ink does not. Known and accepted, not a bug to fix on sight: marks that
       carry meaning are consumed into an underline + margin glyph, which DO reflow, so what
       drifts is standalone drawing. Cause and the shape of a fix are in design.md §11.
 
-**Device tip that paid for itself:** `adb exec-out screencap -p` is a differential test on
-the Boox, not just a screenshot. It captures Android's framebuffer, which the pen driver
-bypasses — so an artefact visible in the capture is real app state, and one visible on the
-glass but absent from the capture is driver ink or EPD residue. That distinction resolved
-several "ghost" reports in minutes.
+## Where the rest is written down
 
-**Generation settings are per COURSE, not per device** — `language` and `units` both live in
-`course.json`, chosen at creation and fixed for the life of the book. A course whose chapter 1
-measures in Celsius and whose chapter 6 measures in Fahrenheit is worse than either. Left
-unsaid, the model writes US customary units, because most of its training text does.
+- `docs/design.md` — data model, file formats, the generation strategy, and the numbered
+  sections the rules above cite (§3 styles, §7 figures, §10 covers, §11 ink, §15 backup,
+  §18 export, §19 screening).
+- `docs/worklog.md` — the 95 closed entries, verbatim, with their measurements.
+- `docs/onyx-pen-thread.md` — the pen session log. §T7–§T10 are load-bearing; read before
+  touching repainting, ghosting or tap handling.
+- `docs/play/` — Play Console material, including `ai-content-policy.md`.
 
-See `docs/design.md` for data model, file formats, and the generation strategy.
+Keep `docs/design.md` current when architecture changes, and this file current when
+*decisions* change. A finished piece of work goes to `docs/worklog.md`; it only earns a line
+up here if it leaves behind a rule that binds the next change.

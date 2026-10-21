@@ -71,7 +71,13 @@ class EpubExport(private val store: CourseStore) {
         val docs = sources.map {
             renderChapter(it, hrefs, labels, options.includeAnnotations, course.language)
         }
-        val usedPictures = docs.flatMap { it.images }.toSet()
+        // The book's cover is the FIRST chapter's opening picture, and it is
+        // now printed on a cover PAGE as well as at the head of that chapter.
+        // Added to the used set in its own right: a chapter that somehow does
+        // not draw its own cover must still ship the file the cover page
+        // names, or the first page of the book is a broken image.
+        val bookCoverSrc = sources.firstOrNull()?.coverSrc?.takeIf { hrefs.containsKey(it) }
+        val usedPictures = docs.flatMap { it.images }.toSet() + listOfNotNull(bookCoverSrc)
 
         ZipOutputStream(out).use { zip ->
             // The mimetype entry MUST be first and MUST be STORED, not
@@ -85,7 +91,10 @@ class EpubExport(private val store: CourseStore) {
 
             zip.text("META-INF/container.xml", CONTAINER_XML)
             zip.text("OEBPS/style.css", EPUB_CSS)
-            zip.text("OEBPS/title.xhtml", titlePage(course, docs, options, labels))
+            zip.text(
+                "OEBPS/cover.xhtml",
+                coverPage(course, docs, options, labels, bookCoverSrc?.let { hrefs.getValue(it) }),
+            )
             docs.forEach {
                 zip.text("OEBPS/${it.fileName}", it.xhtml)
                 // The answers travel as their own document — see [ChapterDoc].
@@ -102,12 +111,11 @@ class EpubExport(private val store: CourseStore) {
                 "OEBPS/content.opf",
                 opfDocument(
                     course, docs, usedPictures, hrefs, modified,
-                    // The book's cover is the FIRST chapter's opening picture.
-                    // It is already embedded; without this the OPF never says
-                    // which image is the cover, so a reader falls back to its
-                    // own placeholder — reported 2026-10-20 after importing an
-                    // export: "it has reader random default cover".
-                    coverPicture = sources.firstOrNull()?.coverSrc,
+                    // Without this the OPF never says which image is the
+                    // cover, so a reader falls back to its own placeholder —
+                    // reported 2026-10-20 after importing an export: "it has
+                    // reader random default cover".
+                    coverPicture = bookCoverSrc,
                 ),
             )
             usedPictures.sorted().forEach { name ->
@@ -226,6 +234,10 @@ private val CONTAINER_XML = """
 private val EPUB_CSS = """
 body { margin: 0 1em; line-height: 1.5; }
 h1 { margin: 1em 0 0.2em; line-height: 1.25; }
+section.cover-page { text-align: center; }
+section.cover-page h1 { margin-top: 1.6em; }
+figure.cover-art { margin: 1.2em 0 1em; }
+figure.cover-art img { max-height: 65vh; }
 p.byline { margin: 0 0 1.5em; font-style: italic; }
 p { margin: 0 0 0.8em; text-align: justify; }
 figure { margin: 1.4em 0; text-align: center; page-break-inside: avoid; }
@@ -245,15 +257,43 @@ blockquote { margin: 0 0 0.5em; padding-left: 1.2em; font-style: italic; }
 p.q { font-weight: bold; margin-bottom: 0.3em; }
 """.trimStart()
 
-private fun titlePage(
+/**
+ * The first page of the book: its name, its picture, and what it carries.
+ *
+ * It used to be the title alone, with the picture declared in the OPF as
+ * `cover-image` and nowhere else. That gets a thumbnail onto a reader's shelf
+ * and nothing else — opening the book landed on a page with a title on it and
+ * no cover anywhere, or, in a reader that makes a page out of the declared
+ * image by itself, on a bare picture with no book name. Reported from
+ * PocketBook 2026-10-21: "Cover is just an image now and it has a non cover
+ * format. Expected would be image and a book name".
+ *
+ * So the cover is a DOCUMENT, the way the answers became one in §18.1 and for
+ * the same reason: what a reader shows cannot be left to what a reader infers.
+ * `cover-image` stays declared as well — that is the shelf thumbnail, a
+ * different job.
+ *
+ * The title is printed ABOVE the picture on purpose. A reader that does not
+ * scale a 1024px illustration down to its viewport pushes everything under it
+ * onto the next page, and a cover whose book name is on page two is not a
+ * cover. Order is the one piece of layout no stylesheet can be dropped from.
+ */
+private fun coverPage(
     course: Course,
     docs: List<ChapterDoc>,
     options: EpubOptions,
     labels: UiLabels,
+    coverHref: String?,
 ): String {
     val body = buildString {
-        append("<section class=\"titlepage\" epub:type=\"titlepage\">\n")
+        append("<section class=\"cover-page\" epub:type=\"cover\">\n")
         append("<h1>${esc(course.title)}</h1>\n")
+        if (coverHref != null) {
+            append(
+                "<figure class=\"cover-art\"><img src=\"${esc(coverHref)}\" " +
+                    "alt=\"${esc(course.title)}\"/></figure>\n",
+            )
+        }
         append("<p class=\"byline\">${esc(labels.t("Contents"))}: ${docs.size}</p>\n")
         if (options.includeAnnotations) {
             // Said on the page, not just in a dialog. Whoever opens this file
@@ -321,7 +361,10 @@ private fun opfDocument(
         append("    <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n")
         append("    <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n")
         append("    <item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>\n")
-        append("    <item id=\"title\" href=\"title.xhtml\" media-type=\"application/xhtml+xml\"/>\n")
+        append(
+            "    <item id=\"cover\" href=\"cover.xhtml\" " +
+                "media-type=\"application/xhtml+xml\"/>\n",
+        )
         docs.forEachIndexed { i, doc ->
             append("    <item id=\"ch${i + 1}\" href=\"${esc(doc.fileName)}\" media-type=\"application/xhtml+xml\"/>\n")
             doc.answersFileName?.let {
@@ -338,7 +381,7 @@ private fun opfDocument(
         }
     }
     val spine = buildString {
-        append("    <itemref idref=\"title\"/>\n")
+        append("    <itemref idref=\"cover\"/>\n")
         append("    <itemref idref=\"nav\"/>\n")
         // Each chapter is followed in the spine by its answers, so paging
         // forward reaches them and a link into them lands at the top of a
@@ -363,6 +406,14 @@ ${coverId?.let { "    <meta name=\"cover\" content=\"$it\"/>\n" } ?: ""}  </meta
 $manifest  </manifest>
   <spine toc="ncx">
 $spine  </spine>
+  <!--
+    EPUB 2's <guide>, written for exactly the reason toc.ncx is: it is
+    deprecated and it is what an older reader actually looks at to decide
+    which document is the cover. Three lines.
+  -->
+  <guide>
+    <reference type="cover" title="${esc(course.title)}" href="cover.xhtml"/>
+  </guide>
 </package>
 """.trimStart()
 }

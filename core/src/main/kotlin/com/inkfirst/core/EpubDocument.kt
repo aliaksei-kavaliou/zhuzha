@@ -278,13 +278,37 @@ internal fun renderChapter(
                 block.kind == "exercise" -> {
                     val (question, answer) = splitExerciseBody(block.body)
                     exerciseN++
-                    body.append("<aside class=\"exercise\" id=\"$anchor-ex$exerciseN\">\n")
+                    // AN ANCHOR EXISTS ONLY WHERE SOMETHING POINTS AT IT, and
+                    // it sits on a <p> rather than on the <aside>.
+                    //
+                    // Reported from PocketBook 2026-10-21: in a chapter whose
+                    // FIRST exercise had no answer, the single back-link
+                    // "Answer 2" landed on exercise ONE. The markup was
+                    // correct — `#c1-ex2` named the right element — and the
+                    // chapter next to it, where both exercises had answers,
+                    // worked. That asymmetry is the whole diagnosis: the
+                    // reader is pairing the Nth link into a document with the
+                    // Nth anchor IN it, which is right by coincidence whenever
+                    // every exercise is answered and wrong the moment one is
+                    // not. Emitting no anchor for an unanswered exercise makes
+                    // the two lists the same length again, and loses nothing:
+                    // an anchor nothing links to was never read by anyone.
+                    //
+                    // The <p> is belt and braces for the same report. <aside>
+                    // is an HTML5 element an older engine need not know, and
+                    // an engine that skips an unknown tag skips the id on it;
+                    // a paragraph is indexed by everything. It also lands the
+                    // jump ON the label band, so the top of the arrival page
+                    // reads "EXERCISE 2".
+                    val answered = answer.isNotBlank()
+                    val id = if (answered) " id=\"$anchor-ex$exerciseN\"" else ""
+                    body.append("<aside class=\"exercise\">\n")
                     body.append(
-                        "<p class=\"block-label\">" +
+                        "<p class=\"block-label\"$id>" +
                             "${esc(labels.t("Exercise"))} $exerciseN</p>\n",
                     )
                     body.append(paragraphs(question))
-                    if (answer.isNotBlank()) {
+                    if (answered) {
                         answers += exerciseN to answer
                         body.append(
                             "<p class=\"answer-link\"><a href=\"$answersFile#$anchor-ans$exerciseN\">" +

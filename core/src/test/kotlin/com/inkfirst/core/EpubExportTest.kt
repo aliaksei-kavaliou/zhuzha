@@ -412,7 +412,7 @@ class EpubExportTest {
         assertTrue(ch.contains("What kind of sugar?"))
         assertTrue(ch.contains("broken down by enzymes"))
         // Whoever opens this next may not be the person who chose to include them.
-        assertTrue(text(files, "OEBPS/title.xhtml").contains("includes your notes"))
+        assertTrue(text(files, "OEBPS/cover.xhtml").contains("includes your notes"))
     }
 
     /**
@@ -505,7 +505,7 @@ class EpubExportTest {
         assertTrue(opf.contains("""<item id="ans1" href="ch01-answers.xhtml""""), opf)
         // And it is reachable by paging, directly after its own chapter.
         val spine = Regex("""idref="([^"]+)"""").findAll(opf).map { it.groupValues[1] }.toList()
-        assertEquals(listOf("title", "nav", "ch1", "ans1", "ch2"), spine)
+        assertEquals(listOf("cover", "nav", "ch1", "ans1", "ch2"), spine)
     }
 
     @Test
@@ -536,8 +536,116 @@ class EpubExportTest {
         val (files, _) = exportOf(tmp)
         val ch = text(files, "OEBPS/ch01.xhtml")
 
-        assertTrue(ch.contains("<p class=\"block-label\">Exercise 1</p>"), ch)
+        assertTrue(ch.contains(">Exercise 1</p>"), ch)
         assertTrue(ch.contains("<p class=\"block-label\">Recap</p>"), ch)
+    }
+
+    /**
+     * Reported from PocketBook 2026-10-21, against a chapter whose FIRST
+     * exercise had no answer: the one back-link, "Answer 2", landed on
+     * exercise ONE. The markup named the right element and the next chapter,
+     * where both exercises were answered, was correct — which is the
+     * diagnosis. The reader is pairing the Nth link into a document with the
+     * Nth anchor in it, so it is right by coincidence while every exercise is
+     * answered and wrong the moment one is not.
+     *
+     * The invariant that makes those two lists the same length is the one
+     * asserted here, and it is worth having on its own terms: an anchor
+     * nothing points at was never read by anyone.
+     */
+    @Test
+    fun `a chapter anchors only the exercises its answers link back to`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp) { s ->
+            s.saveChapter(
+                "bread",
+                "01-yeast",
+                """
+                # Chapter 1: What Yeast Is Doing
+
+                ```exercise
+                Watch a loaf rise. No answer to this one.
+                ```
+
+                ```exercise
+                Why does a cold kitchen slow a loaf down?
+                answer: The yeast is less active when cold.
+                ```
+                """.trimIndent(),
+            )
+        }
+        val ch = text(files, "OEBPS/ch01.xhtml")
+        val ans = text(files, "OEBPS/ch01-answers.xhtml")
+
+        assertFalse(ch.contains("""id="c1-ex1""""), "an unanswered exercise took an anchor")
+        assertTrue(ch.contains("""id="c1-ex2""""), ch)
+        // The counter still follows the EXERCISES — this is exercise 2, and
+        // its answer is answer 2. Renumbering the answers 1..N would make the
+        // page agree with itself and disagree with the chapter.
+        assertTrue(ch.contains(">Exercise 2</p>"), ch)
+        assertTrue(ans.contains("""<a href="ch01.xhtml#c1-ex2">Answer 2</a>"""), ans)
+
+        val anchors = Regex("""id="(c1-[^"]+)"""").findAll(ch).count()
+        val links = Regex("""href="ch01-answers\.xhtml#""").findAll(ch).count()
+        assertEquals(links, anchors, "an anchor in the chapter that no answer links back to")
+    }
+
+    /**
+     * The anchor sits on the label paragraph, not on the <aside> around it.
+     * <aside> is an HTML5 element an older engine need not know, and an engine
+     * that skips an unknown tag skips the id on it; a paragraph is indexed by
+     * everything. It also lands the jump on the label band, so the top of the
+     * arrival page reads "EXERCISE 2".
+     */
+    @Test
+    fun `the exercise anchor is on a paragraph, not on the aside`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp)
+        val ch = text(files, "OEBPS/ch01.xhtml")
+
+        assertTrue(ch.contains("""<aside class="exercise">"""), ch)
+        assertTrue(ch.contains("""<p class="block-label" id="c1-ex1">"""), ch)
+    }
+
+    // --- the cover ---------------------------------------------------------
+
+    /**
+     * "Cover is just an image now and it has a non cover format. Expected
+     * would be image and a book name" — PocketBook, 2026-10-21. Declaring
+     * `cover-image` in the OPF buys a shelf thumbnail and nothing else; the
+     * cover a reader OPENS has to be a document, the same lesson as the
+     * answers in §18.1.
+     */
+    @Test
+    fun `the cover is a document carrying the book's name and its picture`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp) { s ->
+            File(tmp, "bread/figures").mkdirs()
+            File(tmp, "bread/figures/01-yeast-cover.jpg").writeBytes(byteArrayOf(7, 7, 7))
+        }
+        val cover = text(files, "OEBPS/cover.xhtml")
+        val opf = text(files, "OEBPS/content.opf")
+
+        assertTrue(cover.contains("""epub:type="cover""""), cover)
+        assertTrue(cover.contains("<h1>How Bread Rises</h1>"), cover)
+        assertTrue(cover.contains("""src="images/01-yeast-cover.jpg""""), cover)
+        // The name above the picture, because a reader that does not scale a
+        // big illustration to its viewport pushes everything under it onto the
+        // next page — and a cover whose book name is on page two is not one.
+        assertTrue(
+            cover.indexOf("<h1>") < cover.indexOf("<img"),
+            "the title must be printed above the picture",
+        )
+        assertTrue(opf.contains("""<itemref idref="cover"/>"""), opf)
+        // EPUB 2's guide, for the same reason toc.ncx is written.
+        assertTrue(opf.contains("""<reference type="cover""""), opf)
+    }
+
+    /** A book whose first chapter has no picture still gets a cover page. */
+    @Test
+    fun `a cover with no picture is still a cover`(@TempDir tmp: File) {
+        val (files, _) = exportOf(tmp)
+        val cover = text(files, "OEBPS/cover.xhtml")
+
+        assertTrue(cover.contains("<h1>How Bread Rises</h1>"), cover)
+        assertFalse(cover.contains("<img"), cover)
     }
 
 }

@@ -1157,6 +1157,50 @@ asks only for strings that are MISSING, so a label already in `labels/<language>
 re-examined and would have stayed broken for the life of the book. Proved on the device: the
 heading exported as Greek before the change and as Cyrillic after, with no re-translation.
 
+### 18.3 An anchor nobody points at, and a cover nobody shows (2026-10-21)
+
+Two reports from the same evening, PocketBook again, this time on a phone.
+
+**The back-link.** In chapter 1 the single answer, numbered 2, jumped to exercise ONE;
+chapter 2's two answers both landed correctly. The file was right — `ch01-answers.xhtml`
+linked `ch01.xhtml#c1-ex2`, and `c1-ex2` was on the right `<aside>` — which is what made
+the second half of the report the diagnosis. Chapter 1's first exercise has no `answer:`
+line, so the chapter carried TWO anchors and ONE link; chapter 2 carried two of each. A
+reader pairing the Nth link into a document with the Nth anchor IN it is right by
+coincidence whenever every exercise is answered.
+
+So **an anchor is emitted only where something points at it**. An unanswered exercise gets
+no id, the two lists are the same length again, and nothing is lost on a reader that
+resolves fragments properly. The numbering is deliberately NOT changed: this is exercise 2
+and its answer is answer 2, and renumbering the answers 1..N would make the answers page
+agree with itself and disagree with the chapter it points into.
+
+The id also moved from the `<aside>` onto the label `<p>`. `<aside>` is an HTML5 element an
+older engine need not know, and an engine that skips an unknown tag skips the id on it; a
+paragraph is indexed by everything. It lands the jump on the label band too, so the top of
+the arrival page reads "EXERCISE 2" rather than a half-sentence.
+
+This one is INFERRED. What is proved is that the file names the right element and that the
+chapter which failed is the chapter whose anchors and links are different lengths; the
+reader's resolution rule cannot be read from here.
+
+**The cover.** §18 declared `cover-image` in the OPF on 2026-10-20 and stopped there. That
+buys a shelf thumbnail and nothing else: the first document in the spine was still a title
+page with no picture on it, and a reader that makes its own page out of the declared image
+shows a bare illustration with no book name. Reported as "Cover is just an image now and it
+has a non cover format".
+
+`title.xhtml` became `cover.xhtml` — `epub:type="cover"`, the book's name as `<h1>`, the
+picture under it, the chapter count below. **The cover is a DOCUMENT**, the same lesson as
+the answers in §18.1: what a reader shows cannot be left to what a reader infers.
+`cover-image` stays declared beside it, because that is the thumbnail and a different job,
+and EPUB 2's `<guide><reference type="cover">` is written for the same reason `toc.ncx` is.
+
+The title is printed ABOVE the picture, and that is load-bearing. A reader that does not
+scale a 1024px illustration to its viewport pushes everything under it onto the next page,
+and a cover whose book name is on page two is not a cover. Order is the one piece of layout
+that survives the stylesheet being dropped.
+
 ## 19. Screening a request (built 2026-09-24)
 
 `TopicChecker` in `:core` runs one cheap text call at course creation, in front of the outline —
