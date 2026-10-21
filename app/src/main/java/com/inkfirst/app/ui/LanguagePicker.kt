@@ -56,15 +56,35 @@ fun LanguagePicker(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // What the reader has TYPED since the list was last opened, or null if
+    // they have not typed since. The list filters on this and never on the
+    // committed value.
+    //
+    // Filtering on the value itself is the obvious thing and it is wrong:
+    // a field holding "English" filters the sixteen suggestions down to
+    // "English", so opening the picker shows ONE item and the screen says
+    // there is only one language. Reported 2026-10-21: "i tap and I see only
+    // english and need to delete, but I guess it search work" — the search
+    // did work, and there was no way to discover that a list existed.
+    //
+    // Opening shows everything, the way [StylePicker] beside it does;
+    // typing narrows. The field stays editable because `language` is free
+    // text by design — the suggestions seed it, they do not bound it.
+    var typed by remember { mutableStateOf<String?>(null) }
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
+        onExpandedChange = {
+            expanded = it
+            // A fresh opening is not a search.
+            if (it) typed = null
+        },
         modifier = modifier,
     ) {
         OutlinedTextField(
             value = value,
             onValueChange = {
                 onValueChange(it)
+                typed = it
                 // Reopen the dropdown as the user types so suggestions stay reachable.
                 expanded = true
             },
@@ -75,8 +95,11 @@ fun LanguagePicker(
                 .menuAnchor(MenuAnchorType.PrimaryEditable)
                 .fillMaxWidth(),
         )
-        val filtered = LanguageSuggestions.filter {
-            value.isBlank() || it.contains(value, ignoreCase = true)
+        val search = typed?.trim().orEmpty()
+        val filtered = if (search.isEmpty()) {
+            LanguageSuggestions
+        } else {
+            LanguageSuggestions.filter { it.contains(search, ignoreCase = true) }
         }
         if (filtered.isNotEmpty()) {
             ExposedDropdownMenu(
@@ -89,6 +112,9 @@ fun LanguagePicker(
                         text = { Text(suggestion) },
                         onClick = {
                             onValueChange(suggestion)
+                            // Picking is not typing: the next opening shows
+                            // the whole list again, not just what was picked.
+                            typed = null
                             expanded = false
                         },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
