@@ -35,8 +35,10 @@ this repo (see `screenshots.md`).
 - [ ] Feature graphic — `graphics/feature-graphic-1024x500.png` (24-bit, **no**
       alpha)
 - [ ] Phone screenshots — `phone/`, 8 of them, 1080x1920
-- [ ] Tablet screenshots — `tablet-7in/`, 8 of them, 1264x1680, into the
-      7-inch slot
+- [ ] Tablet screenshots — `tablet-7in/`, 1264x1680, into the 7-inch slot.
+      **Play takes at most 8 per device type and the folder holds 9.** One
+      comes out before upload; the carried-forward note below says which, and
+      why it costs nothing.
 - [ ] Category: Education · Contact email: info@zhuzha.app ·
       Website: https://zhuzha.app
 - [ ] Privacy policy: https://zhuzha.app/privacy
@@ -121,9 +123,26 @@ Carried forward, neither blocking the upload:
 - **PocketBook on the EPUB.** Books.app renders it correctly, but PocketBook
   is the reader that filed the original report and the one that ignored our
   CSS. Re-export and re-read there.
-- **Tablet screenshots from the real device**, if the emulator reshoot at Boox
-  geometry is not wanted. The two worth adding are the Teaching style and
-  Language dropdowns on New course.
+- **The inked exercise answers the wrong question.** `02-you-write-in-the-book`
+  shows a finished mug; the exercise under it asks for the top opening ALONE —
+  "a flat, compressed oval ... let your hand move around the loop two or three
+  times ... do not lift your pen". Reshoot it on the Boox, but ink
+  `03-room-to-work`'s page instead and one shot does both jobs: that exercise
+  reads "draw ten circles ... let your pen spin around two or three times for
+  each circle, overlapping the lines freely", which is exactly the mark wanted,
+  and it retires the now-redundant empty-grid shot — which is what puts the set
+  back at 8.
+  **`screencap` cannot see live driver ink.** Turn the page away and back so
+  the strokes are re-rendered from disk before capturing.
+
+Added since, 2026-10-22: `09-how-it-teaches-you` and `10-any-language` are the
+two dropdowns that note asked for, and `04-your-shelf` is back — from
+`boox-m5.png`, a real device capture taken after the shelf learned to sign its
+own name, so the tablet set is Boox-native throughout and the shelf carries her
+head. The Boox raws from that session are kept at
+`~/dev_pers/screenshots/go7/raw-20261021/`, beside the earlier
+`go7/Screenshot_2026*.png` that the other tablet shots came from. `phone/` is
+the emulator at 1080x1920; `tablet-7in/` is the device, all nine of it.
 
 Rebuild the bundle before uploading if any code lands after this date:
 `./gradlew :app:bundleRelease`, then check `jarsigner -verify`.
