@@ -5,16 +5,22 @@ What this file is for is so no answer has to be invented at the keyboard.
 
 ## Before you open the Console
 
-- [ ] **Decide whether `pre-test-fixes` is merged first.** The signed bundle
-      described below was built from that branch's tip. Uploading a build that
-      is not on `main` is fine, but then `main` is not what the testers have,
-      which gets confusing about four days in.
+- [x] **`pre-test-fixes` is merged into `main`** (checked 2026-10-25 with
+      `git branch --merged main`). The question this asked — whether the
+      testers would get something that is not on `main` — is settled, and the
+      bundle below is built from `main` itself.
 
 ## The build
 
-`app/build/outputs/bundle/release/app-release.aab` — 16 MB, `jar verified`
+`app/build/outputs/bundle/release/app-release.aab` — 16.6 MB, `jar verified`
 against the upload key, `versionCode 1`, `versionName 0.1.0`, minSdk 26,
 targetSdk 36.
+
+**Rebuilt 2026-10-25 from `main`.** The previous bundle was from 2026-10-20
+and predated three code commits — the EPUB answer anchors and cover page, the
+shelf wordmark, and the language picker — so it no longer matched what the
+device was being read on. `versionCode` stays 1: nothing has been uploaded to
+any track yet, so Play has not seen it.
 
 Rebuild with `./gradlew :app:bundleRelease`. The keystore properties live in
 `~/.gradle/gradle.properties`; without them the task still succeeds and
@@ -35,10 +41,10 @@ this repo (see `screenshots.md`).
 - [ ] Feature graphic — `graphics/feature-graphic-1024x500.png` (24-bit, **no**
       alpha)
 - [ ] Phone screenshots — `phone/`, 8 of them, 1080x1920
-- [ ] Tablet screenshots — `tablet-7in/`, 1264x1680, into the 7-inch slot.
-      **Play takes at most 8 per device type and the folder holds 9.** One
-      comes out before upload; the carried-forward note below says which, and
-      why it costs nothing.
+- [ ] Tablet screenshots — `tablet-7in/`, 8 of them, 1264x1680, into the
+      7-inch slot. Exactly at Play's cap of 8 per device type; adding one
+      means retiring one. The two this set replaced are kept, not deleted, in
+      `tablet-7in/superseded/`.
 - [ ] Category: Education · Contact email: info@zhuzha.app ·
       Website: https://zhuzha.app
 - [ ] Privacy policy: https://zhuzha.app/privacy
@@ -123,26 +129,30 @@ Carried forward, neither blocking the upload:
 - **PocketBook on the EPUB.** Books.app renders it correctly, but PocketBook
   is the reader that filed the original report and the one that ignored our
   CSS. Re-export and re-read there.
-- **The inked exercise answers the wrong question.** `02-you-write-in-the-book`
-  shows a finished mug; the exercise under it asks for the top opening ALONE —
-  "a flat, compressed oval ... let your hand move around the loop two or three
-  times ... do not lift your pen". Reshoot it on the Boox, but ink
-  `03-room-to-work`'s page instead and one shot does both jobs: that exercise
-  reads "draw ten circles ... let your pen spin around two or three times for
-  each circle, overlapping the lines freely", which is exactly the mark wanted,
-  and it retires the now-redundant empty-grid shot — which is what puts the set
-  back at 8.
-  **`screencap` cannot see live driver ink.** Turn the page away and back so
-  the strokes are re-rendered from disk before capturing.
+- ~~The inked exercise answers the wrong question.~~ **Done 2026-10-25.**
+  `02-you-write-in-the-book` was a finished mug under an exercise asking for
+  the top opening alone. Reshot on the Boox against the ten-circles exercise
+  instead — "let your pen spin around two or three times for each circle,
+  overlapping the lines freely" — which the ink now answers. One shot does
+  both jobs, so the empty-grid `03-room-to-work` retired with it and the set
+  is back at 8. Both superseded files are in `tablet-7in/superseded/`.
+  The rule that made it work is worth keeping: **`screencap` cannot see live
+  driver ink**, so the strokes must be saved and re-rendered before capturing
+  — ink that appears in a framebuffer grab is proof it is real saved state.
 
-Added since, 2026-10-22: `09-how-it-teaches-you` and `10-any-language` are the
-two dropdowns that note asked for, and `04-your-shelf` is back — from
-`boox-m5.png`, a real device capture taken after the shelf learned to sign its
-own name, so the tablet set is Boox-native throughout and the shelf carries her
-head. The Boox raws from that session are kept at
-`~/dev_pers/screenshots/go7/raw-20261021/`, beside the earlier
-`go7/Screenshot_2026*.png` that the other tablet shots came from. `phone/` is
-the emulator at 1080x1920; `tablet-7in/` is the device, all nine of it.
+Added since: `09-how-it-teaches-you` and `10-any-language` are the two
+dropdowns that note asked for; `04-your-shelf` came back from `boox-m5.png`,
+captured after the shelf learned to sign its own name, so it carries her head;
+and `02-you-write-in-the-book` was reshot 2026-10-25. **Every tablet shot is a
+real device capture** — `phone/` is the emulator at 1080x1920, `tablet-7in/`
+is the Boox, all eight. Raws are at `~/dev_pers/screenshots/go7/raw-20261021/`
+and `raw-20261025/`, beside the earlier `go7/Screenshot_2026*.png`.
+
+A trap worth not repeating: **do not date a build from `git log`.** Both the
+shelf icon and the language picker were on the device BEFORE their commits
+were written, because the code was built and installed first and committed
+minutes later. Read `lastUpdateTime` from `dumpsys package`, or the clock in
+the status bar of a capture.
 
 Rebuild the bundle before uploading if any code lands after this date:
 `./gradlew :app:bundleRelease`, then check `jarsigner -verify`.
