@@ -12,7 +12,7 @@ import kotlinx.serialization.json.Json
  * WHAT THIS IS FOR, corrected 2026-09-24. This was first written down as
  * "not mainly protection" — the reasoning being that the model writing the
  * chapters refuses the genuinely harmful anyway, so all this bought was a
- * better failure mode. THAT WAS WRONG, and Aliaksei disproved it the same
+ * better failure mode. THAT WAS WRONG, and testing disproved it the same
  * day: "how to kill people quickly" came back from this check as `ask`, and
  * walking past it produced an outline and chapters that carried real
  * instructions. The downstream refusal cannot be relied on. For a request

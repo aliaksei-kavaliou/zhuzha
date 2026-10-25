@@ -42,7 +42,7 @@ import java.time.Instant
  * Handing a book to the rest of the world.
  *
  * The point is not mainly sharing. It is that Markdown on disk keeps this
- * book readable in ten years for *Aliaksei*, and an EPUB keeps it readable
+ * book readable in ten years for its OWNER, and an EPUB keeps it readable
  * for anyone — including on a device that has never heard of this app. It is
  * also the thing that makes "I finished a book" produce an object.
  *

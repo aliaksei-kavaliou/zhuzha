@@ -124,8 +124,8 @@ fun ChatPanel(
      *
      * The first version scrolled to the bottom after layout instead. It landed
      * in the right place, but the move itself was visible — text crawling up
-     * out of the dither, which Aliaksei described as appearing "from the
-     * sand". On e-ink a scroll is not a cheap way to reach a position; not
+     * out of the dither, as if rising out of sand. On e-ink a scroll is not
+     * a cheap way to reach a position; not
      * needing to move is.
      */
     val listState = rememberLazyListState()

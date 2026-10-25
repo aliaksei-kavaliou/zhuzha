@@ -7,8 +7,8 @@ package com.inkfirst.core
  * which is 255 grams". It is 250. Nothing downstream looks at a number, so a
  * slip like that reaches the reader inside an ANSWER, where it is worst: the
  * reader does the sum, gets a different figure, and has no way to tell which
- * of them is wrong. Aliaksei's instruction when he found it — "we need to fix
- * how the model made it, not a result."
+ * of them is wrong. The fix belongs upstream: repair how the model WRITES the
+ * sum, not the result after the fact.
  *
  * Two halves, the pattern this file has used before. The chapter prompt asks
  * for the operation to be WRITTEN OUT ("400 − 150 = 250") rather than stated

@@ -19,8 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * Common languages offered as suggestions. Ordered by Aliaksei-relevance
- * first (his region), then broad-utility. Free-text override remains
+ * Common languages offered as suggestions. Ordered by regional relevance
+ * first, then broad utility. Free-text override remains
  * possible — the TextField is editable, the dropdown just seeds choices.
  */
 val LanguageSuggestions: List<String> = listOf(

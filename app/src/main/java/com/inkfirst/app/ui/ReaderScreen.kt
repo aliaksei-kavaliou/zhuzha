@@ -284,8 +284,8 @@ internal fun answerSpaceLineCount(answer: String, ruled: Boolean = false): Int {
     // ONE LINE IS A LEGITIMATE AMOUNT OF ROOM. The floor was two, from when
     // this was the only sizing there was and a lone rule looked like a
     // mistake. With a header band above and a rule below, one ruled line
-    // reads as exactly what it is — Aliaksei, on a generated chapter: "I see
-    // 2 lines for 1 digit answer". The answer there was "6.0".
+    // reads as exactly what it is. Two ruled lines under a one-digit answer
+    // — the case that prompted this was "6.0" — read as a mistake.
     if (text.isNotEmpty()) return (text.length / 42 + 1).coerceIn(1, 6)
     // Writing lines with nothing to write toward are noise, so they get none.
     return 0
@@ -1783,8 +1783,8 @@ private fun PagedContent(
             // That reset the reveal map, so an answer closed itself a page
             // or two after it was opened and the chapter's page count
             // flicked 12 → 11 under the reader. Worse, it took `revealTarget`
-            // with it: Aliaksei pressed Show answer on the last exercise and
-            // landed on the closing picture with no answer anywhere, because
+            // with it: Show answer on the last exercise landed on the
+            // closing picture with no answer anywhere, because
             // the answer's page stopped existing between the tap and the
             // correction that was supposed to follow it.
             //
@@ -1802,7 +1802,7 @@ private fun PagedContent(
             val revealedKey = revealed.filterValues { it }.keys.sorted().joinToString(",")
             // A BLOCK THE READER HAS WRITTEN ON KEEPS ITS HEIGHT.
             //
-            // Aliaksei: "answer shown — won't it be overlapped with ink?" The
+            // Can a revealed answer overlap the reader's own ink? The
             // answer itself cannot land on handwriting: the renderer draws
             // the working room first and the answer below it, always. What
             // CAN go wrong is one step further out — opening an answer
@@ -2630,7 +2630,7 @@ private fun ReaderHeader(
         // every one of them. The padding here is the same shape the menu rows
         // use, so the header and the menus agree about what a tap target is.
         // THE PADDING MUST NOT MOVE THE TEXT. Measured on the Boox from a
-        // screenshot after Aliaksei reported the bars looking wrong: the
+        // screenshot taken after the bars were reported looking wrong: the
         // header sat 53.9dp from the edge against the body's 40.5dp, because
         // this Box's 12dp of touch padding pushed the label inward while the
         // page's own margin was already applied by the parent. A running head
@@ -3437,8 +3437,8 @@ private fun ParagraphBlock(
     // An "ask" used to be a margin ? and nothing else, on the theory that a
     // clean page was worth more than the mark. On the device that reads as a
     // question mark floating beside a paragraph with no way to tell WHICH
-    // sentence it belongs to — and the answer, from Aliaksei, was to ask for
-    // the underline back.
+    // sentence it belongs to. So the underline comes back, for every
+    // annotation.
     val annotated = if (annotations.isEmpty()) {
         renderInlines(inlines)
     } else {
@@ -3709,7 +3709,7 @@ private fun ExerciseBlock(
         // handwriting, and after the tap the two sit one above the other,
         // which is the whole point of writing first and comparing after.
         // Default is the GRID, and the model opts out of it. Inverted on
-        // 2026-09-30, Aliaksei's call, because the failure is asymmetric: you
+        // 2026-09-30, because the failure is asymmetric: you
         // can write on a dot grid, but you cannot comfortably draw on writing
         // lines. Forgetting to mark a fence should land on the harmless side.
         val spaceKind = f.params["space"]
@@ -3823,10 +3823,10 @@ private fun AnswerText(
  * Ruled lines under an exercise: somewhere to write the answer before reading
  * it.
  *
- * Aliaksei's own loop, 2026-09-29 — "I use stylus to mark answer, or write on
- * the page then open and compare" — and the reason the blank area under an
- * exercise was never dead space. It was the working area; we just had not
- * drawn it.
+ * The reading loop this exists for, 2026-09-29: mark or write the answer with
+ * the stylus, then reveal and compare. That is why the blank area under an
+ * exercise was never dead space. It was the working area; it just had not
+ * been drawn.
  *
  * It earns its place on a device with no stylus too, which is most of them.
  * Head First prints these lines knowing most readers never fill them in: they
@@ -4082,8 +4082,8 @@ private fun UnknownFenceBlock(
     // The same band, body and closing rule as TRY THIS and RECAP. A listing
     // was the last block still in a box, and a box is a unit: it had to land
     // whole on one page or be clipped, because splitFence refuses every kind
-    // but exercise and recap. Aliaksei found it on the emulator — "we need
-    // the same fix for the code block" — and a long listing losing its last
+    // but exercise and recap. Found on the emulator: a code block needs the
+    // same fix, and a long listing losing its last
     // lines is the worst version of that, since code is the one content
     // where the missing part cannot be guessed.
     FramedHeaderBlock(
@@ -4113,10 +4113,10 @@ private fun UnknownFenceBlock(
  * or five lines each, most of every page white, because the only thing the
  * paginator could cut was the words while the furniture stayed whole.
  *
- * Aliaksei's call, and it is the right one: keep the icon and the title, set
- * the body in italic, and drop the box. Italic marks a task as well as a
- * border does and costs the page nothing, because styled text flows exactly
- * like prose — which is what he expected of it in the first place.
+ * The fix: keep the icon and the title, set the body in italic, and drop the
+ * box. Italic marks a task as well as a border does and costs the page
+ * nothing, because styled text flows exactly like prose — which is what a
+ * reader expects of it in the first place.
  *
  * A continuation passes `opener = false` and draws nothing of its own.
  *
@@ -4128,14 +4128,13 @@ private fun UnknownFenceBlock(
  * How a TRY THIS or a RECAP is set: a header band, an italic body, and a rule
  * that closes it.
  *
- * Aliaksei's design, and the third try. A full border made the block a unit
+ * The third try. A full border made the block a unit
  * that had to land whole or be cut, which cost pages; a grey wash made the
  * panel flash on every turn; a marginal rule worked but read as thin. A box
  * around two words costs no page height and reads as a LABEL rather than as a
  * container, so there is no edge to leave open when the block is divided —
  * and the band and the closing rule share the measure, so they bracket the
- * body rather than being two unrelated marks. His verdict on seeing it on the
- * panel: "block in frame looks really nice."
+ * body rather than being two unrelated marks. Confirmed on the panel.
  *
  * The weakness, accepted: a MIDDLE page carries neither the band nor the
  * rule, so a block spanning three pages marks only its first and last. The
@@ -4208,7 +4207,7 @@ private fun FramedHeaderBlock(
                     strokeWidth = size.height,
                 )
             }
-            // A blank line under the rule, Aliaksei's note. The rule closes
+            // A blank line under the rule. The rule closes
             // the block; without air beneath it the next paragraph starts
             // hard against it and reads as being inside what just ended.
             Spacer(Modifier.height(FRAME_FOOT_AIR))

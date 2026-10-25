@@ -345,7 +345,7 @@ internal fun renderChapter(
     // Linked both ways, which is the one thing paper cannot do.
     // THE ANSWERS ARE THEIR OWN DOCUMENT, and each one is just its number
     // and the answer. Reprinting the question above it was tried and read as
-    // bloat (Aliaksei, 2026-09-25) — which it is, now that the landing is a
+    // bloat (2026-09-25) — which it is, now that the landing is a
     // page headed "Answers" with the numbered answer at the top of it and a
     // link back to the question. The reprint was solving a problem the file
     // split had already solved.

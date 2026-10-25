@@ -80,9 +80,9 @@ fun paginate(
      * used to be measured in its TALLER state always, so the page carried
      * the whole revealed answer as white space from the moment it was laid
      * out — on a small screen that is a page holding one "Show answer"
-     * button and nothing else, which is what Aliaksei saw and asked about:
-     * "why do we need to reserve space? on answer open text just flows
-     * lower, I assume it can change pagination."
+     * button and nothing else. Reserving space for a closed answer was
+     * never necessary: on reveal the text simply flows lower, and pagination
+     * is allowed to change with it.
      *
      * It can, and this is it: the closed block measures to its button, the
      * open one to its answer, and opening one repaginates from there. The
@@ -106,9 +106,9 @@ fun paginate(
     //
     // 10% is a line and a half held back from every page, which is what made
     // the foot of the text block wander: a page of prose ended wherever the
-    // haircut happened to land. Aliaksei, reading: "why is this bottom gap so
-    // inconsistent... usually readers have stable page view, especially with
-    // prose at the top and in the bottom." Quite right, and that is what a
+    // haircut happened to land. A reader expects a STABLE page view — prose
+    // starting and ending in the same place page after page — and a bottom
+    // gap that wanders is the one thing that breaks it. That is what a
     // printed text block does.
     //
     // 2% is left because the failure mode is asymmetric: a page that
@@ -159,14 +159,12 @@ fun paginate(
 
     // A REVEALED ANSWER IS A PIECE OF ITS OWN, AND FLOWS LIKE ONE.
     //
-    // Aliaksei, after watching "Show answer" take a chapter from 11 pages to
-    // 12 and leave the page he was on holding four lines of task and nothing
-    // else: "show answer is broken feature... it looks like our block split
-    // never ending issue", then the fix itself — "it a separate element and
-    // can go next page alone", "it can even be splitted up to 1 line if
-    // needed."
+    // "Show answer" took a chapter from 11 pages to 12 and left the page
+    // being read holding four lines of task and nothing else. The fix is to
+    // treat the answer as a separate element: it may take the next page
+    // alone, and it may split down to a single line.
     //
-    // He is right, and the cause is structural. The answer was part of the
+    // The cause is structural. The answer was part of the
     // exercise BLOCK, so revealing it changed the block's height, which
     // changed how the block was divided, which moved the task and the
     // working room — and the reader's handwriting with them. Every rule
@@ -398,11 +396,11 @@ fun paginate(
         // page by itself whatever that costs". Taken literally it cannot ever
         // fit beside its own task — the task uses some of the page — so the
         // room always went over the leaf and left the task alone on a sheet
-        // that was mostly white. Aliaksei, watching a rewritten chapter: "page
-        // 5 is empty, guess room is 100%... if we see some content less than
-        // 1/3 we can use the same page."
+        // that was mostly white — a page left blank because the room asked
+        // for 100%. When the task takes less than a third of the page, the
+        // room can share it.
         //
-        // Exactly so, and the reader is better off twice over: two thirds of
+        // The reader is better off twice over: two thirds of
         // a page is a generous place to draw, and the TASK IS STILL VISIBLE
         // while they draw it, which it is not from the page before.
         //
@@ -1007,8 +1005,8 @@ private fun splitFence(
     if (isCodeFence(block.kind)) {
         return splitCode(block, availablePx, widthPx, measurer, fontScale, lineSpacing, density, hasBadge)
     }
-    // AN ANSWER IS PROSE AND SPLITS LIKE PROSE. Aliaksei: "it can even be
-    // splitted up to 1 line if needed." It cannot reach the oversize branch
+    // AN ANSWER IS PROSE AND SPLITS LIKE PROSE — down to a single line if
+    // that is what fits. It cannot reach the oversize branch
     // and be clipped the way a listing used to — an answer longer than a
     // whole page is rare on the Boox and ordinary on a phone at a large
     // font, and losing the end of one is losing the thing the reader pressed
@@ -1456,14 +1454,13 @@ private fun sliceInlines(inlines: List<Inline>, from: Int, to: Int): List<Inline
  *
  * It was two, to prevent an orphan at the foot of a page and a widow at the
  * head of the next. That is the typesetter's ideal and it is not what books
- * do — Aliaksei: "nothing bad to put 1 line of paragraph to the next page,
- * paper books do this." They do, constantly; a press fixes the ones it minds
- * by adjusting spacing over a whole spread, which is not available here and
- * never will be.
+ * do — one line carries to the next page, because paper books do this
+ * constantly. A press fixes the ones it minds by adjusting spacing over a
+ * whole spread, which is not available here and never will be.
  *
  * What IS available here, and what a printed page does not have, is the hole:
  * a single column with no facing page, where every short page is met on its
- * own. Measured on his chapter, the floors were costing one to two lines a
+ * own. Measured on a real chapter, the floors were costing one to two lines a
  * page and producing exactly the ragged bottom edge he kept asking about.
  * A line carried over is the cheaper of the two, every time.
  *
@@ -1485,9 +1482,9 @@ private const val MIN_LINES_UNDER_HEADING = 2
  * Rows of working room the model asked for, expressed as a PERCENTAGE OF A
  * PAGE and converted here.
  *
- * Aliaksei's idea, and the unit is the point: "if it's about drawing the mug
- * the whole page can be a room, but if it's just an answer yes/no, one line is
- * enough." A row is a font size — it means a different amount of page at every
+ * The unit is the point. Drawing a mug can want the whole page; a yes/no
+ * answer wants one line. A row is a font size instead — it means a different
+ * amount of page at every
  * scale and on every device — where a percentage of the page is what the
  * reader actually sees, and it survives the Boox, the phone and every font
  * setting unchanged.
@@ -1512,7 +1509,7 @@ internal const val FENCE_ROOM = "room"
  * A block label's type size, in sp. Mirrors `FLOW_LABEL_SP`.
  *
  * Was 11 while the label sat inside a box that did the signalling. It is half
- * the signal now, so it is bigger — Aliaksei, reading the ruled version.
+ * the signal now, so it is bigger — judged against the ruled version.
  */
 internal const val FLOW_LABEL_SP = 13
 
@@ -1785,8 +1782,8 @@ private fun estimateHeight(
                 // been carrying a phantom second copy of its own answer,
                 // which is six or eight lines of a page that nothing draws.
                 //
-                // Found from Aliaksei turning the font DOWN and asking why a
-                // page broke early with a hand's width of white under it: at
+                // Found by turning the font DOWN and asking why a page broke
+                // early with a hand's width of white under it: at
                 // 0.85 the answer is long in lines and the phantom is at its
                 // biggest. It explains the stubborn gap at the foot of every
                 // page an exercise shares, and a good deal of the splitting

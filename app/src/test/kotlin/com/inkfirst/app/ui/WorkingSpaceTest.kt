@@ -40,8 +40,7 @@ class WorkingSpaceTest {
         // looked like a mistake on an otherwise empty page. It no longer is:
         // the block has a header band above it and a closing rule below, so
         // one ruled line reads as exactly what it is — the place to write
-        // "6.0". Aliaksei, on a generated chapter: "I see 2 lines for 1
-        // digit answer."
+        // "6.0". Two ruled lines under a one-digit answer read as a mistake.
         //
         // Six still caps the other end: past that an exercise has become a
         // form.

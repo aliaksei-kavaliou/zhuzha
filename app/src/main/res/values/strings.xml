@@ -14,10 +14,9 @@
   languages is open-ended and the set of UI languages is not.
 
   ENGLISH ONLY, ON PURPOSE (2026-10-02). A values-ru was written and then
-  deleted the same day, Aliaksei's call: he is a native Russian speaker who
-  runs his devices in English, the testers are English-speaking, and the
-  reason worth keeping: Russian labels run long and Cyrillic sits poorly in
-  a cramped interface. A book written in Russian is still Russian; it is the
+  deleted the same day: the devices this is read on run in English, the
+  testers are English-speaking, and the reason worth keeping is that Russian
+  labels run long and Cyrillic sits poorly in a cramped interface. A book written in Russian is still Russian; it is the
   SHELF that stays English. Adding a language later is one values-xx folder,
   and the Russian that existed is recoverable from the commit that removed it.
 -->

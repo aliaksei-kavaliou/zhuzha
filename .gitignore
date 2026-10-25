@@ -40,10 +40,8 @@ Thumbs.db
 # rather than source either way.
 .wrangler/
 
-# The collaboration record, deliberately NOT published. These are notes about
-# how the work was done rather than about the software: they quote Aliaksei
-# verbatim, name people and employers, and reason out loud about other
-# companies' names and trademarks. A contributor needs design.md and
-# onyx-pen-thread.md; nobody needs these. They stay on disk and out of git.
+# Working notes about how the work was done, rather than about the software.
+# A contributor needs design.md and onyx-pen-thread.md; these are kept on
+# disk and out of the repo.
 docs/worklog.md
 docs/naming-search.md
