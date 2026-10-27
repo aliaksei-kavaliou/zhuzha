@@ -120,12 +120,28 @@ created; what remains there is the closed-testing track itself.
 
 Carried forward, neither blocking the upload:
 
-- **The Boox pass on the margin-bar fix.** It is a pen gesture, so the
-  emulator cannot speak for it. Five minutes: a bar beside a paragraph, a bar
-  across two or three blocks, a bar on a page where a paragraph continues from
-  the previous one, a bar on blank page (must raise NO chip), and one
-  underline and one circle. The risk is the fix being too STRICT — the symptom
-  would be "I can no longer ask about a passage I could before".
+- ~~The Boox pass on the margin-bar fix.~~ **Done 2026-10-25, all six cases
+  pass**, read off the `InkGesture` log rather than judged by eye. The one
+  that mattered was the continuation paragraph, since the risk was the fix
+  being too STRICT: block 16 has six lines and the bar returned lines 2-5 —
+  exactly the part that page was showing. The blank-page case returned
+  `text=<null>` with ZERO extract lines, so the guard fired before the walk
+  started and never touched a stale block.
+
+  **It found five real defects, all since fixed**, and that is the argument
+  for doing these passes on the device:
+    1. A marked paragraph reflowed and lost its last line under the folio —
+       the marker gutter came out of the text column. (`f1968b5`)
+    2. A passage marked across paragraphs underlined in none of them.
+       (`107adeb`)
+    3. Ink in a page's blank foot saved, then rendered nowhere and could not
+       be erased. (`284365d`)
+    4. Opening the Ask panel wrote the mark whether or not you asked
+       anything. (`5cbe56a`)
+    5. Showing a chip repainted the whole panel — `lockCanvas` mutating the
+       queued rect, latent long before any of this. (`a3b18a5`)
+  Ask, selection, underline and the Q&A were re-tested on the device
+  afterwards and behave.
 - **PocketBook on the EPUB.** Books.app renders it correctly, but PocketBook
   is the reader that filed the original report and the one that ignored our
   CSS. Re-export and re-read there.
