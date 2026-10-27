@@ -68,9 +68,13 @@ valuable part and will be asked for again at the next version.
 
 Two things remain, both of them tracks rather than forms:
 
-- [ ] **A working version uploaded.** `app/build/outputs/bundle/release/app-release.aab`,
-      rebuilt 2026-10-27 from `main` at `0c65334`, `jar verified`,
-      versionCode 1, never uploaded to any track.
+- [x] **A working version uploaded and PUBLISHED to internal testing**
+      (2026-10-27). versionCode 1, versionName 0.1.0, built from `0c65334`.
+      Two warnings on the review screen, both expected and neither blocking:
+      no deobfuscation file (there is no R8, so none exists) and native code
+      without debug symbols (all of it is the Onyx pen SDK's prebuilt `.so`,
+      which has no symbols to give). The opt-in link is issued.
+      **versionCode 1 is now spent** — the repo is already on 2.
 - [ ] **Release name is REQUIRED and does not auto-fill.** Use Play's own
       convention — versionCode with versionName in brackets: `1 (0.1.0)`,
       then `2 (0.1.1)`, and so on. Console-internal, never shown to a tester
@@ -91,11 +95,23 @@ Two things remain, both of them tracks rather than forms:
       **The keystore is therefore recoverable.** Losing it costs an upload key
       reset request, not the app — the old self-signed world, where a lost key
       meant a new listing, is not the one this app is in.
-- [ ] **Internal testing, then closed testing.** Internal first: it has no
-      review wait and no tester minimum, and it is the only way to confirm
-      that the bundle Play PROCESSES and re-signs installs and runs — which
-      is not the same artifact as the APK tested locally. Promote to closed
-      once it does.
+- [ ] **Install from the Play link on the Boox.** The one check nothing
+      local can make: the bundle Play processed and RE-SIGNED is a different
+      artifact from the APK verified here. Until it installs and opens a book
+      from the real channel, the build is unproven.
+      The device currently holds a DEBUG build signed with the debug key, so
+      Play's copy will not install over it. Back the books up first — the
+      Gemini key cannot be backed up, it is Keystore-bound to the app's UID,
+      so expect to re-enter it:
+
+          adb -s 178414c8 pull /sdcard/Android/data/app.zhuzha/files/courses \
+              ~/zhuzha-courses-backup
+
+- [ ] **Then promote to closed testing.**
+      **Internal app sharing is the better tool once bug reports start.** It
+      is a separate feature from this track: upload any build, get a link at
+      once, NO versionCode rules, no release, no tester list. The track costs
+      a bump and a release for every fix; sharing costs a link.
 - [ ] **Countries/regions on the CLOSED track.** Per-track, and the track is
       not available until at least one is set. Internal testing is not
       country-targeted, so there is nothing to choose there and nothing
