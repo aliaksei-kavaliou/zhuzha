@@ -27,6 +27,34 @@ Rebuild with `./gradlew :app:bundleRelease`. The keystore properties live in
 produces an UNSIGNED bundle, which Play rejects — so check `jarsigner -verify`
 rather than assuming.
 
+**`jarsigner -verify` PRINTS A WALL OF WARNINGS AND THE BUNDLE IS FINE.** Read
+the verdict line, `jar verified.`, and ignore the rest. All four are expected
+for an Android bundle and will appear on every upload:
+
+- **~1100 × "Entry … is signed in JarFile but is not signed in
+  JarInputStream".** One cause: `META-INF/MANIFEST.MF` is not the first entry
+  in the zip — `BUNDLE-METADATA/…` is. `JarInputStream` reads sequentially and
+  needs the manifest early to count later entries as signed; `JarFile` seeks
+  and finds it anyway. The two readers disagree about every entry and it lists
+  them all. That is how bundletool writes an AAB.
+- **"certificate chain is invalid … signer certificate is self-signed."**
+  Correct. An Android signing key IS a self-signed keystore cert; there is no
+  CA and Play does not want one.
+- **"signatures that do not include a timestamp … expire as early as
+  2054-02-28."** Fine: Play wants validity past 2033. Play validates against
+  the upload certificate registered with it, not a timestamp authority.
+- **"POSIX file permission and/or symlink attributes."** Cosmetic.
+
+What is worth checking locally is the SIGNER, and on an APK that needs
+`apksigner`, not `jarsigner` — an APK is v2/v3-signed and has no jar manifest,
+so `jarsigner` answers "no manifest" and looks like a failure:
+
+    $ANDROID_HOME/build-tools/<ver>/apksigner verify --print-certs app-release.apk
+    Signer #1 certificate DN: CN=Zhuzha, O=Zhuzha
+
+The AAB is the jar-signed one, so `jarsigner -verify` is right for it. Beyond
+that, the upload is the real test: Play rejects a mis-signed bundle at once.
+
 **versionCode must rise on every upload, including rejected ones.** Play will
 not take 1 twice.
 
