@@ -78,11 +78,19 @@ Two things remain, both of them tracks rather than forms:
       versionCode must rise on every upload, so the releases sort and read
       correctly instead of being invented one at a time.
       Release notes may also block the save; one line is enough for internal.
-- [ ] **Play App Signing enrolment**, on the first upload for a new app.
-      Required, not a choice: Play generates the distribution key and the key
-      the bundle was signed with becomes the UPLOAD key. The consequence is
-      the keystore — losing it means a reset request to Google, not a
-      rebuild.
+- [x] **Play App Signing needs nothing from you.** For an app created in the
+      Console since 2021 it is automatic and mandatory — there is NO enrolment
+      prompt, and this file said there was one. Play holds the key that signs
+      what users install; the key the bundle was signed with is the UPLOAD
+      key, which only proves the upload is from you.
+      Confirm it at Setup → App integrity → App signing, which lists both
+      certificates. The upload one should read:
+      `CN=Zhuzha, O=Zhuzha`, SHA-256
+      `A4:E4:83:9C:F1:76:92:6F:9D:70:66:74:24:29:C3:03:7F:DB:3F:EC:2B:E8:84:FD:BC:E2:2A:B6:66:7D:2B:61`,
+      valid to 2054.
+      **The keystore is therefore recoverable.** Losing it costs an upload key
+      reset request, not the app — the old self-signed world, where a lost key
+      meant a new listing, is not the one this app is in.
 - [ ] **Internal testing, then closed testing.** Internal first: it has no
       review wait and no tester minimum, and it is the only way to confirm
       that the bundle Play PROCESSES and re-signs installs and runs — which
