@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
@@ -212,8 +213,40 @@ private val MENU_BAND_HEIGHT = 72.dp
  * Fixed rather than intrinsic so the text column beside it does not narrow as
  * annotations accumulate — a paragraph must not reflow because you asked a
  * question about it.
+ *
+ * **That promise was only half kept until 2026-10-25.** The constant stopped
+ * one marker differing from four, but the strip was composed only when
+ * `annotations.isNotEmpty()`, so the step from ZERO to one — the one a reader
+ * actually causes — still took 28dp out of the measure. A four-line paragraph
+ * rewrapped to five the instant you asked about it, the paginator had already
+ * given the page away at the full width, and the last line fell off the
+ * bottom. Found on Ch2 p7 of the drawing book: five lines where the clean
+ * render has four, and a sliver of a sixth under the folio.
+ *
+ * The strip now comes out of the PAGE MARGIN instead of the text column —
+ * see [MARKER_GUTTER_START_PAD] and the Row's `layout` in [ParagraphBlock] —
+ * so the measure is the same whether or not a block carries a mark, and the
+ * paginator needs to know nothing about annotations. Which is the rule:
+ * nothing a reader does may repaginate.
  */
 private val MARKER_GUTTER_WIDTH = 22.dp
+
+/** Least air between the text column's right edge and a marker. */
+private val MARKER_GUTTER_START_PAD = 6.dp
+
+/**
+ * Roughly how wide the ? / \u270e glyph itself draws, used only to centre it in
+ * the margin. The strip it lives in is [MARKER_GUTTER_WIDTH] and wider than
+ * the mark on purpose — that is a touch target, this is ink.
+ */
+private val MARKER_GLYPH_WIDTH = 10.dp
+
+/**
+ * Past this the marker stops drifting outward and stays put. At the widest
+ * margin (112dp) a centred glyph would sit 50dp out, adrift in white with
+ * nothing to relate it to; a mark in a margin belongs near the text it marks.
+ */
+private val MARKER_OUTSET_MAX = 18.dp
 
 /**
  * Padding between the paragraph Row's top and a marker glyph's own line box —
@@ -2268,6 +2301,7 @@ private fun PagedContent(
                                         fontScale = fontScale,
                                         lineSpacing = lineSpacing,
                                         textAlign = textAlign,
+                                        horizontalPadding = horizontalPadding,
                                         annotations = blockAnnotations,
                                         revealed = revealed[globalIdx] == true,
                                         onReveal = {
@@ -3319,6 +3353,8 @@ private fun RenderBlock(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    /** The page's own side margin, in dp — the room a marker has to sit in. */
+    horizontalPadding: Float,
     annotations: List<Annotation>,
     revealed: Boolean,
     onReveal: () -> Unit,
@@ -3333,7 +3369,7 @@ private fun RenderBlock(
     when (block) {
         is Block.Heading -> HeadingBlock(block, fontScale, atPageTop, loadFigure)
         is Block.Paragraph -> ParagraphBlock(
-            block.inlines, fontScale, lineSpacing, textAlign,
+            block.inlines, fontScale, lineSpacing, textAlign, horizontalPadding,
             annotations, onOpenAnnotation, onMarkerBounds,
         )
         is Block.BulletItem ->
@@ -3428,6 +3464,7 @@ private fun ParagraphBlock(
     fontScale: Float,
     lineSpacing: Float,
     textAlign: TextAlignPref,
+    horizontalPadding: Float,
     annotations: List<Annotation>,
     onOpenAnnotation: (Annotation) -> Unit,
     onMarkerBounds: (Annotation, Rect) -> Unit,
@@ -3509,10 +3546,43 @@ private fun ParagraphBlock(
             .toMap()
     }
     val hitSlop = with(LocalDensity.current) { 8.dp.toPx() }
+    // How far right of the text column a marker sits — pure offset into the
+    // page's own margin, since the strip costs the column no width.
+    //
+    // NOT a constant, because the margin is a reader setting with four values
+    // (16 / 40 / 72 / 112dp). At 6dp the glyph sat one space-width from the
+    // last character and read as punctuation — "flowing in a?" — which is the
+    // first thing anyone noticed about it. So centre the glyph in whatever
+    // margin there is, and keep a floor: at Narrow there is honestly nowhere
+    // for it to go, and crowding is better than printing it off the page.
+    val markerOutsetPx = with(LocalDensity.current) {
+        val glyph = MARKER_GLYPH_WIDTH * fontScale
+        val centred = (horizontalPadding.dp - glyph) / 2
+        maxOf(MARKER_GUTTER_START_PAD, minOf(centred, MARKER_OUTSET_MAX)).roundToPx()
+    }
     // 12dp was 0.4 of a line: two paragraphs ran together into one slab and
     // there was no way to see where one ended. 20dp reads as a break without
     // resorting to a first-line indent, which would need special-casing for
     // the paragraph after every figure and bordered box.
+    // THE MARKER STRIP TAKES NO WIDTH FROM THE TEXT COLUMN.
+    //
+    // The gutter Box below is zero-width and offsets its glyphs out into the
+    // page's own margin, so weight(1f) hands the Text the SAME measure
+    // whether or not this block carries a mark. That is what stops a
+    // paragraph rewrapping under the reader's own hand, and it is why the
+    // paginator can go on measuring at the full content width and knowing
+    // nothing about annotations.
+    //
+    // Widening the Row itself was tried first (2026-10-25) and REVERTED: a
+    // child reporting more width than its slot made the parent column size to
+    // it, and the whole text block slid left — a 27px margin change on every
+    // page, which is a worse bug than the one being fixed.
+    //
+    // A glyph drawn outside its parent's bounds still PAINTS, but Compose
+    // hit-tests against bounds, so its own `clickable` may not fire. The
+    // underline is the primary affordance anyway — the pointerInput on the
+    // Text above opens the note when you tap the marked words, which is what
+    // the comment there means by "the mark IS the affordance".
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
         Text(
             text = annotated,
@@ -3565,10 +3635,13 @@ private fun ParagraphBlock(
             // positioned against the TEXT beside them, which a stack cannot
             // express. Fixed width so the text column is the same width
             // whether a paragraph carries one marker or four.
+            // Zero width: the strip is drawn into the page margin rather than
+            // taken out of the measure. `requiredWidth` rather than `width`
+            // so the Row cannot hand it a minimum back.
             Box(
                 modifier = Modifier
-                    .padding(start = 6.dp, top = 2.dp)
-                    .width(MARKER_GUTTER_WIDTH * fontScale),
+                    .padding(top = 2.dp)
+                    .requiredWidth(0.dp),
             ) {
                 annotations.forEach { a ->
                     val y = markerYs[a] ?: 0f
@@ -3576,8 +3649,11 @@ private fun ParagraphBlock(
                         text = if (a.kind == "ask") "?" else "✎",
                         style = markerStyle,
                         color = Ink,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier
-                            .offset { IntOffset(0, y.toInt()) }
+                            .requiredWidth(MARKER_GUTTER_WIDTH * fontScale)
+                            .offset { IntOffset(markerOutsetPx, y.toInt()) }
                             .onGloballyPositioned { onMarkerBounds(a, it.boundsInRoot()) }
                             .clickable { onOpenAnnotation(a) }
                             .padding(vertical = 2.dp, horizontal = 4.dp),

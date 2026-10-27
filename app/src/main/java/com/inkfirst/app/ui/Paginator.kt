@@ -255,7 +255,6 @@ fun paginate(
             hasFigureImage, hasBadge, atPageTop = atTop, answerPrefix = answerPrefix,
             revealed = isRevealed(srcOf[i]),
         )
-
         // Keep-with-next: don't orphan a heading at the bottom of a page. If a
         // heading is about to land and the block after it wouldn't fit on the
         // same page, push the heading too — provided the pair fits together on
