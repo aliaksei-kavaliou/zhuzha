@@ -98,3 +98,30 @@ Reading does, and the sentence says exactly that.
 for label, text in [...]:
     print(label, len(text))
 ```
+
+---
+
+## Release notes (500 max per language)
+
+Play asks for these per language, wrapped in the tag it shows you. `en-US` is
+the only one the listing has. **They travel with the release when it is
+promoted**, so what is written for an internal build is what the closed
+testers read — not throwaway.
+
+Same rule as the rest of this file: say what the app does. The job here is
+narrower, though. Release notes for a test track exist to pre-empt the three
+mails you would otherwise get: that there IS something to read without a key,
+that generating needs the tester's own key, and that the no-scroll pagination
+and the finger-draw toggle are deliberate rather than broken.
+
+### 1 (0.1.0) — first internal build (445 chars)
+
+```
+<en-US>
+First build. A demo book is included, so there is something to read before anything is generated. Writing your own needs a free Gemini API key, added in Settings.
+
+Worth trying: tap the page edges to turn, select a passage to ask about it, and Export to read a book on any e-reader.
+
+On a phone, "Finger draws ink" in Settings is how you write in an exercise — it takes over page turns while it is on. The stylus features are for e-ink hardware.
+</en-US>
+```
