@@ -14,7 +14,10 @@ android {
         applicationId = "app.zhuzha"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        // Rises on EVERY upload, including one Play rejects or you
+        // replace — a number Play has seen is spent for good. 1 went to the
+        // internal track on 2026-10-27; this is the next one.
+        versionCode = 2
         versionName = "0.1.0"
         // Onyx pen SDK ships prebuilt native libs only for arm; strip the
         // rest from the release to keep APK small and avoid loader misses.
