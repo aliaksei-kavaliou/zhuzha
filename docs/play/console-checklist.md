@@ -48,6 +48,17 @@ Two things remain, both of them tracks rather than forms:
       that the bundle Play PROCESSES and re-signs installs and runs — which
       is not the same artifact as the APK tested locally. Promote to closed
       once it does.
+- [ ] **Countries/regions on the CLOSED track.** Per-track, and the track is
+      not available until at least one is set. Internal testing is not
+      country-targeted, so there is nothing to choose there and nothing
+      carries over. Select all: the app is free, no IAP, no ads, nothing
+      varies by market. Just make sure wherever the testers actually are is
+      included, or they meet "item not available in your country".
+      Not a reason to restrict, but worth knowing: **the Gemini API is not
+      available everywhere.** A tester in an unsupported region can install,
+      open the app and read the demo book, but cannot obtain a key and so
+      cannot generate anything. Check their region before chasing "it won't
+      make a book" as a bug.
 - [ ] **Twelve testers, opted in, fourteen continuous days** on the closed
       track. The only item here measured in weeks; everything else is an
       afternoon.
@@ -164,9 +175,22 @@ Carried forward, neither blocking the upload:
        queued rect, latent long before any of this. (`a3b18a5`)
   Ask, selection, underline and the Q&A were re-tested on the device
   afterwards and behave.
-- **PocketBook on the EPUB.** Books.app renders it correctly, but PocketBook
-  is the reader that filed the original report and the one that ignored our
-  CSS. Re-export and re-read there.
+- ~~PocketBook on the EPUB.~~ **Tested 2026-10-27. Nothing to fix.** The
+  answer links resolve to the RIGHT page — an exercise on p.28 reaches its
+  answer — and NeoReader lands exactly. PocketBook lands at the start of the
+  reflowed page instead of on the anchor.
+  **The differential test is what settles it: PocketBook's OWN bookmarks
+  behave identically.** At a larger font one page becomes several, and the
+  reader returns to the page start rather than the sub-page position, for
+  marks it set itself. A reader whose native bookmarks cannot do this is not
+  failing to honour our `id` — it is not resolving sub-page positions at all.
+  The anchor is found; only the final scroll is lost, inside a reflow the
+  reader owns.
+  The only thing that would land every link exactly is one spine document per
+  answer, which costs dozens of tiny XHTML files and stops the "Answers" page
+  being a readable list — to buy precision in one reader that its own
+  bookmarks do not reach. Not worth it. Do not re-open this without a new
+  symptom.
 - ~~The inked exercise answers the wrong question.~~ **Done 2026-10-25.**
   `02-you-write-in-the-book` was a finished mug under an exercise asking for
   the top opening alone. Reshot on the Boox against the ten-circles exercise
@@ -200,5 +224,7 @@ Rebuild the bundle before uploading if any code lands after this date:
 - The pen chip can ink on the Boox. Stylus-only, so no tester will meet it.
 - Ink does not reflow when the font size changes. Known and documented.
 - The EPUB fixes of 2026-10-16 render correctly in Books.app (verified 2026-10-20,
-  from a book exported through the app itself). Not yet re-read in PocketBook,
-  which is the reader that reported them.
+  from a book exported through the app itself) and in PocketBook and NeoReader
+  (2026-10-27). PocketBook lands answer links on the right page but at the
+  page start rather than the anchor — its own bookmarks do the same, so it is
+  the reader, not the file. See the carried-forward note.
