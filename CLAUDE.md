@@ -151,6 +151,15 @@ given; what follows is only the rule.
 - **Repaint scoping is a QUEUE, not a rect.** Every region gets its own invalidate. It failed
   merged (a bounding box blinks half the page) and it failed as two slots (one writer
   displaces another). Do not try to express N regions in one field a third time. (2026-09-21)
+- **`lockCanvas(dirty)` WRITES BACK through its argument, and the queue holds that same
+  `Rect`.** The Surface expands it to what it will actually hand over, and when the surface
+  has not been drawn to yet it ignores the request and returns the whole thing — so the pill
+  a chip queued came back grown to the full overlay and the GC after it repainted the page.
+  Measured: queued `Rect(452,1328-812,1458)`, repainted `Rect(0,0-1264,1497)`. Visible only
+  on the FIRST clear after the surface is created, which is why showing a chip blinked while
+  closing the same chip did not, and why this has come back more than once wearing a
+  different face. **Lock against a copy; never hand a mutable rect to a framework call and
+  then read it again.** The flash is the SCOPE. (2026-10-27)
 - **`setLimitRect`'s second argument is a list of HOLES** — floating UI must be excluded or
   the pen inks on it. Never hand it an EMPTY array: the firmware appears to read zero-length
   as "nothing to do" rather than "clear what you have". (2026-10-05)

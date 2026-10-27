@@ -899,13 +899,32 @@ internal fun OnyxInkOverlay(
                      */
                     fun clearSurface(dirty: AndroidRect?) {
                         val holder = surface.holder
+                        // A COPY, NEVER THE QUEUED RECT ITSELF.
+                        //
+                        // lockCanvas(dirty) WRITES BACK through its argument:
+                        // the Surface expands it to the region it is actually
+                        // going to hand over, and when the surface has not
+                        // been drawn to yet it ignores the request entirely
+                        // and returns the whole thing. android.graphics.Rect
+                        // is mutable, the repaint queue holds the same
+                        // instance, and so the pill the chip queued came back
+                        // from here grown to the full overlay — which the GC
+                        // that followed then repainted. Measured: queued
+                        // Rect(452,1328-812,1458), repainted Rect(0,0-1264,1497).
+                        //
+                        // It showed only on the FIRST clear after the surface
+                        // was created, which is why showing a chip blinked and
+                        // closing the same chip did not, and why it has come
+                        // back more than once looking like a different bug.
+                        // The flash is the SCOPE — again.
+                        val scratch = dirty?.let { AndroidRect(it) }
                         val canvas = try {
                             // Scoped to the region that changed where we know
                             // it. Wiping the WHOLE layer took every surviving
                             // stroke on the page with it, leaving them to be
                             // repainted from the Compose copy — which is the
                             // blink that erasing one underline produced.
-                            if (dirty != null) holder.lockCanvas(dirty) else holder.lockCanvas()
+                            if (scratch != null) holder.lockCanvas(scratch) else holder.lockCanvas()
                         } catch (t: Throwable) {
                             Log.w(TAG, "clearSurface: lockCanvas failed", t)
                             null
