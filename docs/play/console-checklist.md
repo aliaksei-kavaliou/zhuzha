@@ -71,6 +71,18 @@ Two things remain, both of them tracks rather than forms:
 - [ ] **A working version uploaded.** `app/build/outputs/bundle/release/app-release.aab`,
       rebuilt 2026-10-27 from `main` at `0c65334`, `jar verified`,
       versionCode 1, never uploaded to any track.
+- [ ] **Release name is REQUIRED and does not auto-fill.** Use Play's own
+      convention — versionCode with versionName in brackets: `1 (0.1.0)`,
+      then `2 (0.1.1)`, and so on. Console-internal, never shown to a tester
+      or on the store, 50 characters. Keeping the shape matters only because
+      versionCode must rise on every upload, so the releases sort and read
+      correctly instead of being invented one at a time.
+      Release notes may also block the save; one line is enough for internal.
+- [ ] **Play App Signing enrolment**, on the first upload for a new app.
+      Required, not a choice: Play generates the distribution key and the key
+      the bundle was signed with becomes the UPLOAD key. The consequence is
+      the keystore — losing it means a reset request to Google, not a
+      rebuild.
 - [ ] **Internal testing, then closed testing.** Internal first: it has no
       review wait and no tester minimum, and it is the only way to confirm
       that the bundle Play PROCESSES and re-signs installs and runs — which
