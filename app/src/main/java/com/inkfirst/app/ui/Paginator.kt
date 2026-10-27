@@ -60,6 +60,33 @@ data class PageItem(
     val skippedPx: Int = 0,
 )
 
+/**
+ * Which block, if any, owns the blank tail of page [pageIndex].
+ *
+ * Ink is anchored to a block and a block owns down to its own box, so a
+ * stroke drawn in the white below the last box on a page belonged to nobody:
+ * the renderer skipped it and the hit-test — which deliberately uses the same
+ * bounds — could not erase it either. Pulled off the Boox to be sure of it:
+ * `block_index=25, y 749..1245`, on disk and drawn nowhere, accumulating.
+ *
+ * The last block on a page owns the white under it, because on THIS page
+ * nothing follows it to claim it. Two cases must not be extended, and they
+ * are why this is a rule and not just "the last item":
+ *
+ *  - **A block that continues overleaf.** Ink below the head's box belongs to
+ *    the piece after it. Extending the head would draw the same stroke on
+ *    both pages — "now I have 2 mugs on p5 and 6".
+ *  - **An answer piece**, which carries its exercise's index and reports no
+ *    bounds of its own. Extending that index would let the exercise above
+ *    claim ink lying over the answer.
+ */
+internal fun tailOwnerOf(pages: List<List<PageItem>>, pageIndex: Int): Int? {
+    val last = pages.getOrNull(pageIndex)?.lastOrNull() ?: return null
+    if (isAnswerPiece(last.block)) return null
+    val continuesOverleaf = pages.getOrNull(pageIndex + 1)?.firstOrNull()?.index == last.index
+    return if (continuesOverleaf) null else last.index
+}
+
 fun paginate(
     blocks: List<Block>,
     contentWidthPx: Int,

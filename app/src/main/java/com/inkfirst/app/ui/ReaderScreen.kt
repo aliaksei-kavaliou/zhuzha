@@ -2014,6 +2014,41 @@ private fun PagedContent(
             }
             LaunchedEffect(pageBookmark) { onPageBookmarkChange(pageBookmark) }
 
+            // WHO OWNS THE BLANK TAIL OF A PAGE.
+            //
+            // A bar drawn down the empty half of a page saved correctly and
+            // then never appeared again. Pulled off the Boox to be sure:
+            // block_index=25, y 748..1245, sitting on disk and drawn nowhere.
+            // Ink is anchored to a block and a block owns down to its own
+            // box, so ink below the last box on a page belonged to nobody —
+            // the renderer skipped it and the hit-test, which deliberately
+            // uses the same bounds, could not erase it either. Invisible and
+            // unreachable, accumulating in the file.
+            //
+            // The last block on a page owns the white under it, because on
+            // THIS page nothing follows it to claim it. Returning null hands
+            // the overlays their own fallback, which is the full page height.
+            //
+            // Two cases must NOT be extended, and they are the reason this is
+            // a guard rather than "the last item":
+            //   - a block that continues overleaf, where ink below the head's
+            //     box belongs to the piece after it. That is the "now I have
+            //     2 mugs on p5 and 6" bug and the rule it bought.
+            //   - an answer piece, which carries its exercise's index and
+            //     reports no bounds of its own; extending that index would
+            //     let the exercise above claim ink lying over the answer.
+            val tailOwnerIndex = remember(pages, pageIndex) {
+                tailOwnerOf(pages, pageIndex)
+            }
+            /** One rule, one place: both overlays ask this, never the map. */
+            val blockVisibleBottomOf: (Int) -> Float? = { idx ->
+                if (idx == tailOwnerIndex) {
+                    null
+                } else {
+                    blockVisibleBottomsInRoot[idx]?.minus(overlayTopInRoot)
+                }
+            }
+
             // What the ink overlay is allowed to touch on this page.
             //
             // TAKEN FROM THE ITEMS, NOT COUNTED FROM THE FIRST. This was
@@ -2426,9 +2461,7 @@ private fun PagedContent(
                             blockVisibleTop = { idx ->
                                 blockVisibleTopsInRoot[idx]?.minus(overlayTopInRoot)
                             },
-                            blockVisibleBottom = { idx ->
-                                blockVisibleBottomsInRoot[idx]?.minus(overlayTopInRoot)
-                            },
+                            blockVisibleBottom = blockVisibleBottomOf,
                             pageBlockRange = pageBlockRange,
                             onStrokeAdded = onStrokeAddedEnriched,
                             onStrokeErased = onStrokeErased,
@@ -2490,9 +2523,7 @@ private fun PagedContent(
                             blockVisibleTop = { idx ->
                                 blockVisibleTopsInRoot[idx]?.minus(overlayTopInRoot)
                             },
-                            blockVisibleBottom = { idx ->
-                                blockVisibleBottomsInRoot[idx]?.minus(overlayTopInRoot)
-                            },
+                            blockVisibleBottom = blockVisibleBottomOf,
                             pageBlockRange = pageBlockRange,
                             allowFingerDraw = fingerDraws,
                             // Same gate the Onyx overlay has always had.
@@ -3848,7 +3879,7 @@ private fun ExerciseBlock(
 }
 
 /** Whether this page item is the piece carrying a revealed answer. */
-private fun isAnswerPiece(block: Block): Boolean =
+internal fun isAnswerPiece(block: Block): Boolean =
     (block as? Block.CustomFence)?.params?.get(FENCE_ANSWER_PIECE) != null
 
 /**
