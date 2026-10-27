@@ -2302,6 +2302,7 @@ private fun PagedContent(
                                         lineSpacing = lineSpacing,
                                         textAlign = textAlign,
                                         horizontalPadding = horizontalPadding,
+                                        globalIdx = globalIdx,
                                         annotations = blockAnnotations,
                                         revealed = revealed[globalIdx] == true,
                                         onReveal = {
@@ -3355,6 +3356,8 @@ private fun RenderBlock(
     textAlign: TextAlignPref,
     /** The page's own side margin, in dp — the room a marker has to sit in. */
     horizontalPadding: Float,
+    /** This block's index in the chapter, to tell an anchor from a continuation. */
+    globalIdx: Int,
     annotations: List<Annotation>,
     revealed: Boolean,
     onReveal: () -> Unit,
@@ -3370,7 +3373,7 @@ private fun RenderBlock(
         is Block.Heading -> HeadingBlock(block, fontScale, atPageTop, loadFigure)
         is Block.Paragraph -> ParagraphBlock(
             block.inlines, fontScale, lineSpacing, textAlign, horizontalPadding,
-            annotations, onOpenAnnotation, onMarkerBounds,
+            globalIdx, annotations, onOpenAnnotation, onMarkerBounds,
         )
         is Block.BulletItem ->
             ListItemBlock("• ", block.inlines, fontScale, lineSpacing, block.cont)
@@ -3465,6 +3468,7 @@ private fun ParagraphBlock(
     lineSpacing: Float,
     textAlign: TextAlignPref,
     horizontalPadding: Float,
+    globalIdx: Int,
     annotations: List<Annotation>,
     onOpenAnnotation: (Annotation) -> Unit,
     onMarkerBounds: (Annotation, Rect) -> Unit,
@@ -3630,7 +3634,15 @@ private fun ParagraphBlock(
         // SelectionContainer. A written note and a question asked are
         // different acts and read differently at a glance: ✎ is something you
         // wrote, ? is something you wanted explained.
-        if (annotations.isNotEmpty()) {
+        // ONE PASSAGE, ONE MARK.
+        //
+        // A passage marked across three paragraphs underlines in all three,
+        // but only the block it was ANCHORED to prints a glyph. Three ? down
+        // one margin reads as three questions; the underline already says how
+        // far the passage runs. Same reasoning as the duplicate-ask guard in
+        // `askAbout`: the record belongs in the Q&A, not repeated on the page.
+        val ownMarkers = annotations.filter { it.blockIndex == globalIdx }
+        if (ownMarkers.isNotEmpty()) {
             // A Box with per-marker offsets, not a Column: the markers are
             // positioned against the TEXT beside them, which a stack cannot
             // express. Fixed width so the text column is the same width
@@ -3643,7 +3655,7 @@ private fun ParagraphBlock(
                     .padding(top = 2.dp)
                     .requiredWidth(0.dp),
             ) {
-                annotations.forEach { a ->
+                ownMarkers.forEach { a ->
                     val y = markerYs[a] ?: 0f
                     Text(
                         text = if (a.kind == "ask") "?" else "✎",
@@ -4589,21 +4601,113 @@ private fun renderInlinesWithUnderlines(
         }
         val flat = plain.toString()
         quotes.forEach { q ->
-            val needle = firstLineOf(q.trim())
-            if (needle.isBlank()) return@forEach
-            val idx = flat.indexOf(needle)
-            if (idx >= 0) {
-                addStyle(
-                    SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
-                    idx,
-                    idx + needle.length,
-                )
-            }
+            val trimmed = q.trim()
+            if (trimmed.isBlank()) return@forEach
+            // Exact first, so a one-word note still lands exactly where it
+            // was made. Only fall back to the shared run when the quote is
+            // not findable whole — which is what a passage marked across
+            // several blocks always looks like from inside one of them.
+            val needle = firstLineOf(trimmed)
+            val exact = if (needle.isBlank()) -1 else flat.indexOf(needle)
+            val range = if (exact >= 0) {
+                exact until (exact + needle.length)
+            } else {
+                longestQuoteRun(flat, trimmed)?.first
+            } ?: return@forEach
+            addStyle(
+                SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                range.first,
+                minOf(range.last + 1, flat.length),
+            )
         }
     }
 }
 
 private fun firstLineOf(s: String): String = s.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+
+/**
+ * Least words a run must carry before a block that is NOT the anchor may
+ * claim part of a passage. One word in common is a coincidence; five in a
+ * row, flush against the block's own edge, is the same sentence continuing.
+ */
+internal const val MIN_SPAN_WORDS = 5
+
+/** A word of [text] with the character range it occupies. */
+private data class Word(val text: String, val from: Int, val to: Int)
+
+private fun wordsOf(s: String): List<Word> {
+    val out = mutableListOf<Word>()
+    var i = 0
+    while (i < s.length) {
+        while (i < s.length && s[i].isWhitespace()) i++
+        val start = i
+        while (i < s.length && !s[i].isWhitespace()) i++
+        if (i > start) out += Word(s.substring(start, i), start, i)
+    }
+    return out
+}
+
+/**
+ * The longest run of [quote] that this block actually prints, as a character
+ * range into [plain] — plus how many words long it is.
+ *
+ * WHY A RUN AND NOT THE WHOLE QUOTE. A passage marked across three
+ * paragraphs is stored as ONE annotation whose quote is the three fragments
+ * joined with spaces. No single block contains that string, so the old
+ * `plain.indexOf(quote)` matched nothing anywhere and a multi-block selection
+ * underlined NOTHING, while a single-paragraph one underlined fine — which is
+ * exactly the asymmetry that was reported. Matching the longest shared run
+ * instead gives each block its own share: the first block's tail, the middle
+ * block entire, the last block's head.
+ *
+ * Compared word-wise rather than character-wise. Partly cost — a hundred
+ * words against a hundred beats six hundred characters against six hundred —
+ * and partly correctness: half a word underlined is a rendering bug, not a
+ * mark.
+ */
+internal fun longestQuoteRun(plain: String, quote: String): Pair<IntRange, Int>? {
+    val hay = wordsOf(plain)
+    val needle = wordsOf(quote)
+    if (hay.isEmpty() || needle.isEmpty()) return null
+    // Classic longest-common-substring over words, one row at a time: run[j]
+    // is the length of the run ending at hay[i] and needle[j].
+    var prev = IntArray(needle.size + 1)
+    var bestLen = 0
+    var bestEndI = -1
+    for (i in hay.indices) {
+        val cur = IntArray(needle.size + 1)
+        for (j in needle.indices) {
+            if (hay[i].text.equals(needle[j].text, ignoreCase = false)) {
+                cur[j + 1] = prev[j] + 1
+                if (cur[j + 1] > bestLen) {
+                    bestLen = cur[j + 1]
+                    bestEndI = i
+                }
+            }
+        }
+        prev = cur
+    }
+    if (bestLen == 0 || bestEndI < 0) return null
+    val startWord = hay[bestEndI - bestLen + 1]
+    val endWord = hay[bestEndI]
+    return (startWord.from until endWord.to) to bestLen
+}
+
+/**
+ * Does [range] sit flush against one of [plain]'s own ends?
+ *
+ * The guard that stops a long run being claimed by a block that merely
+ * repeats a phrase. A passage marked across blocks is CONTIGUOUS, so every
+ * block but the anchor meets it at an edge — the first block's share ends at
+ * its last word, the last block's share starts at its first, and a block
+ * swallowed whole does both. A coincidental repeat in the middle of some
+ * other paragraph does neither.
+ */
+internal fun touchesEdge(plain: String, range: IntRange): Boolean {
+    val head = plain.take(range.first).isBlank()
+    val tail = plain.substring(minOf(range.last + 1, plain.length)).isBlank()
+    return head || tail
+}
 
 /**
  * Which of [annotations] belong to the block at [globalIdx]. An annotation
@@ -4621,9 +4725,24 @@ private fun annotationsForBlock(
     if (annotations.isEmpty()) return emptyList()
     val plain = extractAskableText(block) ?: return emptyList()
     return annotations.filter { a ->
-        if (a.blockIndex != globalIdx) return@filter false
-        val needle = firstLineOf(a.quote.trim())
-        needle.isNotBlank() && plain.contains(needle)
+        val quote = a.quote.trim()
+        if (quote.isBlank()) return@filter false
+        val needle = firstLineOf(quote)
+        if (a.blockIndex == globalIdx) {
+            // The anchor. Unchanged: the quote has to still be findable here,
+            // which is what keeps a one-word note on the passage it was made
+            // on rather than on every block that says "kitchen".
+            if (needle.isNotBlank() && plain.contains(needle)) return@filter true
+        }
+        // A PASSAGE MARKED ACROSS BLOCKS REACHES PAST ITS ANCHOR.
+        //
+        // Only one block can be recorded as the anchor, so the others held
+        // no claim at all and underlined nothing. They may claim their share
+        // now, but only on terms a coincidence cannot meet: a long run, and
+        // flush against this block's own edge, because a contiguous passage
+        // always meets its neighbours at an edge.
+        val (range, words) = longestQuoteRun(plain, quote) ?: return@filter false
+        words >= MIN_SPAN_WORDS && touchesEdge(plain, range)
     }
 }
 
