@@ -86,6 +86,17 @@ fun ChatPanel(
     chapterMarkdown: String,
     initialSelection: String?,
     onClose: () -> Unit,
+    /**
+     * A question about [initialSelection] was asked AND answered, and the
+     * exchange is now in the chapter's Q&A.
+     *
+     * The page's mark is written from here rather than when this panel opens.
+     * Opening it is not asking anything: a reader who selects a passage,
+     * reads it again in the panel and closes it has changed their mind, and
+     * used to be left with an underline and a margin glyph pointing at a
+     * question that was never asked.
+     */
+    onAsked: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val store = rememberCourseStore()
@@ -270,15 +281,18 @@ fun ChatPanel(
                     }
                 }
                 // Only under a passage with nothing after it — the one just
-                // marked. Says what to do next without labelling every older
+                // selected. Says what to do next without labelling every older
                 // unasked passage as unfinished business.
+                //
+                // It used to go on: "or leave it, and the book will note you
+                // stopped here." True when a mark was written the moment this
+                // panel opened; a promise the app no longer keeps. Closing
+                // without asking now leaves the page clean. The sentence also
+                // has to fit a passage marked long ago and reopened, where
+                // something IS kept — so it says neither, and just points at
+                // the box.
                 if (feed.lastOrNull() is QaTranscript.Entry.Marked && !pending) {
-                    add(
-                        ChatRow.Note(
-                            "Ask about this passage below — or leave it, and the book "
-                                + "will note you stopped here.",
-                        ),
-                    )
+                    add(ChatRow.Note("Ask about this passage below."))
                 }
                 if (pending) add(ChatRow.Thinking)
                 error?.let { add(ChatRow.Problem(it)) }
@@ -419,6 +433,10 @@ fun ChatPanel(
                                         // be read by a human in ten years.
                                         created = LocalDateTime.now().withNano(0).toString(),
                                     )
+                                    // Only now: the mark on the page points at
+                                    // an entry that exists. A failed call
+                                    // writes no Q&A and so leaves no mark.
+                                    onAsked()
                                     historyRaw = store.readQa(course.slug, chapter.slug)
                                     input = ""
                                     pending = false

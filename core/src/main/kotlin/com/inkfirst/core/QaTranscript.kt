@@ -10,12 +10,19 @@ package com.inkfirst.core
  * answers from days ago.
  *
  * Here the transcript is parsed into turns instead, and a passage marked
- * without a question is a turn of its own. That costs no new storage: the Ask
- * gesture already writes a `kind = "ask"` annotation at mark time (it is what
- * puts the `?` in the margin), and [ReaderSignals] already treats an unasked
- * one as its own signal — "stopped here but did not manage to put the
- * difficulty into words". This just shows the reader what the book already
- * believes about them.
+ * without a question is a turn of its own.
+ *
+ * STORED unasked marks are now historical only. Until 2026-10-27 the Ask
+ * gesture wrote its `kind = "ask"` annotation the moment the panel opened, so
+ * merely looking at a passage left one behind — which is where the "stopped
+ * here but did not manage to put the difficulty into words" reading came
+ * from. It was never good evidence: opening the panel and closing it again
+ * usually means the opposite, that the reader worked it out. The annotation
+ * is written when a question has actually been answered, so anything unasked
+ * in the store predates that change.
+ *
+ * The turn itself stays, because the PENDING selection still arrives as one —
+ * that is the passage at the top of the panel you are looking at now.
  */
 object QaTranscript {
 

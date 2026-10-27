@@ -833,6 +833,10 @@ private fun QuestionEntryBlock(
         // empty one — ReaderSignals reads it as "stopped here but could not
         // put the difficulty into words". Say so plainly, and say it in a way
         // that leaves the door open: they can still ask.
+        //
+        // These are historical since 2026-10-27: a mark is written when a
+        // question is answered, so no new one arrives unasked. The row stays
+        // because the marks already in people's books do.
         body = asked.ifEmpty { "no question yet" },
         bodyIsPlaceholder = asked.isEmpty(),
         chapterLabel = entry.chapterLabel,

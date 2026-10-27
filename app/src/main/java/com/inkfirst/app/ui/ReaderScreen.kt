@@ -423,6 +423,12 @@ fun ReaderScreen(
     var confirmingRedraw by remember { mutableStateOf<Boolean?>(null) }
     // null = closed. "" = open general chat. non-empty = open with quoted passage.
     var chatSelection by remember(chapterSlug) { mutableStateOf<String?>(null) }
+    /**
+     * A passage the Ask panel is open on, with the block it would be anchored
+     * to — held until a question is actually asked about it, and dropped if
+     * the panel closes first.
+     */
+    var pendingAsk by remember(chapterSlug) { mutableStateOf<Pair<String, Int>?>(null) }
     // When non-null, an AddNote overlay is up with this quoted passage.
     var pendingNoteQuote by remember(chapterSlug) { mutableStateOf<String?>(null) }
     /**
@@ -779,10 +785,28 @@ fun ReaderScreen(
     // over the words, and gives §13's reader signals the passage they want.
     val askAbout: (String, Int?) -> Unit = { quote, blockHint ->
         chatSelection = quote
-        val c = course
         val trimmed = quote.trim()
-        if (c != null && trimmed.isNotEmpty()) {
-            val anchor = blockHint ?: findBlockContainingQuote(blocks, trimmed)
+        // HELD, NOT WRITTEN. Opening the panel is not asking anything: a
+        // reader who selects a passage, reads it once more in the panel and
+        // closes it has changed their mind, and was left with an underline
+        // and a margin glyph pointing at a question that does not exist —
+        // and which, being a mark, is awkward to be rid of. The mark is
+        // written from [commitAsk] when a question has actually been
+        // answered and filed.
+        pendingAsk = if (trimmed.isEmpty()) {
+            null
+        } else {
+            (blockHint ?: findBlockContainingQuote(blocks, trimmed))?.let { trimmed to it }
+        }
+    }
+    askRef.value = askAbout
+
+    /** The held passage becomes a mark on the page. See [askAbout]. */
+    val commitAsk: () -> Unit = {
+        val c = course
+        val held = pendingAsk
+        if (c != null && held != null) {
+            val (trimmed, anchor) = held
             // Asking twice about the same passage is meaningful, but two
             // identical markers is just noise on the page. The recurrence is
             // still visible in the chapter's Q&A history.
@@ -790,7 +814,7 @@ fun ReaderScreen(
                 it.chapterSlug == chapterSlug && it.kind == "ask" &&
                     it.quote == trimmed
             }
-            if (anchor != null && !already) {
+            if (!already) {
                 val updated = store.addAnnotation(
                     courseSlug = c.slug,
                     chapterSlug = chapterSlug,
@@ -803,9 +827,9 @@ fun ReaderScreen(
                 )
                 if (updated != null) course = updated
             }
+            pendingAsk = null
         }
     }
-    askRef.value = askAbout
 
     // The anchor actually in force. Negative means the sentinel is still
     // waiting for blocks; once they arrive it resolves to the chapter's end.
@@ -1041,7 +1065,11 @@ fun ReaderScreen(
                         // which is exactly the dead end the marker exists to
                         // remove. Does not re-record: the annotation is
                         // already there.
-                        if (a.kind == "ask") chatSelection = a.quote
+                        if (a.kind == "ask") {
+                            // Re-opening a mark that already exists.
+                            chatSelection = a.quote
+                            pendingAsk = null
+                        }
                         else viewingAnnotation = a
                     },
                     onOpenPrevChapter = prevChapter?.let { p -> { onOpenChapter(p.slug, -1) } },
@@ -1211,7 +1239,12 @@ fun ReaderScreen(
                 chapter = chapter,
                 chapterMarkdown = markdown!!,
                 initialSelection = chatSelection?.takeIf { it.isNotBlank() },
-                onClose = { chatSelection = null },
+                onClose = {
+                    chatSelection = null
+                    // Closed without asking: the passage was never marked.
+                    pendingAsk = null
+                },
+                onAsked = commitAsk,
             )
         }
 
@@ -1459,6 +1492,7 @@ fun ReaderScreen(
                 onAskAboutChapter = {
                     showFormatMenu = false
                     chatSelection = ""  // open with no selection = general Q&A
+                    pendingAsk = null
                 },
                 onOpenReaderNotes = {
                     showFormatMenu = false
